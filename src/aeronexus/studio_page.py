@@ -50,6 +50,7 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .map-bar>*{pointer-events:auto;box-shadow:0 5px 20px #0006}.map-bar button,.map-bar select{background:#162b44;border:1px solid #466a8c}
 .map-bar select{width:auto;max-width:160px}
 .map-info{position:absolute;z-index:500;bottom:34px;left:12px;max-width:min(480px,80%);padding:9px 12px;border-radius:9px;background:#101d2ce8;color:#dceaff;font-size:12px;pointer-events:none}
+.map-info.warning{border:1px solid #a87548;color:#ffe3b0;background:#34251de8}
 .point-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 7px;border-radius:9px;border:1px solid #314961;margin:7px 0;background:#16263d}
 .point-row.selected{border-color:#53acf3;background:#1b3954}
 .point-index{border-radius:50%;background:#297cb2;color:#fff;width:27px;height:27px;display:grid;place-items:center;font-weight:700}
@@ -150,10 +151,10 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <section class="pane active" id="map-pane">
 <div id="map" role="application" aria-label="Interaktive Missionskarte"></div>
 <div class="map-bar">
-<select id="map-layer" aria-label="Kartenstil"><option value="street">Straßenkarte (OSM)</option><option value="satellite">Satellit (Esri)</option></select>
-<button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-fit">Mission zentrieren</button>
+<select id="map-layer" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
+<button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
 </div>
-<div class="map-info">Kartenkacheln: OpenStreetMap / Esri. Externer Abruf des sichtbaren Kartenausschnitts. Missionen und Medien verbleiben auf dem Pi.</div>
+<div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
 </section>
 <section class="pane" id="media-pane">
 <div class="pane-inner">
@@ -181,7 +182,10 @@ const $=id=>document.getElementById(id);
 const els=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=String(text);return el};
 const EMPTY=()=>({name:"Neue Wegpunktmission",description:"",drone_model:"matrice4t",altitude_m:50,speed_mps:5,takeoff_security_height_m:20,rth_height_m:60,finish_action:"goHome",waypoints:[]});
 let mission=EMPTY(),missionId=null,selected=-1,addMode=false,epoch=0,knownMissions=[],knownMedia=[],displayMedia=20,mediaUrls=[],previewUrl=null;
-let map=null,lines=null,waypointsLayer=null,deviceLayer=null,mapTile=null,mapTiles={};
+// Fixed initial view of Forst (Baden), postal code 76694, approximate town centre.
+// Loading other saved missions does not modify this default for the next page load.
+const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
+let map=null,lines=null,waypointsLayer=null,deviceLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
   $("auth-message").textContent=text;
@@ -238,10 +242,34 @@ function getMap(){
     $("map").textContent="Die interaktive Karte benötigt Leaflet 1.9.4 (Internetverbindung im Browser).";
     return;
   }
-  map=L.map("map",{zoomControl:false,worldCopyJump:true}).setView([51.16,10.45],6);
-  mapTiles.street=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'});
-  mapTiles.satellite=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Tiles &copy; Esri"});
-  mapTile=mapTiles.street.addTo(map);
+  map=L.map("map",{zoomControl:false,worldCopyJump:true}).setView(
+    [HOME_VIEW.latitude,HOME_VIEW.longitude],HOME_VIEW.zoom);
+  // The page keeps no-referrer for private pages; OSM requires a Referer
+  // on its own tile requests. Send only the origin via Leaflet's tile option.
+  // Never proxy or forge requests to bypass OSM server restrictions.
+  mapTiles.street=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
+    maxZoom:19,maxNativeZoom:19,referrerPolicy:"strict-origin-when-cross-origin",
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
+  });
+  mapTiles.satellite=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{
+    maxZoom:19,maxNativeZoom:19,attribution:"Tiles &copy; Esri and data providers"
+  });
+  // OSM may return a 403 warning *as an image* with HTTP 200. Start with
+  // satellite imagery so a rejected OSM tile does not obstruct planning.
+  mapTile=mapTiles.satellite.addTo(map);
+  $("map-layer").value="satellite";
+  mapTiles.street.on("tileerror",()=>{
+    if(mapTile!==mapTiles.street)return;
+    streetTileErrors++;
+    if(streetTileErrors>=2){
+      setMapLayer("satellite");
+      mapWarning("Straßenkarten-Kacheln nicht verfügbar. Automatisch zur Satellitenkarte gewechselt. Bei einer OSM-403-Sperrbildkachel bitte manuell Satellit auswählen.");
+    }
+  });
+  mapTiles.satellite.on("tileerror",()=>{
+    if(mapTile===mapTiles.satellite)
+      mapWarning("Satellitenbilder derzeit nicht abrufbar. Kartenanbieter/Internetverbindung prüfen; geplante Wegpunkte bleiben erhalten.");
+  });
   waypointsLayer=L.layerGroup().addTo(map);deviceLayer=L.layerGroup().addTo(map);
   map.on("click",event=>{
     if(!addMode)return;
@@ -251,6 +279,27 @@ function getMap(){
     mission.waypoints.push({latitude:lat,longitude:lon,take_photo:false});
     selected=mission.waypoints.length-1;redraw();
   });
+}
+function mapWarning(text){
+  const banner=$("map-info");
+  banner.textContent=text;
+  banner.classList.add("warning");
+}
+function setMapLayer(kind){
+  if(!map||!mapTiles[kind])return;
+  if(mapTile)map.removeLayer(mapTile);
+  streetTileErrors=0;
+  mapTile=mapTiles[kind].addTo(map);
+  $("map-layer").value=kind;
+  const banner=$("map-info");
+  banner.classList.remove("warning");
+  banner.textContent=kind==="satellite"
+    ?"Startpunkt: 76694 Forst (Baden) · Satellitenbilder © Esri und Datenanbieter. Es werden ausschließlich sichtbare Kartenkacheln geladen."
+    :"Startpunkt: 76694 Forst (Baden) · Straßenkarte © OpenStreetMap-Mitwirkende. Nur die Seitenherkunft wird an den Kartenserver übertragen.";
+}
+function centerOnForst(){
+  if(!map)return;
+  map.setView([HOME_VIEW.latitude,HOME_VIEW.longitude],HOME_VIEW.zoom);
 }
 function waypointIcon(n,active){
   return L.divIcon({className:"",html:'<div class="way-marker'+(active?' selected':'')+'">'+(n+1)+'</div>',iconSize:[28,28],iconAnchor:[14,14]});
@@ -480,7 +529,8 @@ function wire(){
   });
   $("fit-mission").addEventListener("click",fitMission);$("map-fit").addEventListener("click",fitMission);
   $("map-zoom-in").addEventListener("click",()=>map?.zoomIn());$("map-zoom-out").addEventListener("click",()=>map?.zoomOut());
-  $("map-layer").addEventListener("change",e=>{if(!map)return;if(mapTile)map.removeLayer(mapTile);mapTile=mapTiles[e.target.value].addTo(map);});
+  $("map-layer").addEventListener("change",e=>setMapLayer(e.target.value));
+  $("map-home").addEventListener("click",centerOnForst);
   $("apply-point").addEventListener("click",()=>{
     const p=mission.waypoints[selected];if(!p)return;
     const lat=Number($("point-lat").value),lon=Number($("point-lon").value);
