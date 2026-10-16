@@ -212,18 +212,82 @@ async function downloadTrack(project,task,name){
     document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }catch(e){if(epoch===sessionEpoch)byId("catalog-info").textContent="Flugspur nicht verf\u00fcgbar ("+e.message+").";}
 }
+
+function catalogTag(card,label,value){
+  if(value===null||value===undefined||value==="")return;
+  const tags=card.querySelector(".catalog-tags");
+  cardEl(tags,"span","catalog-tag",label?label+": "+value:value);
+}
+function catalogCard(parent,title,project){
+  const card=cardEl(parent,"article","catalog-card");
+  cardEl(card,"h4","",title||"Ohne Namen");
+  cardEl(card,"div","catalog-meta","Projekt: "+project);
+  cardEl(card,"div","catalog-tags");
+  return card;
+}
+function catalogEmpty(parent,text){
+  cardEl(parent,"div","device-empty",text);
+}
+function renderCatalogCards(project,cards,counts){
+  const pname=project.name||project.project_id||"Unbekanntes Projekt";
+  for(const [kind,title] of [["waylines","Routen"],["models","Karten-Modelle"],["tasks","Flugaufträge"]]){
+    if(project[kind]===null){
+      catalogEmpty(cards[kind],pname+": "+title+" nicht abrufbar");
+      continue;
+    }
+    if(!Array.isArray(project[kind]))throw new Error("Ungültige Bibliotheksdaten");
+    counts[kind]+=project[kind].length;
+  }
+  for(const wayline of project.waylines||[]){
+    const card=catalogCard(cards.waylines,wayline.name,pname);
+    catalogTag(card,"Typ",(wayline.template_types||[]).map(t=>templateNames[t]||t).join(", "));
+    catalogTag(card,"Fluggerät",modelNames[wayline.device_model_key]||wayline.device_model_key);
+    catalogTag(card,"Linsen",(wayline.lenses||[]).join(", ").toUpperCase());
+    catalogTag(card,"Geändert",date(wayline.updated_at));
+    catalogTag(card,"Größe",size(wayline.size_bytes));
+  }
+  for(const model of project.models||[]){
+    const card=catalogCard(cards.models,model.name,pname);
+    catalogTag(card,"Typ",model.file_type==="model_3d"?"3D":model.file_type==="model_2d"?"2D":model.file_type);
+    catalogTag(card,"Kartenanzeige",model.show_on_map?"Ja":"Nein");
+    catalogTag(card,"Geändert",model.updated_at_ms?date(Math.floor(model.updated_at_ms/1000)):null);
+    catalogTag(card,"Größe",size(model.size_bytes));
+  }
+  for(const task of project.tasks||[]){
+    const card=catalogCard(cards.tasks,task.name,pname);
+    catalogTag(card,"Art",taskTypes[task.task_type]||task.task_type);
+    catalogTag(card,"Status",taskStates[task.status]||task.status);
+    catalogTag(card,"Gestartet",task.run_at);
+    if(task.total_waypoints!==null&&task.total_waypoints!==undefined){
+      catalogTag(card,"Wegpunkte",(task.current_waypoint_index??0)+"/"+task.total_waypoints);
+    }
+    if(task.exceptions)catalogTag(card,"Auftragsmeldungen",task.exceptions);
+    if(task.uuid){
+      const button=cardEl(card,"button","","Flugspur als GeoJSON");
+      button.type="button";
+      button.addEventListener("click",()=>downloadTrack(project.project_id,task.uuid,task.name));
+    }
+  }
+}
+
 async function updateCatalog() {
   if(!accessToken)return;
   const token=accessToken,epoch=sessionEpoch,request=++catalogRequest;
   const lists={waylines:byId("waylines"),models:byId("models"),tasks:byId("tasks")};
+  const cards={waylines:byId("wayline-cards"),models:byId("model-cards"),tasks:byId("task-cards")};
   try{
     const r=await fetch("/api/v1/flighthub/catalog",{cache:"no-store",headers:{"Authorization":"Bearer "+token}});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();
     if(epoch!==sessionEpoch||request!==catalogRequest)return;
+    if(!Array.isArray(data.projects))throw new Error("Ungültige Bibliotheksantwort");
     Object.values(lists).forEach(b=>b.replaceChildren());
+    Object.values(cards).forEach(b=>b.replaceChildren());
+    const counts={waylines:0,models:0,tasks:0};
+    byId("catalog-panel").hidden=false;
     for(const p of data.projects){
       const pname=p.name||p.project_id;
+      renderCatalogCards(p,cards,counts);
       if(p.waylines===null)placeholder(lists.waylines,7,pname+": nicht lesbar");
       for(const w of p.waylines||[])rowOf(lists.waylines,[pname,w.name,(w.template_types||[]).map(t=>templateNames[t]||t).join(", "),
         modelNames[w.device_model_key]||w.device_model_key,(w.lenses||[]).join(", ").toUpperCase(),date(w.updated_at),size(w.size_bytes)]);
@@ -238,11 +302,25 @@ async function updateCatalog() {
         b.addEventListener("click",()=>downloadTrack(p.project_id,t.uuid,t.name));td.appendChild(b);row.appendChild(td);
       }
     }
-    for(const [key,b] of Object.entries(lists))if(!b.children.length)placeholder(b,7,key==="tasks"?
-      "Keine Flugauftr\u00e4ge in den letzten "+((data.projects[0]||{}).task_window_days||30)+" Tagen":"Keine Eintr\u00e4ge");
+    for(const [key,b] of Object.entries(lists)){
+      if(!b.children.length)placeholder(b,key==="models"?6:7,key==="tasks"?
+        "Keine Flugauftr\u00e4ge in den letzten "+((data.projects[0]||{}).task_window_days||30)+" Tagen":"Keine Eintr\u00e4ge");
+      if(!cards[key].children.length)catalogEmpty(cards[key],key==="tasks"?
+        "Keine Flugauftr\u00e4ge in den letzten "+((data.projects[0]||{}).task_window_days||30)+" Tagen":"Keine Eintr\u00e4ge");
+    }
+    byId("wayline-count").textContent=counts.waylines;
+    byId("model-count").textContent=counts.models;
+    byId("task-count").textContent=counts.tasks;
     byId("catalog-info").textContent=data.updated_at?"Stand: "+data.updated_at+" (Aktualisierung alle paar Minuten)":
       "Noch nicht geladen (FlightHub-Polling aus oder erster Abruf l\u00e4uft).";
-  }catch(e){if(epoch===sessionEpoch&&request===catalogRequest)byId("catalog-info").textContent="Bibliothek nicht verf\u00fcgbar ("+e.message+").";}
+  }catch(e){
+    if(epoch!==sessionEpoch||request!==catalogRequest)return;
+    Object.values(lists).forEach(b=>b.replaceChildren());
+    Object.values(cards).forEach(b=>b.replaceChildren());
+    byId("catalog-panel").hidden=true;
+    byId("catalog-info").textContent="Bibliothek nicht verf\u00fcgbar ("+e.message+").";
+    byId("message").textContent="Bibliothek nicht verfügbar ("+e.message+").";
+  }
 }
 
 function cardEl(parent,tag,className,text) {
@@ -430,7 +508,9 @@ byId("connect").addEventListener("click",()=>{
 byId("disconnect").addEventListener("click",()=>{
   sessionEpoch++;accessToken="";byId("token").value="";byId("devices").replaceChildren();
   byId("device-cards").replaceChildren();
-  ["waylines","models","tasks"].forEach(id=>byId(id).replaceChildren());
+  ["waylines","models","tasks","wayline-cards","model-cards","task-cards"].forEach(id=>byId(id).replaceChildren());
+  byId("catalog-panel").hidden=true;
+  ["wayline-count","model-count","task-count"].forEach(id=>byId(id).textContent="–");
   byId("device-info").textContent="Details getrennt.";byId("catalog-info").textContent="Bibliothek getrennt.";byId("message").textContent="Getrennt";
 });
 updateSummary();
