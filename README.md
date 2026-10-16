@@ -21,8 +21,10 @@ height, horizontal/vertical speed, flight times and satellite counts.
 Provider wire formats are converted to strict validated models. The code
 uses allowlisted HTTPS GET operations against the documented endpoints.
 
-**Important:** unit tests use mock DJI responses. A real FlightHub session
-has not yet been verified in this project.
+**Important:** unit tests use mock DJI responses. A live FlightHub 2 EU
+session with a Matrice 4T has also been validated separately; RC Plus 2 did
+not appear as a distinct FlightHub device. See
+[confirmed project status](docs/PROJECT_STATUS.md) for the precise scope.
 
 The DJI Cloud API live feed (phase 9) subscribes read-only to the OSD
 telemetry that DJI Pilot 2 pushes to the AeroNexus MQTT broker:
@@ -80,11 +82,18 @@ online. Configure with `AERONEXUS_STATUS_STALE_AFTER_SECONDS` and
 DJI device event time.
 
 Full setup: [Phase 8.7 status dashboard](docs/phase-8-7-fleet-status.md).
+The mobile-first [Phase 11 device diagnostics](docs/phase-11-dashboard-diagnostics.md)
+adds aircraft status cards, battery bars, GPS/RTK/flight-state diagnostics,
+received-data age, HMS notifications and a visible last-successful-sync status.
+These use the existing authenticated local API; the detailed legacy table and
+FlightHub library remain available. The browser clears protected information
+on disconnect, including results from late requests.
 
 ## Running on the Pi (systemd + HTTPS)
 
 `deploy/pi/` contains a local-CA certificate script, a launcher that refuses
-plain HTTP on LAN addresses, and a systemd user service. See
+plain HTTP on LAN addresses, and a systemd user service. Live LAN usage is
+via `https://192.168.178.63:8000/status` with the installed local CA. See
 [Running on the Raspberry Pi](docs/deploy-pi.md).
 
 ## DJI manual diagnostics
