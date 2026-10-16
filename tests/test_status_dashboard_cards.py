@@ -1,7 +1,7 @@
 """Regression checks for the read-only, mobile-first FlightHub dashboard.
 
-The page is a static shell: confidential telemetry must come exclusively from
-the authenticated device endpoint, never from anonymous HTML or summary data.
+The page is a static shell: confidential telemetry comes from the separately guarded local device API,
+never embedded in the static HTML or anonymous summary.
 """
 from fastapi.testclient import TestClient
 
@@ -42,12 +42,17 @@ def test_device_content_is_inserted_as_text_not_html():
     assert "localStorage" not in page[page.index("<script>"):]
 
 
-def test_disconnect_invalidates_inflight_api_and_track_requests():
+def test_no_token_form_and_automatic_protected_api_refresh():
     page = render_page(30)
-    assert "sessionEpoch++" in page
+    assert 'id="token"' not in page
+    assert 'id="connect"' not in page
+    assert 'id="disconnect"' not in page
+    assert "Authorization" not in page
+    assert "Bearer " not in page
+    assert "updateDevices();" in page
+    assert "updateCatalog();" in page
     assert "epoch!==sessionEpoch||request!==devicesRequest" in page
     assert "epoch!==sessionEpoch||request!==catalogRequest" in page
-    assert "if(epoch!==sessionEpoch)return; // disconnect" in page
     assert 'byId("device-cards").replaceChildren();' in page
 
 
