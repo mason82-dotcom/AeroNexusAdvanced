@@ -1,6 +1,6 @@
-"""DJI Cloud API OSD normalization (Pilot 2 -> MQTT broker), read-only.
+"""DJI Cloud API OSD/state telemetry normalization (Pilot 2 -> MQTT), read-only.
 
-Topic: thing/product/{device_sn}/osd. With DJI Pilot 2 the remote controller
+Topics: thing/product/{device_sn}/osd and optional /state. With DJI Pilot 2 the remote controller
 (gateway) publishes its own OSD under its serial number and forwards the
 aircraft OSD under the aircraft serial number.
 
@@ -25,19 +25,29 @@ class CloudOsdError(ValueError):
 
 
 OSD_TOPIC = "thing/product/+/osd"
+STATE_TOPIC = "thing/product/+/state"
 MAX_PAYLOAD_BYTES = 65536
-_TOPIC = re.compile(r"thing/product/([A-Za-z0-9_-]{1,80})/osd\Z")
+_TOPIC = re.compile(r"thing/product/([A-Za-z0-9_-]{1,80})/(osd|state)\\Z")
 _AIRCRAFT_KEYS = frozenset({"mode_code", "elevation", "position_state", "home_distance",
                             "horizontal_speed", "total_flight_sorties"})
 _CONTROLLER_KEYS = frozenset({"capacity_percent", "wireless_link",
                               "transmission_signal_quality"})
 
 
-def topic_serial(topic: str) -> str:
+def topic_device(topic: str) -> tuple[str, str]:
+    """Return serial and channel; never accept commands, wildcards or topology."""
     match = _TOPIC.fullmatch(topic) if isinstance(topic, str) else None
     if match is None:
+        raise CloudOsdError("Not an approved DJI telemetry topic")
+    return match.group(1), match.group(2)
+
+
+def topic_serial(topic: str) -> str:
+    """Legacy OSD-only helper; state subscriptions require explicit opt-in."""
+    serial, channel = topic_device(topic)
+    if channel != "osd":
         raise CloudOsdError("Not a DJI OSD topic")
-    return match.group(1)
+    return serial
 
 
 def osd_data(payload: bytes) -> Mapping:
@@ -103,6 +113,13 @@ def _put(fields: dict, source: Mapping, key: str, target: str, convert=_number) 
         fields[target] = convert(source[key])
 
 
+def _rtk_code(value) -> int | str | None:
+    """DJI versions use integer or bounded snake_case string RTK enums."""
+    if isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,47}", value):
+        return value
+    return _count(value)
+
+
 def normalize_osd(kind: DeviceType, data: Mapping) -> dict:
     """Map present OSD properties to canonical telemetry field names."""
     if not isinstance(data, Mapping):
@@ -129,7 +146,7 @@ def normalize_osd(kind: DeviceType, data: Mapping) -> dict:
     _put(fields, position, "gps_number", "gps_satellites", _count)
     _put(fields, position, "rtk_number", "rtk_satellites", _count)
     if "is_fixed" in position:
-        raw = _count(position["is_fixed"])
+        raw = _rtk_code(position["is_fixed"])
         # Raw DJI code, same labelling as the FlightHub reader; not a fix claim.
         fields["rtk_state"] = None if raw is None else f"is_fixed:{raw}"
     battery = _branch(data, "battery")
