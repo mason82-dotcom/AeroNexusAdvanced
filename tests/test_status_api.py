@@ -120,6 +120,21 @@ def test_invalid_filters(api, monkeypatch, suffix):
     assert res.status_code == 422
 
 
+def test_root_redirects_to_secure_dashboard_path(api):
+    """The base URL must not show a FastAPI 404 on phones."""
+    result = api.get("/", follow_redirects=False)
+    assert result.status_code == 307
+    assert result.headers["location"] == "/status"
+    assert result.headers["cache-control"] == "no-store"
+    assert result.headers["x-content-type-options"] == "nosniff"
+    assert result.headers["referrer-policy"] == "no-referrer"
+    assert "http://" not in result.headers["location"]
+    page = api.get("/")
+    assert page.status_code == 200
+    assert "AeroNexusAdvanced" in page.text
+    assert "ABC123" not in page.text
+
+
 def test_page_auto_refresh_and_not_expose_identifiers(api):
     res = api.get("/status")
     assert res.status_code == 200
