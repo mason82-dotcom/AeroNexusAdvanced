@@ -1,0 +1,30 @@
+# Build-only overlay for the already migrated, patched DJI Pilot 2 Vue web UI.
+# Use EXPLICITLY with -f compose.core.yaml -f compose.brand.yaml.
+# Only "control" gains a build context and a NEW tagged image.
+# No service starts while building; old aeronexus/control:local is the rollback.
+# Build arguments mirror those of the original, operational AeroNexus edge control.
+services:
+  control:
+    image: aeronexusadvanced/control:branded
+    build:
+      context: ./runtime/upstream/web
+      dockerfile: Dockerfile
+      args:
+        VITE_DJI_APP_ID: ${DJI_APP_ID:?required}
+        VITE_DJI_APP_KEY: ${DJI_APP_KEY:?required}
+        VITE_DJI_APP_LICENSE: ${DJI_APP_LICENSE:?required}
+        VITE_BASE_URL: http://${SERVER_HOST:?required}:6789/
+        VITE_WS_URL: ws://${SERVER_HOST:?required}:6789/api/v1/ws
+        VITE_MAPPING_URL: http://${SERVER_HOST:?required}:6790/
+        VITE_FARMING_URL: http://${SERVER_HOST:?required}:6791/
+        VITE_PV_URL: http://${SERVER_HOST:?required}:6792/
+        VITE_RTMP_URL: rtmp://${SERVER_HOST:?required}:1935/live/
+        VITE_WHEP_BASE: http://${SERVER_HOST:?required}:8889/
+        VITE_HLS_BASE: http://${SERVER_HOST:?required}:8888/
+        VITE_RTSP_USER: ${RTSP_USER:?required}
+        VITE_RTSP_PASSWORD: ${RTSP_PASSWORD:?required}
+        VITE_MAP_CENTER: ${MAP_CENTER:?required}
+        VITE_MAP_ZOOM: ${MAP_ZOOM:?required}
+        VITE_MAP_TILE_URL: ${MAP_TILE_URL:?required}
+        VITE_MAP_PMTILES_URL: ${MAP_PMTILES_URL:-}
+        VITE_MAP_ORTHO_PMTILES_URL: ${MAP_ORTHO_PMTILES_URL:-}
