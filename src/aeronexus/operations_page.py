@@ -289,12 +289,16 @@ function renderDevices(){
   if(!relevant.length){add(body,"div","note","Für dieses Projekt werden noch keine Fluggeräte übermittelt.");return;}
   for(const d of relevant){
     if(d.kind!=="aircraft"&&d.kind!=="controller")continue;
-    const card=add(body,"div","list-card clickable"+(d.device_id===currentDevice?" active":""));
+    const selectable=d.kind==="aircraft";
+    const card=add(body,"div","list-card"+(selectable?" clickable":"")+
+      (selectable&&d.device_id===currentDevice?" active":""));
     add(card,"b","",d.name||"Unbenanntes Gerät");
     add(card,"small","",d.kind==="aircraft"?"Drohne":"Fernsteuerung");
     const state=d.freshness==="fresh"?(d.online===true?"Online":"Offline"):"Nicht aktuell";
     add(card,"span","badge "+(state==="Online"?"good":"warn"),state);
-    card.addEventListener("click",()=>{currentDevice=d.device_id;renderCockpit();renderDevices();});
+    if(selectable)card.addEventListener("click",()=>{
+      currentDevice=d.device_id;renderCockpit();renderDevices();
+    });
   }
 }
 function metric(parent,title,value){
@@ -330,7 +334,8 @@ function renderCockpit(){
     add(body,"div","badge "+(t.battery_percent<=30?"warn":"good"),formatNumber(t.battery_percent,0,"%"));
   }
   const grid=add(body,"div","cockpit");
-  const modes={0:"Manuell",1:"GPS",2:"Position",3:"Sport"};
+  const modes={0:"Standby",1:"Startvorbereitung",2:"Startbereit",3:"Manueller Flug",
+    4:"Automatischer Start",5:"Routenflug",9:"Rückkehr (RTH)",10:"Automatische Landung"};
   metric(grid,"Flugmodus",t.flight_mode_code==null?"–":(modes[t.flight_mode_code]||"DJI-Code "+t.flight_mode_code));
   metric(grid,"Höhe über Start",formatNumber(t.elevation_m,1,"m"));
   metric(grid,"Absolute Höhe",formatNumber(t.height_m,1,"m"));
@@ -457,29 +462,48 @@ async function refreshAll(){
   refreshing=true;
   const generation=++refreshCount;
   try{
-    const [fleet,library,local,summary]=await Promise.all([
+    // Keep cockpit usable even if FlightHub catalog or local workspace fails.
+    // Reading is local only; the browser never queries DJI directly.
+    const [fleetResult,libraryResult,localResult,summaryResult]=await Promise.allSettled([
       getJSON("/api/v1/status/devices?limit=200"),
       getJSON("/api/v1/flighthub/catalog"),
       getJSON("/api/v1/studio/missions"),
       getJSON("/api/v1/status/summary")
     ]);
     if(generation!==refreshCount||stopped)return;
-    devices=Array.isArray(fleet.devices)?fleet.devices:[];
-    projects=Array.isArray(library.projects)?library.projects:[];
-    missionList=Array.isArray(local.missions)?local.missions:[];
+    const errors=[];
+    if(fleetResult.status==="fulfilled"){
+      const fleet=fleetResult.value;
+      devices=Array.isArray(fleet.devices)?fleet.devices:[];
+      if(fleet.total>devices.length)errors.push(
+        "Geräteliste auf 200 Einträge begrenzt");
+    }else{errors.push("Gerätedaten nicht verfügbar");}
+    if(libraryResult.status==="fulfilled"){
+      const library=libraryResult.value;
+      projects=Array.isArray(library.projects)?library.projects:[];
+      message("catalog-info","Stand: "+text(library.updated_at)+" · lokaler schreibgeschützter Cache");
+    }else{
+      errors.push("FlightHub-Bibliothek nicht verfügbar");
+      message("catalog-info","FlightHub-Katalog derzeit nicht erreichbar.");
+    }
+    if(localResult.status==="fulfilled"){
+      const local=localResult.value;
+      missionList=Array.isArray(local.missions)?local.missions:[];
+    }else{errors.push("Lokale Missionsablage nicht verfügbar");}
     const before=currentProject;
     renderProjects();
     if(before&&!projects.some(p=>p.project_id===before)&&!devices.some(d=>d.project_id===before))
       currentProject="";
     renderSummary();renderDevices();renderCockpit();renderCatalog();renderTracks();
-    renderSavedMissions();
-    repaintDeviceLayer();
-    message("project-sync",receiveUpdatedAt(summary));
-    message("catalog-info","Stand: "+text(library.updated_at)+" · Nur gelesener lokaler Cache");
-    message("connection","LAN-Verbindung aktiv · letzte Anzeige "+new Date().toLocaleTimeString("de-DE"));
+    renderSavedMissions();repaintDeviceLayer();
+    message("project-sync",summaryResult.status==="fulfilled"?
+      receiveUpdatedAt(summaryResult.value):"Synchronisierungsstatus nicht verfügbar");
+    if(summaryResult.status!=="fulfilled")errors.push("Statusübersicht nicht verfügbar");
+    message("connection",errors.length?
+      "Teilweise verfügbar · "+errors.join(" · "):
+      "LAN-Verbindung aktiv · "+new Date().toLocaleTimeString("de-DE"));
   }catch(err){
-    message("connection","Datenabruf fehlgeschlagen: "+err.message);
-    message("project-sync","Schnittstelle konnte nicht abgefragt werden. Browser und Pi prüfen.");
+    message("connection","Darstellungsfehler: "+err.message);
   }finally{refreshing=false;}
 }
 function wire(){
