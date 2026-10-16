@@ -1,7 +1,7 @@
 """Phase 12: mobile library and honest HMS presentation.
 
 The HTML is a static shell. Provider text must only arrive through the
-authenticated read-only APIs and be inserted as text, not interpreted as HTML.
+LAN-restricted read-only APIs and be inserted as text, not interpreted as HTML.
 """
 from html.parser import HTMLParser
 
@@ -53,14 +53,16 @@ def test_catalog_cards_preserve_read_only_metadata_and_on_demand_tracks():
     assert 'button.addEventListener("click",()=>downloadTrack(' in page
 
 
-def test_disconnect_hides_library_and_rejects_late_fetches():
+def test_lan_catalog_auto_load_and_ignores_superseded_fetches():
     page = render_page(5)
     assert "epoch!==sessionEpoch||request!==catalogRequest" in page
     assert "epoch!==sessionEpoch||request!==devicesRequest" in page
-    assert 'byId("catalog-panel").hidden=true' in page
+    assert 'byId("catalog-panel").hidden=false' in page
+    assert "updateCatalog();" in page
+    assert "updateDevices();" in page
+    assert 'id="token"' not in page
     for resource in ("wayline-cards", "model-cards", "task-cards"):
         assert f'"{resource}"' in page
-    assert "if(epoch!==sessionEpoch)return; // disconnect" in page
 
 
 def test_hms_unknown_code_has_no_fabricated_diagnosis():
