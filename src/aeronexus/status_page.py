@@ -32,6 +32,34 @@ td,th{padding:13px 11px;border-bottom:1px solid #30435a;vertical-align:top}
 code,pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#c9d8e8}
 details{max-width:350px}details summary{cursor:pointer}
 footer{margin:22px 0;color:#9fb3ca;font-size:12px}
+
+.device-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:14px;margin:15px 0 22px}
+.device-card{min-width:0;border:1px solid #39536f;border-radius:14px;background:#102034;padding:17px}
+.device-card .device-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.device-card h3{font-size:17px;margin:0;color:#eaf3ff;overflow-wrap:anywhere}
+.device-id{display:block;overflow-wrap:anywhere;font-size:11px;margin-top:6px;color:#9eb6cf}
+.device-tag{display:inline-block;border-radius:20px;border:1px solid #54718f;padding:5px 9px;font-size:12px;flex-shrink:0}
+.device-tag[data-tone="good"]{color:#8bdfbb;border-color:#306b58}
+.device-tag[data-tone="bad"]{color:#ffadac;border-color:#98515a}
+.device-tag[data-tone="warn"]{color:#ffcd7b;border-color:#80623b}
+.device-meta{color:#b5c8dd;font-size:12px;margin:10px 0 14px;overflow-wrap:anywhere}
+.device-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.device-value{border:1px solid #31465e;border-radius:8px;padding:9px;min-width:0}
+.device-value span{display:block;color:#b1c4d9;font-size:11px}
+.device-value b{font-size:14px;overflow-wrap:anywhere;display:block;margin-top:4px;font-weight:600}
+.device-battery{margin:12px 0}
+.device-battery .battery-label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.device-battery progress{display:block;width:100%;height:10px;accent-color:#5ac69c}
+.device-battery progress.low{accent-color:#ef9e68}
+.device-alerts{margin-top:13px;border-top:1px solid #31465e;padding-top:10px}
+.device-alerts ul{padding-left:18px;margin:8px 0 0}
+.device-alerts li{font-size:12px;line-height:1.5;margin:5px 0;overflow-wrap:anywhere}
+.device-alerts li.warning{color:#ffadac}
+.device-alerts li.reminder{color:#ffcd7b}
+.device-empty{padding:16px;border:1px dashed #49627e;border-radius:10px;color:#abc0d5}
+.raw-table>summary{cursor:pointer;color:#bbd4ed;font-size:14px;margin:8px 0}
+#poll-health{margin-top:12px}
+@media(max-width:650px){body{padding:12px}.panel{padding:14px;margin:14px 0}.grid{gap:8px}.metric{padding:12px}.metric b{font-size:22px}.controls input{width:100%}}
 </style>
 </head>
 <body>
@@ -43,6 +71,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <span id="timestamp">Noch keine Daten</span><br>
 <span id="feed">Live-Feed: –</span></div>
 </header>
+<div class="meta" id="poll-health" role="status">FlightHub-Synchronisierung noch nicht ermittelt.</div>
 <section class="grid" aria-label="Flottenkennzahlen">
 <div class="metric"><span>Geräte gesamt</span><b id="total">–</b></div>
 <div class="metric"><span>Drohnen</span><b id="aircraft">–</b></div>
@@ -65,12 +94,15 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <section class="panel">
 <h2>Geräte und Telemetrie</h2>
 <div class="subtle" id="device-info">Es werden ausschließlich freigegebene, authentifizierte Gerätedaten angezeigt.</div>
+<div id="device-cards" class="device-grid" aria-label="Gerätekarten"><div class="device-empty">Zum Laden der Gerätekarten mit dem Status-Token verbinden.</div></div>
+<details class="raw-table"><summary>Technische Gerätetabelle anzeigen</summary>
 <div class="scroller">
 <table>
 <thead><tr><th>Provider / Projekt</th><th>Gerät</th><th>Typ</th><th>Frische</th><th>Empfangen (UTC)</th><th>Online</th><th>Kurzwerte</th><th>Zustand (HMS)</th><th>Messwerte</th></tr></thead>
 <tbody id="devices"></tbody>
 </table>
 </div>
+</details>
 </section>
 <section class="panel">
 <h2>FlightHub-Bibliothek</h2>
@@ -88,6 +120,9 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 "use strict";
 const intervalMs = __INTERVAL_MILLISECONDS__;
 let accessToken = "";
+let sessionEpoch=0;
+let devicesRequest=0;
+let catalogRequest=0;
 const byId = id => document.getElementById(id);
 const asText = value => value === null || value === undefined ? "–" : String(value);
 function cell(row, value) { const el=document.createElement("td");el.textContent=asText(value);row.appendChild(el);return el; }
@@ -138,11 +173,13 @@ async function downloadTrack(project,task,name){
 }
 async function updateCatalog() {
   if(!accessToken)return;
+  const token=accessToken,epoch=sessionEpoch,request=++catalogRequest;
   const lists={waylines:byId("waylines"),models:byId("models"),tasks:byId("tasks")};
   try{
-    const r=await fetch("/api/v1/flighthub/catalog",{cache:"no-store",headers:{"Authorization":"Bearer "+accessToken}});
+    const r=await fetch("/api/v1/flighthub/catalog",{cache:"no-store",headers:{"Authorization":"Bearer "+token}});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();
+    if(epoch!==sessionEpoch||request!==catalogRequest)return;
     Object.values(lists).forEach(b=>b.replaceChildren());
     for(const p of data.projects){
       const pname=p.name||p.project_id;
@@ -164,8 +201,110 @@ async function updateCatalog() {
       "Keine Flugauftr\u00e4ge in den letzten "+((data.projects[0]||{}).task_window_days||30)+" Tagen":"Keine Eintr\u00e4ge");
     byId("catalog-info").textContent=data.updated_at?"Stand: "+data.updated_at+" (Aktualisierung alle paar Minuten)":
       "Noch nicht geladen (FlightHub-Polling aus oder erster Abruf l\u00e4uft).";
-  }catch(e){byId("catalog-info").textContent="Bibliothek nicht verf\u00fcgbar ("+e.message+").";}
+  }catch(e){if(epoch===sessionEpoch&&request===catalogRequest)byId("catalog-info").textContent="Bibliothek nicht verf\u00fcgbar ("+e.message+").";}
 }
+
+function cardEl(parent,tag,className,text) {
+  const el=document.createElement(tag);
+  if(className)el.className=className;
+  if(text!==undefined&&text!==null)el.textContent=String(text);
+  parent.appendChild(el);
+  return el;
+}
+function cardValue(body,label,value) {
+  if(value===null||value===undefined)return;
+  const item=cardEl(body,"div","device-value");
+  cardEl(item,"span","",label);
+  cardEl(item,"b","",value);
+}
+function safeNumber(value,digits,unit) {
+  return typeof value==="number"&&Number.isFinite(value)
+    ?value.toFixed(digits)+(unit?" "+unit:""):null;
+}
+function rtkText(raw) {
+  if(!raw)return null;
+  const codes={
+    "is_fixed:fixing_successful":"Fix erfolgreich",
+    "is_fixed:not_started":"Nicht gestartet",
+    "is_fixed:fixing":"Fix läuft",
+    "is_fixed:fixing_failed":"Fix fehlgeschlagen"
+  };
+  return codes[raw]||raw;
+}
+function ageText(device) {
+  const age=device.age_seconds;
+  return typeof age==="number"&&Number.isFinite(age)&&age>=0
+    ?"vor "+Math.floor(age)+" s empfangen"
+    :"Empfangsalter unbekannt";
+}
+function renderDeviceCards(devices) {
+  const body=byId("device-cards");body.replaceChildren();
+  if(!devices.length) {
+    cardEl(body,"div","device-empty","Keine Geräte vorhanden oder für diese Ansicht freigegeben.");
+    return;
+  }
+  for(const device of devices) {
+    const t=device.telemetry||{};
+    const card=cardEl(body,"article","device-card");
+    const header=cardEl(card,"div","device-head");
+    const name=cardEl(header,"div","");
+    cardEl(name,"h3","",device.name||"Unbenanntes Gerät");
+    cardEl(name,"code","device-id",device.device_id);
+    const tag=cardEl(header,"span","device-tag",statusLabel(device.freshness));
+    tag.dataset.tone=device.freshness==="fresh"?"good":
+      device.freshness==="stale"||device.freshness==="missing"?"warn":"bad";
+    const kind=device.kind==="aircraft"?"Drohne":device.kind==="controller"?"Fernsteuerung":device.kind;
+    const online=device.freshness!=="fresh"?"Online-Zustand nicht aktuell":
+      device.online===true?"Online":device.online===false?"Offline":"Online-Zustand unbekannt";
+    cardEl(card,"div","device-meta",kind+" · "+online+" · "+ageText(device));
+    const battery=t.battery_percent;
+    if(typeof battery==="number"&&Number.isFinite(battery)&&battery>=0&&battery<=100){
+      const wrap=cardEl(card,"div","device-battery");
+      const label=cardEl(wrap,"div","battery-label");
+      cardEl(label,"span","","Akku (letzter Messwert)");
+      cardEl(label,"b","",battery.toFixed(0)+" %");
+      const bar=cardEl(wrap,"progress",battery<=20?"low":"");
+      bar.max=100;bar.value=battery;
+      bar.setAttribute("aria-label","Akkustand "+battery.toFixed(0)+" Prozent");
+    }
+    const values=cardEl(card,"div","device-values");
+    const mode=t.flight_mode_code;
+    cardValue(values,"Flugmodus",mode===null||mode===undefined?null:flightModes[mode]||"Code "+mode);
+    cardValue(values,"Höhe über Start",safeNumber(t.elevation_m,1,"m"));
+    cardValue(values,"Absolute Höhe",safeNumber(t.height_m,1,"m"));
+    cardValue(values,"Horizontale Geschwindigkeit",safeNumber(t.horizontal_speed_mps,1,"m/s"));
+    cardValue(values,"Vertikale Geschwindigkeit",safeNumber(t.vertical_speed_mps,1,"m/s"));
+    cardValue(values,"Entfernung zum Start",safeNumber(t.home_distance_m,0,"m"));
+    cardValue(values,"GPS-Satelliten",t.gps_satellites);
+    cardValue(values,"RTK-Satelliten",t.rtk_satellites);
+    cardValue(values,"RTK-Status",rtkText(t.rtk_state));
+    cardValue(values,"Akkuspannung",typeof t.battery_voltage_mv==="number"&&
+      Number.isFinite(t.battery_voltage_mv)?(t.battery_voltage_mv/1000).toFixed(2)+" V":null);
+    cardValue(values,"Akkutemperatur",safeNumber(t.battery_temperature_c,1,"°C"));
+    cardValue(values,"Flugzeit gesamt",typeof t.total_flight_time_s==="number"&&
+      Number.isFinite(t.total_flight_time_s)?(t.total_flight_time_s/3600).toFixed(1)+" h":null);
+    cardValue(values,"Starts gesamt",t.total_flight_sorties);
+    const lat=t.latitude,lon=t.longitude;
+    if(typeof lat==="number"&&typeof lon==="number"&&Number.isFinite(lat)&&Number.isFinite(lon)&&
+       Math.abs(lat)<=90&&Math.abs(lon)<=180&&(lat!==0||lon!==0)){
+      cardValue(values,"Position (GPS)",lat.toFixed(5)+", "+lon.toFixed(5));
+    }
+    if(!values.children.length)cardEl(card,"p","subtle","Noch keine Telemetriewerte verfügbar.");
+    const alerts=device.health||[];
+    if(alerts.length){
+      const section=cardEl(card,"div","device-alerts");
+      cardEl(section,"b","","HMS · "+alerts.length+" aktive Meldung(en)");
+      const list=cardEl(section,"ul","");
+      for(const alert of alerts.slice(0,5)){
+        const level=alert.level==="warning"?"Warnung":alert.level==="reminder"?"Hinweis":"Info";
+        cardEl(list,"li",alert.level==="warning"?"warning":alert.level==="reminder"?"reminder":"",
+          level+": "+(alert.message||alert.code||"Ohne Beschreibung"));
+      }
+      if(alerts.length>5)cardEl(section,"div","subtle","Weitere "+(alerts.length-5)+" Meldung(en) in der technischen Tabelle.");
+    }
+  }
+}
+
 function statusLabel(v) {
   return ({fresh:"Aktuell",stale:"Veraltet",missing:"Keine Daten",
            unknown_age:"Zeit unbekannt",clock_skew:"Uhrzeitfehler"})[v] || "Unbekannt";
@@ -185,19 +324,29 @@ async function updateSummary() {
     byId("timestamp").textContent="Letzter Aufruf: "+data.server_time+" · Polling: "+data.polling;
     const fh=data.flighthub||{};
     byId("timestamp").textContent+=" · FlightHub: "+({ok:"OK",error:"Fehler",unknown:"unbekannt"}[fh.system_status]||"unbekannt");
+    const pollState={disabled:"deaktiviert",running:"Abruf läuft",idle:"bereit",error:"letzter Abruf fehlgeschlagen",stopped:"gestoppt"};
+    const lastOk=data.last_refresh_success_at;
+    const since=lastOk?Math.max(0,Math.floor((Date.parse(data.server_time)-Date.parse(lastOk))/1000)):null;
+    byId("poll-health").textContent="DJI-Polling: "+(pollState[data.polling]||data.polling)+
+      " · Letzter erfolgreicher Abruf: "+(lastOk?lastOk+" ("+since+" s zurück)":"noch keiner")+
+      " · Grenzwert für veraltete Telemetrie: "+data.stale_after_seconds+" s";
+
     const feed=data.live_feed||{state:"disabled"};
     byId("feed").textContent="Live-Feed (DJI Cloud API): "+(feedStates[feed.state]||"unbekannt")+
       (feed.state==="disabled"?"":" · "+feed.accepted+" ok / "+feed.rejected+" verworfen");
-  } catch (_) {byId("timestamp").textContent="Status-API nicht erreichbar";}
+  } catch (_) {byId("timestamp").textContent="Status-API nicht erreichbar";byId("poll-health").textContent="DJI-Polling-Status nicht erreichbar";}
 }
 async function updateDevices() {
   if(!accessToken)return;
+  const token=accessToken,epoch=sessionEpoch,request=++devicesRequest;
   try {
     const r=await fetch("/api/v1/status/devices?limit=200",{
-      cache:"no-store",headers:{"Authorization":"Bearer "+accessToken}
+      cache:"no-store",headers:{"Authorization":"Bearer "+token}
     });
     if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();
+    if(epoch!==sessionEpoch||request!==devicesRequest)return;
+    renderDeviceCards(data.devices);
     const body=byId("devices");body.replaceChildren();
     for(const device of data.devices) {
       const row=document.createElement("tr");
@@ -225,7 +374,9 @@ async function updateDevices() {
       " angezeigt. Veraltete Daten ausdrücklich gekennzeichnet.";
     byId("message").textContent="Verbunden";
   } catch(e) {
+    if(epoch!==sessionEpoch||request!==devicesRequest)return;
     byId("devices").replaceChildren();
+    byId("device-cards").replaceChildren();
     byId("device-info").textContent="Keine Gerätedaten verfügbar.";
     byId("message").textContent="Details nicht verfügbar ("+e.message+").";
   }
@@ -233,12 +384,13 @@ async function updateDevices() {
 byId("connect").addEventListener("click",()=>{
   const token=byId("token").value;
   if(!token){byId("message").textContent="Bitte Status-Token eingeben.";return;}
-  accessToken=token;byId("token").value="";updateDevices();updateCatalog();
+  sessionEpoch++;accessToken=token;byId("token").value="";updateDevices();updateCatalog();
 });
 byId("disconnect").addEventListener("click",()=>{
-  accessToken="";byId("token").value="";byId("devices").replaceChildren();
+  sessionEpoch++;accessToken="";byId("token").value="";byId("devices").replaceChildren();
+  byId("device-cards").replaceChildren();
   ["waylines","models","tasks"].forEach(id=>byId(id).replaceChildren());
-  byId("device-info").textContent="Details getrennt.";byId("message").textContent="Getrennt";
+  byId("device-info").textContent="Details getrennt.";byId("catalog-info").textContent="Bibliothek getrennt.";byId("message").textContent="Getrennt";
 });
 updateSummary();
 setInterval(()=>{updateSummary();updateDevices();},intervalMs);
