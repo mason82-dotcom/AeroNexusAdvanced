@@ -3,6 +3,7 @@
 DJI Dock hardware is deliberately excluded from this project.
 """
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import StrEnum
 from .providers import DeviceSnapshot, ProviderKind
 
@@ -39,6 +40,7 @@ class Inventory:
     _projects: dict[tuple[ProviderKind, str], Project] = field(default_factory=dict, repr=False)
     _devices: dict[tuple[ProviderKind, str, str], Device] = field(default_factory=dict, repr=False)
     _telemetry: dict[tuple[ProviderKind, str, str], DeviceSnapshot] = field(default_factory=dict, repr=False)
+    _received_at: dict[tuple[ProviderKind, str, str], datetime] = field(default_factory=dict, repr=False)
 
     def add_project(self, project: Project) -> None:
         key = (project.provider, project.project_id)
@@ -59,6 +61,8 @@ class Inventory:
         if key not in self._devices:
             raise ValueError("Telemetry references unknown device")
         self._telemetry[key] = snapshot
+        # Receipt time at AeroNexus, not a DJI source/event timestamp.
+        self._received_at[key] = datetime.now(timezone.utc)
 
     def projects(self, provider: ProviderKind | None = None) -> tuple[Project, ...]:
         return tuple(p for p in self._projects.values() if provider is None or p.provider == provider)
@@ -70,3 +74,6 @@ class Inventory:
 
     def telemetry(self, provider: ProviderKind, project_id: str, device_id: str) -> DeviceSnapshot | None:
         return self._telemetry.get((provider, project_id, device_id))
+
+    def telemetry_received_at(self, provider: ProviderKind, project_id: str, device_id: str) -> datetime | None:
+        return self._received_at.get((provider, project_id, device_id))
