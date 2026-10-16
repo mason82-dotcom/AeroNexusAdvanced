@@ -111,6 +111,11 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <div class="kpi"><span>3D-Modelle</span><strong id="count-models">–</strong></div>
 </div>
 <div class="sub" id="project-sync">Synchronisierung läuft…</div>
+<div class="list-card" id="cloud-api-panel">
+<div class="eyebrow">DJI Cloud API 2</div>
+<div class="row between"><b>Zusätzlicher SDK-Datenkanal</b><span id="cloud-api-state" class="badge">Nicht konfiguriert</span></div>
+<div id="cloud-api-detail" class="sub">Schreibgeschützte Anbindung über eine separate Cloud-API-2-Serverinstanz. Keine direkte DJI-Cloud-Verbindung im Browser.</div>
+</div>
 <h3>Geräte im Projekt</h3><div class="scroll grow" id="project-devices"><div class="note">Lade Geräte…</div></div>
 </section>
 </div>
@@ -307,6 +312,9 @@ function renderDevices(){
       (selectable&&d.device_id===currentDevice?" active":""));
     add(card,"b","",d.name||"Unbenanntes Gerät");
     add(card,"small","",d.kind==="aircraft"?"Drohne":"Fernsteuerung");
+    add(card,"small","",d.provider==="dji-cloud-api-2"?
+      "DJI Cloud API 2 · SDK-BFF" :
+      d.provider==="dji-cloud-api"?"DJI Cloud API MQTT":"FlightHub 2 OpenAPI");
     const state=d.freshness==="fresh"?(d.online===true?"Online":"Offline"):"Nicht aktuell";
     add(card,"span","badge "+(state==="Online"?"good":"warn"),state);
     if(selectable)card.addEventListener("click",()=>{
@@ -349,10 +357,13 @@ function renderCockpit(){
   const grid=add(body,"div","cockpit");
   const modes={0:"Standby",1:"Startvorbereitung",2:"Startbereit",3:"Manueller Flug",
     4:"Automatischer Start",5:"Routenflug",9:"Rückkehr (RTH)",10:"Automatische Landung"};
-  metric(grid,"Flugmodus",t.flight_mode_code==null?"–":(modes[t.flight_mode_code]||"DJI-Code "+t.flight_mode_code));
+  metric(grid,"Flugmodus",t.flight_mode_label||
+    (t.flight_mode_code==null?"–":(modes[t.flight_mode_code]||"DJI-Code "+t.flight_mode_code)));
   metric(grid,"Höhe über Start",formatNumber(t.elevation_m,1,"m"));
   metric(grid,"Absolute Höhe",formatNumber(t.height_m,1,"m"));
   metric(grid,"Geschwindigkeit horizontal",formatNumber(t.horizontal_speed_mps,1,"m/s"));
+  if(finite(t.speed_mps))
+    metric(grid,"Geschwindigkeit (SDK)",formatNumber(t.speed_mps,1,"m/s"));
   metric(grid,"Geschwindigkeit vertikal",formatNumber(t.vertical_speed_mps,1,"m/s"));
   metric(grid,"Distanz zum Homepoint",formatNumber(t.home_distance_m,0,"m"));
   metric(grid,"Flugzeit gesamt",finite(t.total_flight_time_s)?
@@ -543,11 +554,12 @@ async function refreshAll(){
   try{
     // Keep cockpit usable even if FlightHub catalog or local workspace fails.
     // Reading is local only; the browser never queries DJI directly.
-    const [fleetResult,libraryResult,localResult,summaryResult]=await Promise.allSettled([
+    const [fleetResult,libraryResult,localResult,summaryResult,api2Result]=await Promise.allSettled([
       getJSON("/api/v1/status/devices?limit=200"),
       getJSON("/api/v1/flighthub/catalog"),
       getJSON("/api/v1/studio/missions"),
-      getJSON("/api/v1/status/summary")
+      getJSON("/api/v1/status/summary"),
+      getJSON("/api/v1/cloudapi2/devices")
     ]);
     if(generation!==refreshCount||stopped)return;
     const errors=[];
@@ -569,6 +581,33 @@ async function refreshAll(){
       const local=localResult.value;
       missionList=Array.isArray(local.missions)?local.missions:[];
     }else{errors.push("Lokale Missionsablage nicht verfügbar");}
+    if(api2Result.status==="fulfilled"){
+      const api2=api2Result.value;
+      const states={disabled:"Deaktiviert",waiting:"Wartet",ok:"Verbunden",unavailable:"Nicht erreichbar"};
+      message("cloud-api-state",states[api2.state]||"Unbekannt");
+      $("cloud-api-state").className="badge "+
+        (api2.state==="ok"?"good":api2.state==="disabled"?"":"warn");
+      message("cloud-api-detail",api2.state==="disabled"?
+        "Der separate Cloud-API-2-SDK-Server ist nicht konfiguriert. FlightHub 2 läuft unabhängig weiter.":
+        api2.state==="ok"?
+        "Quelle: DJI Cloud API 2 SDK-BFF · "+Number(api2.total||0)+" Fluggeräte · keine Dock-Daten.":
+        "SDK-Backend aktuell nicht erreichbar oder Authentifizierung fehlgeschlagen. Keine Flugdaten vorgetäuscht.");
+      if(api2.state==="ok"&&Array.isArray(api2.devices)){
+        // Separate providers share an aircraft serial; do not hide a second
+        // source as a phantom new aircraft. FlightHub remains authoritative
+        // if the same SN is already present, otherwise show the SDK source.
+        const existingIds=new Set(devices.filter(d=>d.kind==="aircraft").map(d=>d.device_id));
+        for(const drone of api2.devices.slice(0,50)){
+          if(drone.kind==="aircraft"&&!existingIds.has(drone.device_id)){
+            devices.push(drone);existingIds.add(drone.device_id);
+          }
+        }
+      }
+    }else{
+      message("cloud-api-state","Nicht erreichbar");
+      $("cloud-api-state").className="badge warn";
+      message("cloud-api-detail","Cloud-API-2-Schnittstelle nicht verfügbar; FlightHub läuft unabhängig weiter.");
+    }
     const before=currentProject;
     renderProjects();
     if(before&&!projects.some(p=>p.project_id===before)&&!devices.some(d=>d.project_id===before))
