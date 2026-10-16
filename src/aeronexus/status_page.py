@@ -278,7 +278,7 @@ function renderDeviceCards(devices) {
     cardValue(values,"Absolute Höhe",safeNumber(t.height_m,1,"m"));
     cardValue(values,"Horizontale Geschwindigkeit",safeNumber(t.horizontal_speed_mps,1,"m/s"));
     cardValue(values,"Vertikale Geschwindigkeit",safeNumber(t.vertical_speed_mps,1,"m/s"));
-    cardValue(values,"Entfernung zum Start",safeNumber(t.home_distance_m,0,"m"));
+    cardValue(values,"Distanz zum Homepoint",safeNumber(t.home_distance_m,0,"m"));
     cardValue(values,"GPS-Satelliten",t.gps_satellites);
     cardValue(values,"RTK-Satelliten",t.rtk_satellites);
     cardValue(values,"RTK-Status",rtkText(t.rtk_state));
