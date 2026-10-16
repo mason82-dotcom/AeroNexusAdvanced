@@ -125,6 +125,9 @@ def atomic_write(path: Path, contents: str) -> None:
 
 
 def apply_brand(web: Path, changes: dict[Path, str], edge: Path, template: Path) -> None:
+    dest = edge / "compose.brand.yaml"
+    if dest.exists() and dest.read_bytes() != template.read_bytes():
+        raise RuntimeError("Abweichende lokale Compose-Branding-Datei vorhanden")
     backups = edge / "branding-backup"
     backups.mkdir(mode=0o700, exist_ok=True)
     backups.chmod(0o700)
@@ -137,9 +140,6 @@ def apply_brand(web: Path, changes: dict[Path, str], edge: Path, template: Path)
             shutil.copy2(path, original)
         atomic_write(path, replacement)
         print("Aktualisiert:", relative.as_posix())
-    dest = edge / "compose.brand.yaml"
-    if dest.exists() and dest.read_bytes() != template.read_bytes():
-        raise RuntimeError("Abweichende lokale Compose-Branding-Datei vorhanden")
     if not dest.exists():
         shutil.copy2(template, dest)
         print("Compose-Build-Overlay: bereit")
