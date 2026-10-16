@@ -215,6 +215,8 @@ assert.equal(routeMetrics([a,{latitude:91,longitude:8}],false,5).valid,false);
 assert.equal(routeMetrics([],false,5).distanceMeters,null);
 assert.equal(routeMetrics([a],false,5).seconds,null);
 assert.equal(routeMetrics(points,false,0).seconds,null);
+assert.equal(routeMetrics(points,false,0.05).seconds,null);
+assert.equal(routeMetrics(points,false,0.1).valid,true);
 assert.equal(routeMetrics(points,false,NaN).seconds,null);
 assert.equal(routeMetrics(points,false,16).seconds,null);
 assert.equal(formatRouteDistance(null),"–");
@@ -222,6 +224,33 @@ assert.equal(formatRouteDuration(null),"–");
 assert.equal(formatRouteDuration(59.1),"1 min 00 s");
 assert.equal(formatRouteDuration(3661),"1 h 01 min");
 assert.match(formatRouteDistance(1500),/km/);
+
+// Render via the production DOM function without Leaflet or a network.
+// The speed field is the active unsaved form value, not stale mission.speed_mps.
+const values=new Map();
+const el=id=>{
+  if(!values.has(id))values.set(id,{value:"",textContent:""});
+  return values.get(id);
+};
+const editor=new Function("mission","$",script.slice(start,end)+
+  "\nreturn updateRouteAnalysis;")({
+    waypoints:points,close_route:true,speed_mps:5
+  },el);
+el("mission-speed").value="5";
+const first=editor();
+assert.equal(first.segments.length,3);
+assert.equal(el("route-legs").textContent,"3");
+assert.ok(el("route-distance").textContent.includes("km"));
+assert.ok(el("route-return").textContent.includes("km"));
+const previous=el("route-duration").textContent;
+el("mission-speed").value="10";
+const faster=editor();
+assert.ok(faster.seconds<first.seconds);
+assert.notEqual(el("route-duration").textContent,previous);
+el("mission-speed").value="";
+editor();
+assert.equal(el("route-duration").textContent,"–");
+assert.ok(el("route-analysis-warning").textContent.includes("0,1 bis 15"));
 """
 
 
