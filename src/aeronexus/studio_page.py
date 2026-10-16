@@ -1,7 +1,7 @@
 """Desktop-first Chrome mission and media studio.
 
-Static HTML shell; all private data comes from authenticated local workspace
-endpoints. No flight commands, DJI upload, automatic map/geolocation sharing.
+Static HTML shell; direct trusted-HTTPS-LAN workspace access with no token
+prompt. No flight commands, DJI upload or automatic geolocation sharing.
 """
 
 
@@ -25,11 +25,11 @@ header{display:flex;align-items:center;gap:18px;padding:13px 20px;background:#11
 .brand{font-size:20px;font-weight:800;letter-spacing:-.04em}.brand small{font-size:11px;color:#73b7e8;display:block;letter-spacing:.2em;font-weight:650}
 nav{display:flex;gap:5px;flex-wrap:wrap}nav button{background:transparent;border:0;color:#b8c9dd}nav button.active{background:#23496b;color:#fff}
 .auth{display:flex;gap:7px;align-items:center;flex:1;justify-content:flex-end;min-width:280px}
-.auth input{max-width:300px}
+
 .auth-message{font-size:12px;flex-basis:100%;text-align:right;color:#c9d9ea;min-height:15px;overflow-wrap:anywhere}
 .auth-message.error{color:#ffacb6}
 .auth-message.ok{color:#9be8c8}
-.auth button[aria-busy="true"]{opacity:.7;cursor:wait}
+
 .dot{width:9px;height:9px;background:#6b7788;border-radius:50%;display:inline-block}
 .dot.on{background:var(--good)}.muted{color:var(--muted)}.note{font-size:12px;color:#a6b9cc;line-height:1.5}
 .layout{display:grid;grid-template-columns:365px minmax(0,1fr);height:calc(100vh - 73px);min-height:650px}
@@ -79,7 +79,7 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .way-marker.selected{background:#f0b04b;color:#101520}
 footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 @media(max-width:1000px){.layout{grid-template-columns:320px minmax(0,1fr)}header{gap:9px}.auth{min-width:250px}}
-@media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}.auth input{max-width:none}header{padding:11px}.map-bar{top:8px;left:8px;right:8px}}
+@media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}header{padding:11px}.map-bar{top:8px;left:8px;right:8px}}
 </style>
 </head>
 <body>
@@ -91,17 +91,14 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button data-tab="fleet-pane">Flottenstatus</button>
 <a href="/status" style="color:#9edaff;padding:9px;text-decoration:none">Live-Dashboard ↗</a>
 </nav>
-<div class="auth">
-<span id="auth-dot" class="dot"></span>
-<input id="auth-token" type="password" autocomplete="off" spellcheck="false" aria-label="AeroNexus Status-Token" placeholder="Status-Token (nicht DJI-Token)">
-<button class="primary" id="login" type="button">Verbinden</button><button id="logout" type="button">Trennen</button>
-<span id="auth-message" class="auth-message" role="status" aria-live="polite">Noch nicht verbunden</span>
+<div class="auth"><span class="dot on" aria-hidden="true"></span>
+<span id="auth-message" class="auth-message" role="status" aria-live="polite">Direkter LAN-Zugriff · Daten werden geladen…</span>
 </div>
 </header>
 <div class="layout">
 <aside class="side" id="mission-panel">
 <div class="flex between"><div><h1>Missionsplanung</h1><div class="note">Offline-Entwurf · keine Flugausführung</div></div><span class="badge">WPML</span></div>
-<div class="status" id="notice" role="status">Bitte mit dem AeroNexus-Status-Token verbinden, um Missionen auf dem Pi zu speichern.</div>
+<div class="status" id="notice" role="status">Missionen werden automatisch vom Raspberry Pi geladen…</div>
 <label>Gespeicherte Missionen<select id="mission-list"><option value="">Neuer Entwurf</option></select></label>
 <div class="button-row"><button id="new-mission">Neu</button><button id="save-mission" class="primary">Speichern</button><button id="delete-mission" class="danger" disabled>Löschen</button></div>
 <fieldset id="mission-fields">
@@ -139,13 +136,13 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <h1>Medienimport</h1><p class="note">Bilder und Videos werden ausschließlich im privaten Pi-Arbeitsbereich gespeichert. Maximal 25 MiB je Datei.</p>
 <label>Bild-/Videodateien<input type="file" id="media-file" accept=".jpg,.jpeg,.png,.webp,.mp4,image/jpeg,image/png,image/webp,video/mp4" multiple></label>
 <button id="upload-media" class="primary">Ausgewählte Medien hochladen</button>
-<div class="status" id="media-notice">Verbinden, dann Medien auswählen.</div>
+<div class="status" id="media-notice">Medienbibliothek wird geladen…</div>
 <hr><h3>Speicherort</h3><p class="note"><code>~/.local/share/aeronexusadvanced/media</code> auf dem Raspberry Pi. Unterstützt JPEG, PNG, WebP und MP4. Keine öffentliche Medienfreigabe.</p>
 </aside>
 <aside class="side" id="fleet-panel" hidden>
 <h1>Live-Flotte</h1><p class="note">Liest ausschließlich die vorhandene AeroNexus-Status-API. DJI-Flugsteuerung bleibt gesperrt.</p>
 <button id="refresh-fleet" class="primary">Flotte aktualisieren</button>
-<div class="status" id="fleet-notice">Keine Daten geladen.</div>
+<div class="status" id="fleet-notice">Flottendaten werden geladen…</div>
 <div class="button-row"><button id="show-fleet-map">Gerätepositionen auf Karte</button></div>
 <p class="note">Die Kartenkacheln stammen von einem externen Kartenanbieter. Bei Darstellung des Einsatzgebiets kann der Anbieter den angeforderten Kartenausschnitt erkennen. Keine Telemetrie wird direkt an DJI gesendet.</p>
 </aside>
@@ -163,7 +160,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="page-head"><div><h1>Medienbibliothek</h1><p class="muted">Private Dateien auf deinem Raspberry Pi · Fotos & Videos</p></div>
 <div class="filters"><input type="search" id="media-search" placeholder="Medien suchen…">
 <button id="refresh-media">Aktualisieren</button></div></div>
-<div class="gallery" id="gallery"><div class="empty">Zum Anzeigen der Bibliothek bitte verbinden.</div></div>
+<div class="gallery" id="gallery"><div class="empty">Lokale Medienbibliothek wird geladen…</div></div>
 <div class="button-row"><button id="more-media" hidden>Weitere Medien anzeigen</button></div>
 <footer>Vorschaubilder werden mit deinem Token geladen und nur als temporäre Browser-Objekte angezeigt. Kein externer Mediendienst.</footer>
 </div>
@@ -171,7 +168,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <section class="pane" id="fleet-pane">
 <div class="pane-inner">
 <div class="page-head"><div><h1>Flottenstatus</h1><p class="muted">Matrice 4T und weitere DJI-Geräte · Echtzeitstatus aus FlightHub 2</p></div></div>
-<div id="fleet-grid" class="fleet-grid"><div class="empty">Bitte mit dem Status-Token verbinden.</div></div>
+<div id="fleet-grid" class="fleet-grid"><div class="empty">Lokale Flottendaten werden geladen…</div></div>
 </div>
 </section>
 </main>
@@ -183,33 +180,27 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 const $=id=>document.getElementById(id);
 const els=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=String(text);return el};
 const EMPTY=()=>({name:"Neue Wegpunktmission",description:"",drone_model:"matrice4t",altitude_m:50,speed_mps:5,takeoff_security_height_m:20,rth_height_m:60,finish_action:"goHome",waypoints:[]});
-let mission=EMPTY(),missionId=null,selected=-1,addMode=false,accessToken="",epoch=0,knownMissions=[],knownMedia=[],displayMedia=20,mediaUrls=[],previewUrl=null;
+let mission=EMPTY(),missionId=null,selected=-1,addMode=false,epoch=0,knownMissions=[],knownMedia=[],displayMedia=20,mediaUrls=[],previewUrl=null;
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,mapTile=null,mapTiles={};
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
-function authMessage(text,state=""){
+function statusMessage(text,error=false){
   $("auth-message").textContent=text;
-  $("auth-message").className="auth-message"+(state?" "+state:"");
-}
-function loginBusy(isBusy){
-  $("login").disabled=isBusy;
-  $("login").setAttribute("aria-busy",isBusy?"true":"false");
-  $("login").textContent=isBusy?"Prüfe Verbindung…":"Verbinden";
+  $("auth-message").className="auth-message"+(error?" error":" ok");
 }
 function errorMessage(error){
   const detail=String(error?.message||"Unbekannter Fehler");
-  if(detail.includes("HTTP 401"))return "Status-Token abgelehnt (HTTP 401).";
-  if(detail.includes("HTTP 503"))return "Server oder privater Missionsarbeitsbereich nicht bereit (HTTP 503).";
+  if(detail.includes("HTTP 401"))return "LAN-Zugriff nicht aktiviert (HTTP 401).";
+  if(detail.includes("HTTP 403"))return "Zugriff nur direkt über das freigegebene HTTPS-Heimnetz (HTTP 403).";
+  if(detail.includes("HTTP 503"))return "LAN-Konfiguration oder privater Missionsspeicher nicht bereit (HTTP 503).";
   if(detail.includes("Failed to fetch")||detail.includes("NetworkError")||detail.includes("Load failed"))
     return "Netzwerkfehler: HTTPS-Verbindung zum Pi prüfen.";
   return detail;
 }
 function clean(text){return text===null||text===undefined?"–":String(text)}
 function cardText(parent,tag,cls,text){const el=els(tag,cls,text);parent.appendChild(el);return el}
-function headerToken(){return {"Authorization":"Bearer "+accessToken}}
 async function api(path,options={}){
-  if(!accessToken)throw new Error("Zuerst verbinden");
   const session=epoch;
-  const opts={cache:"no-store",...options,headers:{...headerToken(),...(options.headers||{})}};
+  const opts={cache:"no-store",...options};
   const response=await fetch(path,opts);
   if(session!==epoch)throw new Error("Sitzung beendet");
   if(!response.ok){
@@ -340,7 +331,6 @@ async function removeMission(){
   newMission();await loadMissions();notice("Mission gelöscht");
 }
 async function importMission(){
-  if(!accessToken)throw new Error("Zuerst mit dem Status-Token verbinden");
   const file=$("import-kmz").files?.[0];
   if(!file)throw new Error("Bitte eine AeroNexus-KMZ-Datei auswählen");
   if(file.size>2*1024*1024)throw new Error("KMZ darf maximal 2 MiB groß sein");
@@ -370,63 +360,21 @@ function switchTab(id){
   ["mission-panel","media-panel","fleet-panel"].forEach((key,i)=>$(key).hidden=(["map-pane","media-pane","fleet-pane"][i]!==id));
   if(id==="map-pane"&&map)setTimeout(()=>map.invalidateSize(),80);
 }
-async function login(){
-  const value=$("auth-token").value.trim();
-  if(value.length<32){
-    const msg="Status-Token muss mindestens 32 Zeichen haben.";
-    notice(msg,true);authMessage(msg,"error");return;
-  }
-  // Check the credential against the existing read-only status API first.
-  // A broken/unwritable mission workspace must not look like bad credentials.
-  const session=++epoch;
-  accessToken=value;
-  loginBusy(true);
-  authMessage("Token wird geprüft…");
-  notice("Verbindung zum Raspberry Pi wird geprüft…");
+async function loadWorkspace(){
+  statusMessage("LAN-Verbindung wird geprüft…");
   try{
-    const response=await api("/api/v1/status/devices?limit=1");
-    await response.json();
-    if(session!==epoch)return;
-    $("auth-dot").className="dot on";
-    $("auth-token").value="";
-    authMessage("Verbunden · Token gültig","ok");
-    notice("Authentifizierung erfolgreich. Lade Missionsarbeitsbereich…");
-    try{
-      await loadMissions();
-      if(session!==epoch)return;
-      notice("Verbunden. Lokaler Missionsarbeitsbereich bereit.");
-      authMessage("Verbunden · Missionen verfügbar","ok");
-    }catch(err){
-      if(session!==epoch)return;
-      const msg=errorMessage(err);
-      notice("Token gültig; Missionsspeicher nicht verfügbar: "+msg,true);
-      authMessage("Verbunden · Missionsspeicherfehler","error");
-    }
-    // The read-only fleet view can still work if local storage is unavailable.
-    await Promise.allSettled([loadMedia(),loadFleet()]);
+    const missions=await loadMissions();
+    notice("Lokaler Missionsarbeitsbereich bereit.");
+    statusMessage("LAN-Verbindung aktiv");
   }catch(err){
-    if(session!==epoch)return;
     const msg=errorMessage(err);
-    accessToken="";
-    $("auth-dot").className="dot";
-    $("auth-token").value="";
-    authMessage(msg,"error");
-    notice("Anmeldung fehlgeschlagen: "+msg,true);
-  }finally{
-    if(session===epoch)loginBusy(false);
+    notice("Missionsspeicher nicht verfügbar: "+msg,true);
+    statusMessage("Missionsspeicherfehler: "+msg,true);
   }
+  await Promise.allSettled([loadMedia(),loadFleet()]);
 }
 function revokeMedia(){mediaUrls.forEach(url=>URL.revokeObjectURL(url));mediaUrls=[];}
 function closePreview(){const dlg=$("media-dialog");if(dlg.open)dlg.close();$("preview-content").replaceChildren();if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}}
-function logout(){
-  epoch++;accessToken="";$("auth-token").value="";$("auth-dot").className="dot";
-  authMessage("Nicht verbunden");loginBusy(false);
-  knownMedia=[];knownMissions=[];revokeMedia();closePreview();
-  $("gallery").replaceChildren();$("fleet-grid").replaceChildren();$("more-media").hidden=true;
-  $("media-notice").textContent="Nicht verbunden";$("fleet-notice").textContent="Nicht verbunden";
-  if(deviceLayer)deviceLayer.clearLayers();
-  newMission();notice("Getrennt. Geschützte Daten wurden aus der Ansicht entfernt.");
-}
 async function uploadMedia(){
   const files=Array.from($("media-file").files||[]);if(!files.length)throw new Error("Keine Dateien gewählt");
   for(const f of files){
@@ -520,7 +468,6 @@ async function showFleetOnMap(){
 }
 function wire(){
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.addEventListener("click",()=>switchTab(el.dataset.tab)));
-  $("login").addEventListener("click",login);$("logout").addEventListener("click",logout);
   $("mission-list").addEventListener("change",e=>loadMission(e.target.value).catch(err=>notice(err.message,true)));
   $("new-mission").addEventListener("click",newMission);
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
@@ -552,10 +499,10 @@ function wire(){
   $("preview-close").addEventListener("click",closePreview);$("media-dialog").addEventListener("close",closePreview);
   $("refresh-fleet").addEventListener("click",()=>loadFleet().catch(err=>$("fleet-notice").textContent=err.message));
   $("show-fleet-map").addEventListener("click",()=>showFleetOnMap().catch(err=>notice(err.message,true)));
-  $("auth-token").addEventListener("keydown",e=>{if(e.key==="Enter")login()});
   getMap();redraw();
 }
 wire();
+loadWorkspace();
 </script>
 </body>
 </html>"""
