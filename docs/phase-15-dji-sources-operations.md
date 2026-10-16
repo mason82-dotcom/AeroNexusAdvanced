@@ -40,6 +40,16 @@ guard as `/status` and `/studio` when Phase 14 mode is explicitly enabled.
   Unbekannte Werte bleiben im Rohdatenbereich erhalten. Ein Wert von
   null GPS-/RTK-Satelliten ist ein **vom Anbieter gemeldeter Wert**, keine
   gesicherte Aussage zum tatsächlichen Empfängerzustand.
+- **Cockpit-Scroll-Korrektur nach Chrome-Praxistest:** Die teilweise
+  außerhalb der Technikdarstellung sichtbaren Buchstaben des RTK-Rohwerts
+  werden über eine vollbreite Technik-Kachel mit Monospace-Umbruch
+  vermieden; der scrollbare Detailbereich erhält CSS-Paint-Containment
+  und eine eigene Zeichenebene. Bei unverändertem Gerätedatensatz wird
+  nur das Empfangsalter aktualisiert, nicht alle 15 Sekunden das
+  gesamte HTML neu erzeugt. Ein DOM-Regressionstest prüft, dass
+  Offen-/Geschlossen-Zustand, Scrollposition und DOM-Referenz über
+  unveränderte Telemetrieabfragen hinweg erhalten bleiben; neue
+  Telemetrie löst weiterhin ein Update aus.
 - **Flugzeit gesamt und Flugstarts gesamt sind als API-Werte markiert.**
   Der bei eingeschalteter Matrice 4T beobachtete Wert 0 bedeutet nicht
   zwingend eine unbenutzte Drohne. Unbekannte HMS-Codes wie
