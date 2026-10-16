@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from aeronexus import app as app_module
 from aeronexus.flighthub_catalog import (
-    CatalogError, normalize_models, normalize_tasks, normalize_waylines, read_catalog,
-    read_task_track, track_geojson,
+    CatalogError, normalize_models, normalize_tasks, normalize_waylines, normalize_task_media,
+    read_catalog, read_task_track, read_task_media, track_geojson,
 )
 from aeronexus.flighthub_poller import FlightHubFleetRefresher, FlightHubPollSettings
 from aeronexus.status_runtime import StatusRuntime
@@ -163,3 +163,88 @@ def test_track_endpoint_without_flighthub(monkeypatch):
         res = client.get(f"/api/v1/flighthub/projects/{PROJECT}/tasks/{TASK}/track", headers=AUTH)
         assert res.status_code == 404
         assert client.get("/api/v1/flighthub/catalog", headers=AUTH).json()["projects"] == []
+
+
+def test_media_metadata_never_contains_signed_urls_or_access_secrets():
+    media = normalize_task_media({"code": 0, "data": {"list": [{
+        "uuid": "safe-media-1", "name": "M4T_0001.JPG",
+        "file_type": "photo", "suffix": "JPG", "size": 3145728,
+        "create_at": "2026-10-16T12:10:00Z",
+        "preview_url": "https://storage.example/preview?signature=PRIVATE",
+        "original_url": "https://storage.example/full?token=PRIVATE",
+        "object_key": "PRIVATE-STORAGE-KEY", "sn": "PRIVATE-DRONE-SN",
+    }]}})
+    assert len(media) == 1
+    assert media[0] == {
+        "id": "safe-media-1", "name": "M4T_0001.JPG",
+        "file_type": "photo", "suffix": "JPG", "size_bytes": 3145728,
+        "created_at": "2026-10-16T12:10:00Z", "updated_at": None,
+    }
+    assert "PRIVATE" not in json.dumps(media)
+
+
+def test_media_lists_support_null_and_list_envelopes_without_leaking_raw_data():
+    assert normalize_task_media({"code": 0, "data": {"list": None}}) == ()
+    assert normalize_task_media({"code": 0, "data": []}) == ()
+    assert len(normalize_task_media({"code": 0, "data": [{"name": "Thermal.png"}]})) == 1
+    with pytest.raises(CatalogError):
+        normalize_task_media({"code": 0, "data": {"list": "not a list"}})
+    with pytest.raises(CatalogError):
+        normalize_task_media({"code": 200401})
+
+
+def test_read_task_media_requires_public_provider_and_valid_uuid():
+    with pytest.raises(CatalogError):
+        asyncio.run(read_task_media(OC, PROJECT, TASK))
+    with pytest.raises(CatalogError):
+        asyncio.run(read_task_media(PC, PROJECT, "../malicious"))
+
+
+def test_task_media_api_requires_auth_and_known_cached_task(api, monkeypatch):
+    from aeronexus.read_only_transport import ReadOnlyTransport
+
+    client, original_calls = api
+    endpoint = f"/api/v1/flighthub/projects/{PROJECT}/tasks/{TASK}/media"
+    assert client.get(endpoint).status_code == 401
+    unknown = "f86a402e-1a4f-4b6a-8d32-20a4f75c06fd"
+    assert client.get(
+        f"/api/v1/flighthub/projects/{PROJECT}/tasks/{unknown}/media",
+        headers=AUTH).status_code == 404
+    assert client.get(
+        f"/api/v1/flighthub/projects/{unknown}/tasks/{TASK}/media",
+        headers=AUTH).status_code == 404
+
+    calls = []
+    async def media_get(self, path, params=None, *, project_uuid=None):
+        calls.append((path, project_uuid))
+        assert path == f"/openapi/v2.0/flight-task/{TASK}/media"
+        assert project_uuid == PROJECT
+        return {"code": 0, "data": {"list": [{
+            "uuid": "media1", "name": "DJI_0001.MP4",
+            "file_type": "video", "suffix": "MP4", "size": 20480,
+            "original_url": "https://storage.example?X-Secret=SECRET",
+            "preview_url": "https://storage.example?X-Secret=SECRET",
+        }]}}
+    monkeypatch.setattr(ReadOnlyTransport, "get", media_get)
+    first = client.get(endpoint, headers=AUTH)
+    assert first.status_code == 200, first.text
+    assert first.headers["cache-control"] == "no-store"
+    assert first.json()["media"][0]["name"] == "DJI_0001.MP4"
+    assert first.json()["total"] == 1
+    assert "SECRET" not in first.text
+    assert "original_url" not in first.text
+    assert "preview_url" not in first.text
+    assert client.get(endpoint, headers=AUTH).status_code == 200
+    assert len(calls) == 1, "Five-minute cache must prevent repeated DJI polling"
+
+
+def test_task_media_api_hides_provider_error_text(api, monkeypatch):
+    from aeronexus.read_only_transport import ReadOnlyTransport
+    client, _ = api
+    async def fail(self, path, params=None, *, project_uuid=None):
+        raise RuntimeError("upstream secret and signed URL")
+    monkeypatch.setattr(ReadOnlyTransport, "get", fail)
+    result = client.get(f"/api/v1/flighthub/projects/{PROJECT}/tasks/{TASK}/media",
+                        headers=AUTH)
+    assert result.status_code == 502
+    assert "secret" not in result.text
