@@ -34,3 +34,12 @@ class DeviceSnapshot:
     longitude: float | None = None
     battery_percent: float | None = None
     rtk_state: str | None = None
+    height_m: float | None = None
+    horizontal_speed_mps: float | None = None
+    vertical_speed_mps: float | None = None
+    total_flight_time_s: float | None = None
+    total_flight_sorties: int | None = None
+    rtk_satellites: int | None = None
+    gps_satellites: int | None = None
+    battery_voltage_mv: float | None = None
+    battery_temperature_c: float | None = None
