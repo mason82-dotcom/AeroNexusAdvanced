@@ -9,20 +9,20 @@ def test_register_project_and_devices():
     inventory = Inventory()
     inventory.add_project(Project(PUBLIC, "p1", "Test"))
     inventory.add_device(Device(PUBLIC, "p1", "drone1", DeviceType.AIRCRAFT, "Matrice"))
-    inventory.add_device(Device(PUBLIC, "p1", "dock1", DeviceType.DOCK, "Dock"))
+    inventory.add_device(Device(PUBLIC, "p1", "rc1", DeviceType.CONTROLLER, "Remote"))
     assert len(inventory.devices(PUBLIC, "p1")) == 2
     assert inventory.devices(ONPREM) == ()
 
 def test_reject_device_without_project():
     with pytest.raises(ValueError, match="Project"):
-        Inventory().add_device(Device(PUBLIC, "p1", "d1", DeviceType.DOCK, "Dock"))
+        Inventory().add_device(Device(PUBLIC, "p1", "d1", DeviceType.AIRCRAFT, "Aircraft"))
 
 def test_provider_isolation():
     inventory = Inventory()
     inventory.add_project(Project(PUBLIC, "same", "Public"))
     inventory.add_project(Project(ONPREM, "same", "Onprem"))
     inventory.add_device(Device(PUBLIC, "same", "same", DeviceType.AIRCRAFT, "A"))
-    inventory.add_device(Device(ONPREM, "same", "same", DeviceType.DOCK, "B"))
+    inventory.add_device(Device(ONPREM, "same", "same", DeviceType.CONTROLLER, "B"))
     inventory.update_telemetry("same", DeviceSnapshot(PUBLIC, "same", online=True))
     assert inventory.telemetry(PUBLIC, "same", "same").online is True
     assert inventory.telemetry(ONPREM, "same", "same") is None
@@ -40,7 +40,7 @@ def test_reject_conflicting_project():
 def test_reject_conflicting_device():
     inventory = Inventory()
     inventory.add_project(Project(PUBLIC, "p1", "First"))
-    inventory.add_device(Device(PUBLIC, "p1", "d1", DeviceType.DOCK, "Dock"))
+    inventory.add_device(Device(PUBLIC, "p1", "d1", DeviceType.CONTROLLER, "Remote"))
     with pytest.raises(ValueError, match="Conflicting"):
         inventory.add_device(Device(PUBLIC, "p1", "d1", DeviceType.AIRCRAFT, "Aircraft"))
 
@@ -52,15 +52,20 @@ def test_invalid_project(project_id, name):
 @pytest.mark.parametrize("project_id,device_id,name", [("", "d", "Name"), ("p", "", "Name"), ("p", "d", " ")])
 def test_invalid_device(project_id, device_id, name):
     with pytest.raises(ValueError):
-        Device(PUBLIC, project_id, device_id, DeviceType.DOCK, name)
+        Device(PUBLIC, project_id, device_id, DeviceType.AIRCRAFT, name)
 
 def test_idempotent_registration():
     inventory = Inventory()
     project = Project(PUBLIC, "p1", "Name")
-    device = Device(PUBLIC, "p1", "d1", DeviceType.DOCK, "Dock")
+    device = Device(PUBLIC, "p1", "d1", DeviceType.AIRCRAFT, "Aircraft")
     inventory.add_project(project)
     inventory.add_project(project)
     inventory.add_device(device)
     inventory.add_device(device)
     assert len(inventory.projects()) == 1
     assert len(inventory.devices()) == 1
+
+def test_docks_explicitly_unsupported():
+    assert "dock" not in [kind.value for kind in DeviceType]
+    with pytest.raises(ValueError, match="Only aircraft"):
+        Device(PUBLIC, "p1", "dock1", "dock", "Dock")
