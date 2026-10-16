@@ -81,7 +81,9 @@ def test_operations_cockpit_only_shows_fresh_device_position():
     assert "health" in page
     assert "Cockpit" in page
     assert "Standby" in page
-    assert "Akku (letzter Messwert)" in page
+    assert '"Akku"+labelSuffix' in page
+    assert 'id="cockpit-summary"' in page
+    assert 'id="cockpit-connection"' in page
     assert "HMS" in page
 
 
@@ -158,7 +160,7 @@ def test_cockpit_uses_only_normalized_drone_metrics():
     assert "Akkuspannung" in page
     assert "Akkutemperatur" in page
     assert "RTK-Satelliten" in page
-    assert "angezeigte Telemetrie sind alte" in page
+    assert "Keine bestätigte Live-Verbindung" in page
     assert "DJI-Code" in page
     assert 'd.kind==="aircraft"' in page
 
@@ -201,3 +203,50 @@ def test_cloud_api2_optional_source_status_and_backend_not_exposed():
     assert "AERONEXUS_CLOUDAPI2_BFF_TOKEN" not in html
     assert "Bearer " not in html
     assert "SDK-Backend" in html
+
+
+def test_cockpit_separates_online_status_from_data_age_and_preserves_detail_state():
+    page = render_operations()
+    assert 'function connectionStatus(device)' in page
+    assert 'device.online===true' in page
+    assert 'device.online===false' in page
+    assert 'function freshnessStatus(device)' in page
+    assert 'fresh:"Daten aktuell"' in page
+    assert 'stale:"Daten veraltet"' in page
+    assert 'unknown_age:"Alter unbekannt"' in page
+    assert 'clock_skew:"Zeitabweichung"' in page
+    assert 'device.freshness==="fresh"?"good":"warn"' in page
+    assert 'd.freshness==="fresh"&&d.online===true' in page
+    assert 'id="cockpit-summary"' in page
+    assert 'id="cockpit-connection"' in page
+    assert 'id="cockpit-received"' in page
+    assert 'id="cockpit-content"' in page
+    assert 'body.querySelector("#cockpit-technical")?.open===true' in page
+    assert 'body.scrollTop=oldScroll' in page
+    assert "0 bedeutet nicht zwingend" in page
+
+
+def test_cockpit_human_rtk_status_and_raw_enum_are_separate():
+    page = render_operations()
+    assert '"is_fixed:not_started":"RTK nicht gestartet"' in page
+    assert '"is_fixed:fixing":"RTK-Fix läuft"' in page
+    assert '"is_fixed:fixing_successful":"RTK-Fix erfolgreich"' in page
+    assert '"is_fixed:fixing_failed":"RTK-Fix fehlgeschlagen"' in page
+    assert '"RTK-Status unbekannt"' in page
+    assert 'hero(summary,"RTK-Status",rtkLabel(t.rtk_state))' in page
+    assert 'metric(grid,"RTK-Status (Rohwert)",text(t.rtk_state))' in page
+    assert '"RTK nicht gestartet"' in page
+    assert "0 bedeutet nicht zwingend" in page
+    assert "Satellitenanzahlen sind gemeldete Werte" in page
+
+
+def test_cockpit_is_read_only_and_does_not_invent_hms_explanations():
+    page = render_operations()
+    assert '"HMS · "+warnings.length+" zuletzt gemeldete Hinweise"' in page
+    assert 'alert.message&&alert.message!==alert.code?' in page
+    assert '"Code: "+text(alert.code)' in page
+    assert 'textContent=String(text)' in page
+    assert "0x16070042" not in page
+    assert "innerHTML" not in page
+    assert "Authorization" not in page
+    assert "localStorage" not in page
