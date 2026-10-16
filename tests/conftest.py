@@ -13,7 +13,7 @@ import pytest
 
 
 _LIVE_PREFIXES = ("AERONEXUS_DJI_", "AERONEXUS_FH_", "AERONEXUS_CLOUD_MQTT_")
-_LIVE_KEYS = frozenset({"AERONEXUS_STATUS_TOKEN"})
+_LIVE_KEYS = frozenset({"AERONEXUS_STATUS_TOKEN", "AERONEXUS_LAN_NO_TOKEN", "AERONEXUS_LAN_HOST"})
 
 
 @pytest.fixture(autouse=True)
