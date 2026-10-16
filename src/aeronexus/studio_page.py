@@ -216,7 +216,12 @@ function getForm(){
   return mission;
 }
 function getMap(){
-  if(map||!window.L)return;
+  if(map)return;
+  if(!window.L){
+    notice("Kartenbibliothek nicht geladen. Browser-Internetverbindung und CDN-Zugriff prüfen.",true);
+    $("map").textContent="Die interaktive Karte benötigt Leaflet 1.9.4 (Internetverbindung im Browser).";
+    return;
+  }
   map=L.map("map",{zoomControl:false,worldCopyJump:true}).setView([51.16,10.45],6);
   mapTiles.street=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'});
   mapTiles.satellite=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Tiles &copy; Esri"});
@@ -224,7 +229,10 @@ function getMap(){
   waypointsLayer=L.layerGroup().addTo(map);deviceLayer=L.layerGroup().addTo(map);
   map.on("click",event=>{
     if(!addMode)return;
-    mission.waypoints.push({latitude:+event.latlng.lat.toFixed(7),longitude:+event.latlng.lng.toFixed(7),take_photo:false});
+    const lat=+event.latlng.lat.toFixed(7);
+    const lon=+((((event.latlng.lng+540)%360)-180).toFixed(7);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon)||(lat===0&&lon===0))return;
+    mission.waypoints.push({latitude:lat,longitude:lon,take_photo:false});
     selected=mission.waypoints.length-1;redraw();
   });
 }
@@ -422,7 +430,7 @@ async function loadFleet(){
 }
 async function showFleetOnMap(){
   const devices=await loadFleet();
-  switchTab("map-pane");getMap();deviceLayer.clearLayers();
+  switchTab("map-pane");getMap();if(!map||!deviceLayer)throw new Error("Karte nicht verfügbar");deviceLayer.clearLayers();
   const locs=[];
   for(const d of devices){
     const t=d.telemetry||{};
@@ -448,12 +456,14 @@ function wire(){
     $("add-mode").classList.toggle("primary",addMode);
   });
   $("fit-mission").addEventListener("click",fitMission);$("map-fit").addEventListener("click",fitMission);
-  $("map-zoom-in").addEventListener("click",()=>map.zoomIn());$("map-zoom-out").addEventListener("click",()=>map.zoomOut());
-  $("map-layer").addEventListener("change",e=>{if(mapTile)map.removeLayer(mapTile);mapTile=mapTiles[e.target.value].addTo(map);});
+  $("map-zoom-in").addEventListener("click",()=>map?.zoomIn());$("map-zoom-out").addEventListener("click",()=>map?.zoomOut());
+  $("map-layer").addEventListener("change",e=>{if(!map)return;if(mapTile)map.removeLayer(mapTile);mapTile=mapTiles[e.target.value].addTo(map);});
   $("apply-point").addEventListener("click",()=>{
     const p=mission.waypoints[selected];if(!p)return;
     const lat=Number($("point-lat").value),lon=Number($("point-lon").value);
-    if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180){notice("Ungültige WGS84-Koordinaten",true);return;}
+    if(!$("point-lat").value.trim()||!$("point-lon").value.trim()||
+      !Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180||
+      (lat===0&&lon===0)){notice("Ungültige WGS84-Koordinaten (0/0 ist kein GPS-Fix)",true);return;}
     mission.waypoints[selected]={latitude:lat,longitude:lon,take_photo:$("point-photo").checked};redraw();
   });
   $("remove-point").addEventListener("click",()=>{
