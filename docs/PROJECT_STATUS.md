@@ -41,16 +41,20 @@
 
 ## Web-Dashboard – aktueller Betriebsstand
 
-- Oberfläche: `http://192.168.178.63:8000/status`
-- Läuft als **Hintergrundprozess** (`setsid nohup`, Log
-  `logs/uvicorn.log`), **nicht** als systemd-Dienst; startet nach einem
-  Neustart des Pi **nicht** automatisch.
+- Oberfläche: **`https://192.168.178.63:8000/status`** (HTTP wird nicht
+  mehr bedient).
+- Betrieb als **systemd-User-Dienst** `aeronexusadvanced` (aktiviert,
+  Linger an → Start beim Booten ohne Login; `Restart=always`, nach
+  Absturz in ~10 s neu gestartet, getestet). Details: `docs/deploy-pi.md`.
   ```bash
-  cd ~/Projekte/AeroNexusAdvanced
-  setsid nohup .venv/bin/python -m uvicorn aeronexus.app:app \
-    --host 192.168.178.63 --port 8000 --env-file .env \
-    > logs/uvicorn.log 2>&1 < /dev/null &
+  systemctl --user status aeronexusadvanced
+  systemctl --user restart aeronexusadvanced   # nach .env-/Code-Änderungen
+  journalctl --user -u aeronexusadvanced -f
   ```
+- TLS: projekteigene lokale CA in `config/pki/` (gitignoriert, private
+  Schlüssel 0600), Serverzertifikat für IP `192.168.178.63`, gültig bis
+  **16.10.2027** (`deploy/pi/tls-renew-server.sh` verlängert mit derselben
+  CA). Auf den Anzeigegeräten nur `config/pki/ca.crt` installieren.
 - Konfiguration ausschließlich in `.env` (gitignoriert, `chmod 600`;
   Vorlage `.env.example`): Dashboard-Token, FlightHub-Schlüssel,
   Organisations-Kurzcode, MQTT-Zugangsdaten.
@@ -61,8 +65,8 @@
   (AeroNexus-Stack aus) → Status „Broker nicht erreichbar“, harmlose
   Wiederverbindungsversuche. Bei Nichtnutzung
   `AERONEXUS_CLOUD_MQTT_ENABLED=0` setzen.
-- Zugriff weiterhin über **HTTP ohne TLS**: Dashboard-Token und
-  Positionsdaten nur in vertrauenswürdigem LAN bzw. per SSH-Tunnel nutzen.
+- Der Launcher verweigert HTTP auf einer LAN-Adresse ohne TLS und eine
+  `.env`, die nicht `chmod 600` ist.
 
 ## Implementierte Funktionen
 
@@ -100,10 +104,10 @@
 
 ## Nächste Schritte
 
-1. **systemd-Dienst** für AeroNexusAdvanced (Restart-Verhalten,
-   `--env-file .env`) statt manuellem Hintergrundprozess.
-2. **HTTPS im LAN** für `192.168.178.63` (vertrauenswürdige Zertifikate
-   auf den zugreifenden Geräten).
+1. `config/pki/ca.crt` auf den Anzeigegeräten als vertrauenswürdige CA
+   installieren (Anleitung `docs/deploy-pi.md`).
+2. Feste IP bzw. DHCP-Reservierung für `192.168.178.63` im Router, sonst
+   Zertifikat und `AERONEXUS_BIND` bei IP-Wechsel erneuern.
 3. Testflug draußen mit GPS-Fix: Position, Flugmodus-Wechsel, Höhe und
    Geschwindigkeit im Dashboard prüfen.
 4. Fernsteuerung (RC Plus 2) über FlightHub: prüfen, ob

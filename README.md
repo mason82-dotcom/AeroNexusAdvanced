@@ -81,6 +81,12 @@ DJI device event time.
 
 Full setup: [Phase 8.7 status dashboard](docs/phase-8-7-fleet-status.md).
 
+## Running on the Pi (systemd + HTTPS)
+
+`deploy/pi/` contains a local-CA certificate script, a launcher that refuses
+plain HTTP on LAN addresses, and a systemd user service. See
+[Running on the Raspberry Pi](docs/deploy-pi.md).
+
 ## DJI manual diagnostics
 
 Read-only checks using separate environment variables and valid DJI

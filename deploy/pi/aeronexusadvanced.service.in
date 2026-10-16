@@ -1,0 +1,26 @@
+# Rendered by deploy/pi/install-service.sh (repository: @ROOT@).
+# Read-only DJI gateway + status dashboard. No flight commands.
+[Unit]
+Description=AeroNexusAdvanced read-only DJI status gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=/usr/bin/bash "@ROOT@/deploy/pi/run-server.sh"
+Environment=PYTHONUNBUFFERED=1
+# At boot the LAN address may not be assigned yet: bind fails, retry.
+Restart=always
+RestartSec=10
+# Exit 2/3 = missing or refused configuration: do not loop, fix it first.
+RestartPreventExitStatus=2 3
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
