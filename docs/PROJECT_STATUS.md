@@ -1,88 +1,129 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 16. Oktober 2026  
-**Phase:** 8.7 erfolgreich getestet; Phase 8.8 noch nicht umgesetzt.  
+**Phase:** 10 (FlightHub-2-Flotte, live) erfolgreich getestet; Phase 9
+(DJI Cloud API MQTT-Feed) implementiert, noch nicht live getestet.  
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
-**Letzter auf Raspberry Pi 5 bestätigter Entwicklungs-Commit:** `82cc168`
+**Letzter auf Raspberry Pi 5 bestätigter Entwicklungs-Commit:** `8134858`
 
 ## Bestätigt auf Raspberry Pi 5
 
 - Arbeitsverzeichnis: `/home/mason/Projekte/AeroNexusAdvanced`
 - Virtuelle Python-Umgebung: `.venv/bin/python` (Python 3.13.5)
-- Installation: `aeronexusadvanced` 0.1.0, editierbar
+- Installation: `aeronexusadvanced` 0.1.0, editierbar, zusätzlich
+  `paho-mqtt` 2.1.0 (Extra `mqtt`)
 - `python -m pip check`: **No broken requirements found**
-- `python -m pytest -q`: **298 passed, 1 warning in 0.87s**
+- `python -m pytest -q`: **379 passed, 1 warning**
 - Bekannte, derzeit nicht blockierende Warnung:
   `StarletteDeprecationWarning` in `fastapi/testclient.py`
   zu `httpx` / `httpx2`.
-- Stand der Tests: Mock-/Fixture-Tests der DJI-Adapter; kein nachgewiesener erfolgreicher DJI-Produktivabruf.
 
-## Web-Dashboard – bestätigter Betriebsstand
+## Live-Test FlightHub 2 (Phase 10) – bestätigt
 
-- Raspberry-Pi-LAN-IP: **192.168.178.63**
-- Vom Benutzer erfolgreich manuell gestartet:
+- Gateway: **EU** `https://es-flight-api-eu.djigate.com`, OpenAPI **v2.0**
+  (v0.1 antwortet ebenfalls).
+- Organisationsschlüssel gültig, gehört zur Organisation mit dem
+  Kurzcode aus `AERONEXUS_DJI_ORGANIZATION_ID` (Prüfung beim Start).
+- 1 Projekt; **Matrice 4T** (`0-99-1`) online erkannt, Zustand
+  (`DeviceState_wa345`) korrekt normalisiert: Akku, Spannung,
+  Temperatur, Flugmodus, Satelliten, Höhe, Geschwindigkeit; HMS-Hinweise.
+- Ohne GPS-Fix (drinnen) meldet DJI Position 0/0 → keine Position.
+- **RC Plus 2 erscheint in FlightHub nicht als eigenes Gerät**; über
+  FlightHub liefert das Dashboard derzeit nur die Drohne.
+- Abweichungen der Live-API von der Dokumentation (alle in
+  `docs/phase-10-flighthub-fleet.md` und durch Tests abgesichert):
+  - Gerätelisten liefern `{"list": null}`, solange nicht
+    `device_model_class=drone` mitgegeben wird; `rc` wird mit Code
+    `210070` abgelehnt.
+  - Per Pilot 2 verbundene Drohne steht im `gateway`-Feld, `drone` ist `null`.
+  - Fehlender/ungültiger Schlüssel: HTTP 200 mit Code `200401`.
+  - `height` = absolute Höhe, `elevation` = Höhe über Startpunkt.
+
+## Web-Dashboard – aktueller Betriebsstand
+
+- Oberfläche: `http://192.168.178.63:8000/status`
+- Läuft als **Hintergrundprozess** (`setsid nohup`, Log
+  `logs/uvicorn.log`), **nicht** als systemd-Dienst; startet nach einem
+  Neustart des Pi **nicht** automatisch.
   ```bash
   cd ~/Projekte/AeroNexusAdvanced
-  .venv/bin/python -m uvicorn aeronexus.app:app \
-    --host 192.168.178.63 --port 8000
+  setsid nohup .venv/bin/python -m uvicorn aeronexus.app:app \
+    --host 192.168.178.63 --port 8000 --env-file .env \
+    > logs/uvicorn.log 2>&1 < /dev/null &
   ```
-- Oberfläche: `http://192.168.178.63:8000/status`
-- Benutzer-Screenshot bestätigt erfolgreiche Darstellung über LAN.
-- Anzeigeintervall: **30 Sekunden** (Browser-Abfrage des lokalen Status).
-- Im Screenshot: **0 registrierte Geräte**, 0 Drohnen, 0 Fernsteuerungen;
-  `Polling: disabled`; keine authentifizierten Gerätedetails.
-- Der gestartete Prozess war ein **manueller Vordergrundprozess**;
-  es ist **nicht bestätigt**, dass er noch läuft oder nach einem
-  Neustart automatisch startet.
-- Zugriff aktuell über **HTTP ohne TLS**, daher Dashboard-Token und
-  sensible Geräte-/Positionsdaten **nicht über diese LAN-Verbindung eingeben**.
-- Keine übernommene Live-Telemetrie aus einem DJI-Konto nachgewiesen.
+- Konfiguration ausschließlich in `.env` (gitignoriert, `chmod 600`;
+  Vorlage `.env.example`): Dashboard-Token, FlightHub-Schlüssel,
+  Organisations-Kurzcode, MQTT-Zugangsdaten.
+- FlightHub-Polling **aktiv**: alle 15 s, Telemetrie gilt nach 45 s
+  als veraltet; Browser-Aktualisierung alle 5 s.
+- Ein Polling-Zyklus kostet je Projekt 2 + 2 × Geräte GET-Aufrufe.
+- MQTT-Feed (Phase 9) in `.env` aktiviert, Broker aber nicht erreichbar
+  (AeroNexus-Stack aus) → Status „Broker nicht erreichbar“, harmlose
+  Wiederverbindungsversuche. Bei Nichtnutzung
+  `AERONEXUS_CLOUD_MQTT_ENABLED=0` setzen.
+- Zugriff weiterhin über **HTTP ohne TLS**: Dashboard-Token und
+  Positionsdaten nur in vertrauenswürdigem LAN bzw. per SSH-Tunnel nutzen.
 
-## Implementierte Funktionen (Phasen 8.3–8.7)
+## Implementierte Funktionen
 
-- Strict read-only DJI FlightHub 2 Public Cloud OpenAPI V2 und
-  FlightHub 2 On-Premises OpenAPI V2 Adapter; ausschließlich geprüfte
-  HTTPS-GET-Pfade.
-- Projekt- und Drohnenlisten, normalisierte Detail-Telemetrie sowie
-  validierte lokale Projekt-/Geräteverwaltung.
-- GPS-Position, Batterie, Flughöhe, horizontale/vertikale Geschwindigkeit,
-  Flugzeit, Satellitenzahlen und uninterpretierten RTK-Rohzustand.
-- UTC-Zeitstempel für den Empfang von lokal verarbeiteten Messwerten.
-- Klassifikation `fresh`, `stale`, `missing`, `unknown_age`,
-  `clock_skew`; veraltete Werte sind nicht als aktuell online markiert.
-- FastAPI `/api/v1/status/summary` (anonyme aggregierte Kennzahlen),
-  `/api/v1/status/devices` (separater Dashboard-Bearer-Token),
-  `/status` (responsive Weboberfläche).
-- Opt-in Polling-Baustein, aber **kein automatisch aktivierter DJI-Live-Sync**.
-- **Sicherheitsanforderungen:** keine Flugbefehle; DJI-Dock-Integration
-  ausdrücklich ausgeschlossen; nur Drohnen und Fernsteuerungen im
-  kanonischen Bestand. Echte Controller-Erkennung noch nicht verifiziert.
+- **Phasen 8.3–8.7:** strikt lesende FlightHub-2-Adapter (Public Cloud und
+  On-Premises, nur geprüfte HTTPS-GET-Pfade), validierte lokale
+  Projekt-/Geräteverwaltung, Frische-Klassifikation (`fresh`, `stale`,
+  `missing`, `unknown_age`, `clock_skew`), Status-API mit separatem
+  Dashboard-Token, responsive Weboberfläche.
+- **Phase 9 – DJI Cloud API Live-Feed (opt-in):** abonniert ausschließlich
+  `thing/product/+/osd` mit einem ACL-beschränkten Konto, sendet nie
+  (Publish gesperrt); Drohne/Fernsteuerung aus OSD-Eigenschaften,
+  strenge Validierung, anonyme Feed-Zähler. Doku:
+  `docs/phase-9-cloud-api-live-feed.md`.
+- **Phase 10 – FlightHub-2-Flotte (opt-in):** nach offizieller
+  OpenAPI-V2.0-Spezifikation; Public `project/device` +
+  `device/{sn}/state`, On-Premises `projects/{uuid}/topologies`
+  (Drohnen + Fernsteuerungen mit Projektzuordnung); FlightHub-Text-Enums;
+  automatisches Polling im selben StatusRuntime/Inventory des Servers
+  (damit ist der frühere Punkt „Phase 8.8“ umgesetzt); HMS-Meldungen;
+  `python -m aeronexus.probe_fleet` (nur Zähler). Doku:
+  `docs/phase-10-flighthub-fleet.md`.
+- **Übernommen aus `alecad/dji-flighthub2-cli`** (Apache-2.0, `NOTICE`):
+  EU-Gateway/Regionen, OpenAPI v0.1, `{"list": null}`-Toleranz,
+  typisierte Fehler mit Request-ID, Retry/Backoff für GET.
+- **Sicherheitsanforderungen unverändert:** keine Flugbefehle, keine
+  Steuerungsübernahme, keine Schreiboperationen; DJI-Dock-Integration
+  ausgeschlossen; nur Drohnen und Fernsteuerungen im Bestand.
+
+## Nicht live verifiziert
+
+- On-Premises-Topologie (`projects/{uuid}/topologies`): nur mit
+  spezifikationsgetreuen Fixtures getestet.
+- Phase-9-MQTT-Feed mit M4T/RC Plus 2 (braucht laufenden Broker).
+- Drohne im Flug (Position, Flugmodi, Geschwindigkeiten unter GPS-Fix).
 
 ## Nächste Schritte
 
-1. **HTTPS im LAN** für `192.168.178.63` einrichten (inklusive
-   vertrauenswürdiger Zertifikatskette auf den zugreifenden Geräten).
-2. **systemd-Betrieb** für AeroNexusAdvanced mit Restart-Verhalten und
-   kontrollierter Konfiguration einrichten; nicht mehrere Uvicorn-Instanzen
-   unkoordiniert betreiben.
-3. **Phase 8.8:** Explizit konfigurierbare, read-only DJI-Public-Cloud-
-   Synchronisierung mit dem **selben** StatusRuntime/Inventory des Servers
-   verbinden. Nur autorisierte GET-Endpunkte, kein Fernzugriff auf
-   Flugsteuerung; Fehlerbehandlung, Backoff und Statusanzeige.
-4. Erst nach Prüfung einer zuverlässigen On-Premises-Projekt-UUID-Zuordnung
-   automatischen On-Premises-Import erlauben.
-5. Anschließend DJI-Live-Antworten mit korrekt autorisiertem Testkonto
-   prüfen, ohne Zugangsdaten oder Seriennummern in Chat/Logs zu posten.
+1. **systemd-Dienst** für AeroNexusAdvanced (Restart-Verhalten,
+   `--env-file .env`) statt manuellem Hintergrundprozess.
+2. **HTTPS im LAN** für `192.168.178.63` (vertrauenswürdige Zertifikate
+   auf den zugreifenden Geräten).
+3. Testflug draußen mit GPS-Fix: Position, Flugmodus-Wechsel, Höhe und
+   Geschwindigkeit im Dashboard prüfen.
+4. Fernsteuerung (RC Plus 2) über FlightHub: prüfen, ob
+   `topologies/history` oder ein anderer lesender Endpunkt die RC
+   liefert; sonst über den Phase-9-MQTT-Feed abbilden.
+5. Optional: Flugaufträge und Flugspuren lesend anzeigen
+   (`flight-task/list`, `flight-task/{uuid}/track`).
 
 ## Wiederaufnahme
 
 ```bash
 cd ~/Projekte/AeroNexusAdvanced
 git pull --ff-only
+.venv/bin/python -m pip install -e '.[test,mqtt]'
 .venv/bin/python -m pip check
 .venv/bin/python -m pytest -q
+set -a; . ./.env; set +a; .venv/bin/python -m aeronexus.probe_fleet
 ```
 
 **Wichtige Abgrenzung:** Dieses Dokument speichert den *Projekt- und
 Betriebsstatus*, nicht fortlaufende Telemetriedaten oder den Arbeitsspeicher
-des laufenden Webservers.
+des laufenden Webservers. Seriennummern, Schlüssel und Positionen gehören
+nicht in dieses Dokument.
