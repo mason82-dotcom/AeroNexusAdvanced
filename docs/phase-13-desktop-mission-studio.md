@@ -31,6 +31,15 @@ browser validation on the Raspberry Pi still pending.
   Saved missions can still be deliberately centred with „Mission zentrieren“.
   This is only a **map viewport**, never an aircraft homepoint or flight
   takeoff coordinate; users must set any actual route waypoints manually.
+- **Chrome-Kacheldarstellung repariert:** Ein früherer HTML-Eintrag enthielt
+  einen falschen `integrity`-SHA-256-Wert für
+  `https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css`.
+  Chrome verwarf dadurch das zentrale Leaflet-Stylesheet, weshalb
+  OSM- und Esri-Kacheln voneinander getrennt angeordnet wurden.
+  Der Wert entspricht jetzt exakt der
+  [offiziellen Leaflet-1.9.4-Anleitung](https://leafletjs.com/examples/quick-start/).
+  Ein Regressionstest kontrolliert **beide** Integritätswerte für
+  Leaflet-CSS und Leaflet-JavaScript.
 - **Esri World Imagery satellite tiles are now the default**;
   OpenStreetMap street tiles are optional. The old map default caused
   visible 403 blocked tile graphics on Chrome.
