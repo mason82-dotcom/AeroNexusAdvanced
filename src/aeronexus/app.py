@@ -24,6 +24,7 @@ from .providers import ProviderKind
 from .status_page import render_page
 from .studio_page import render_studio
 from .studio_workspace import Workspace, WorkspaceError, MAX_MEDIA_BYTES, MEDIA_TYPES
+from .lan_access import lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
 from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
@@ -105,6 +106,14 @@ def _require_dashboard_token(authorization: str | None) -> None:
         )
 
 
+def _require_viewer_access(request: Request, authorization: str | None) -> None:
+    """Optional token-free LAN mode; existing bearer mode stays the default."""
+    if lan_mode_enabled():
+        require_lan(request)
+    else:
+        _require_dashboard_token(authorization)
+
+
 @app.get("/", include_in_schema=False)
 def dashboard_home() -> RedirectResponse:
     """Relative redirect keeps the current HTTPS origin, IP and port."""
@@ -142,6 +151,7 @@ async def status_summary(response: Response) -> dict:
 
 @app.get("/api/v1/status/devices")
 async def status_devices(
+    request: Request,
     response: Response,
     authorization: str | None = Header(default=None),
     provider: ProviderKind | None = None,
@@ -151,18 +161,18 @@ async def status_devices(
 ) -> dict:
     """Authenticated details, bounded pagination, no external DJI fetch."""
     _no_cache(response)
-    _require_dashboard_token(authorization)
+    _require_viewer_access(request, authorization)
     devices = app.state.status_runtime.device_views(provider, project_id)
     return {"total": len(devices), "offset": offset, "limit": limit,
             "devices": list(devices[offset:offset + limit])}
 
 
 @app.get("/api/v1/flighthub/catalog")
-async def flighthub_catalog(response: Response,
+async def flighthub_catalog(request: Request, response: Response,
                             authorization: str | None = Header(default=None)) -> dict:
-    """Authenticated project library (waylines, models, tasks); local copy only."""
+    """Project library (waylines, models, tasks); local copy only."""
     _no_cache(response)
-    _require_dashboard_token(authorization)
+    _require_viewer_access(request, authorization)
     runtime = app.state.status_runtime
     projects = []
     for (provider, project_id), catalog in runtime.catalog.items():
@@ -178,12 +188,13 @@ TRACK_CACHE_ENTRIES = 32
 
 
 @app.get("/api/v1/flighthub/projects/{project_id}/tasks/{task_uuid}/track")
-async def flighthub_task_track(project_id: str, task_uuid: str, response: Response,
+async def flighthub_task_track(project_id: str, task_uuid: str, request: Request,
+                               response: Response,
                                authorization: str | None = Header(default=None)):
     """Flown track as GeoJSON. Only tasks listed in the local library are
     fetched, so the endpoint cannot be used to probe arbitrary FlightHub IDs."""
     _no_cache(response)
-    _require_dashboard_token(authorization)
+    _require_viewer_access(request, authorization)
     refresher = app.state.flighthub
     runtime = app.state.status_runtime
     if refresher is None or refresher.settings.config.kind != ProviderKind.PUBLIC_V2:
@@ -209,8 +220,10 @@ async def flighthub_task_track(project_id: str, task_uuid: str, response: Respon
 
 
 @app.get("/status", response_class=HTMLResponse)
-async def status_page(response: Response) -> str:
-    """Browser refreshes local status automatically; no DJI polling by default."""
+async def status_page(request: Request, response: Response) -> str:
+    """Token-free LAN shell; static content never contains live DJI secrets."""
+    if lan_mode_enabled():
+        require_lan(request)
     _no_cache(response)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
@@ -224,8 +237,8 @@ async def status_page(response: Response) -> str:
 
 # Local design workspace: these endpoints write ONLY to the Pi user's private
 # disk, never to DJI. All data endpoints require the separate dashboard token.
-def _studio_workspace(authorization: str | None) -> Workspace:
-    _require_dashboard_token(authorization)
+def _studio_workspace(request: Request, authorization: str | None) -> Workspace:
+    _require_viewer_access(request, authorization)
     try:
         return Workspace()
     except (OSError, WorkspaceError) as exc:
@@ -238,8 +251,10 @@ def _studio_error(exc: WorkspaceError) -> HTTPException:
 
 
 @app.get("/studio", response_class=HTMLResponse, include_in_schema=False)
-def studio_page(response: Response) -> str:
-    """Public static shell; data is never embedded in the unauthenticated HTML."""
+def studio_page(request: Request, response: Response) -> str:
+    """Static studio shell without tokens or embedded private data."""
+    if lan_mode_enabled():
+        require_lan(request)
     _no_cache(response)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
@@ -255,18 +270,19 @@ def studio_page(response: Response) -> str:
 
 
 @app.get("/api/v1/studio/missions")
-def studio_missions(response: Response,
+def studio_missions(request: Request, response: Response,
                     authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
-    return {"missions": _studio_workspace(authorization).list_missions()}
+    return {"missions": _studio_workspace(request, authorization).list_missions()}
 
 
 @app.post("/api/v1/studio/missions", status_code=201)
-def studio_create_mission(mission: WaypointMission, response: Response,
+def studio_create_mission(mission: WaypointMission, request: Request,
+                          response: Response,
                           authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
     try:
-        return _studio_workspace(authorization).save_mission(mission)
+        return _studio_workspace(request, authorization).save_mission(mission)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
 
@@ -275,7 +291,7 @@ def studio_create_mission(mission: WaypointMission, response: Response,
 async def studio_import_mission(request: Request, response: Response,
                                 authorization: str | None = Header(default=None)) -> dict:
     """Only re-import AeroNexus-generated waypoint KMZ into local drafts."""
-    store = _studio_workspace(authorization)
+    store = _studio_workspace(request, authorization)
     content = bytearray()
     async for chunk in request.stream():
         content.extend(chunk)
@@ -293,39 +309,40 @@ async def studio_import_mission(request: Request, response: Response,
 
 
 @app.get("/api/v1/studio/missions/{mission_id}")
-def studio_get_mission(mission_id: str, response: Response,
+def studio_get_mission(mission_id: str, request: Request, response: Response,
                        authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
     try:
-        return _studio_workspace(authorization).get_mission(mission_id)
+        return _studio_workspace(request, authorization).get_mission(mission_id)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
 
 
 @app.put("/api/v1/studio/missions/{mission_id}")
-def studio_update_mission(mission_id: str, mission: WaypointMission, response: Response,
+def studio_update_mission(mission_id: str, mission: WaypointMission,
+                          request: Request, response: Response,
                           authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
     try:
-        return _studio_workspace(authorization).save_mission(mission, mission_id)
+        return _studio_workspace(request, authorization).save_mission(mission, mission_id)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
 
 
 @app.delete("/api/v1/studio/missions/{mission_id}", status_code=204)
-def studio_delete_mission(mission_id: str, response: Response,
+def studio_delete_mission(mission_id: str, request: Request, response: Response,
                           authorization: str | None = Header(default=None)) -> None:
     _no_cache(response)
     try:
-        _studio_workspace(authorization).delete_mission(mission_id)
+        _studio_workspace(request, authorization).delete_mission(mission_id)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
 
 
 @app.get("/api/v1/studio/missions/{mission_id}/export.kmz")
-def studio_export_mission(mission_id: str,
+def studio_export_mission(mission_id: str, request: Request,
                           authorization: str | None = Header(default=None)):
-    store = _studio_workspace(authorization)
+    store = _studio_workspace(request, authorization)
     try:
         mission = WaypointMission.model_validate(store.get_mission(mission_id)["mission"])
         result = export_kmz(mission, timestamp_ms=int(time.time() * 1000))
@@ -340,10 +357,10 @@ def studio_export_mission(mission_id: str,
 
 
 @app.get("/api/v1/studio/media")
-def studio_media_list(response: Response,
+def studio_media_list(request: Request, response: Response,
                       authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
-    return {"media": _studio_workspace(authorization).list_media()}
+    return {"media": _studio_workspace(request, authorization).list_media()}
 
 
 @app.post("/api/v1/studio/media", status_code=201)
@@ -351,7 +368,7 @@ async def studio_media_upload(request: Request, response: Response,
                               authorization: str | None = Header(default=None),
                               x_filename: str | None = Header(default=None)) -> dict:
     """Raw binary upload: no multipart parser, 25 MiB hard streamed cap."""
-    store = _studio_workspace(authorization)
+    store = _studio_workspace(request, authorization)
     mime = (request.headers.get("content-type") or "").split(";", 1)[0].lower()
     if mime not in MEDIA_TYPES or not x_filename or len(x_filename) > 400:
         raise HTTPException(status_code=415, detail="Supported: JPEG, PNG, WebP, MP4")
@@ -377,10 +394,10 @@ async def studio_media_upload(request: Request, response: Response,
 
 
 @app.get("/api/v1/studio/media/{media_id}/file")
-def studio_media_download(media_id: str,
+def studio_media_download(media_id: str, request: Request,
                           authorization: str | None = Header(default=None)):
     try:
-        meta, path = _studio_workspace(authorization).get_media(media_id)
+        meta, path = _studio_workspace(request, authorization).get_media(media_id)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
     return FileResponse(
@@ -390,11 +407,11 @@ def studio_media_download(media_id: str,
 
 
 @app.delete("/api/v1/studio/media/{media_id}", status_code=204)
-def studio_media_delete(media_id: str, response: Response,
+def studio_media_delete(media_id: str, request: Request, response: Response,
                         authorization: str | None = Header(default=None)) -> None:
     _no_cache(response)
     try:
-        _studio_workspace(authorization).delete_media(media_id)
+        _studio_workspace(request, authorization).delete_media(media_id)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
 
