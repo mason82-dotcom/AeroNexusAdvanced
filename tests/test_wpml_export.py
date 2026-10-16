@@ -107,6 +107,7 @@ def test_conservative_rc_loss_settings():
     {"unexpected_dji_command": True},
     {"waypoints": [{"latitude": 91.0, "longitude": 8.5}]},
     {"waypoints": [{"latitude": float("nan"), "longitude": 8.5}]},
+    {"waypoints": [{"latitude": 0.0, "longitude": 0.0}]},
 ])
 def test_invalid_and_unsupported_missions_are_rejected(settings):
     with pytest.raises(ValidationError):
