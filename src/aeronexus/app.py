@@ -11,7 +11,7 @@ from enum import Enum
 from secrets import compare_digest
 
 from fastapi import FastAPI, Header, HTTPException, Query, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
@@ -97,6 +97,20 @@ def _require_dashboard_token(authorization: str | None) -> None:
             status_code=401, detail="Invalid status access credential",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+@app.get("/", include_in_schema=False)
+def dashboard_home(response: Response) -> RedirectResponse:
+    """Relative redirect keeps the current HTTPS origin, IP and port."""
+    _no_cache(response)
+    return RedirectResponse(
+        url="/status", status_code=307,
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
 
 
 @app.get("/health")
