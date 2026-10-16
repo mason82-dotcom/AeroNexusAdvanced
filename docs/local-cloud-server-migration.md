@@ -28,6 +28,7 @@ AeroNexusAdvanced/
 └── cloud-server/                 # vollständig gitignoriert, enthält Geheimnisse
     ├── edge/
     │   ├── compose.core.yaml     # isolierter Docker-Projektname
+    │   ├── docker-compose.legacy.yml  # bisheriger Vollstack, NICHT starten
     │   ├── .env                  # ALTE Cloud-API-App-ID/Key/License; 0600
     │   ├── runtime/              # ausgecheckter/gepatchter DJI-Demo-Backend-/Web-Code
     │   ├── data/{mysql,redis,emqx,minio,basemaps,...}
@@ -47,7 +48,10 @@ gestartet; deren Webseitenbereiche im alten Vue-Control-Image funktionieren
 ohne diese Backend-Dienste gegebenenfalls nicht.
 
 Das Compose verwendet **bereits lokal installierte/pinnte Docker-Images**
-und baut nichts selbst. Die Daten werden mit `sudo rsync -a`
+und baut nichts selbst. Das kopierte alte `docker-compose.yml` wird im
+Ziel bewusst in `docker-compose.legacy.yml` umbenannt: Ein versehentliches
+`docker compose up` ohne `-f` soll **keinen** alten Vollstack starten.
+Die Daten werden mit `sudo rsync -a`
 einschließlich der Container-UIDs, ACL-Dateien und der Datenbanken bei
 **gestoppten** Altcontainern kopiert. Es erfolgt kein SQL-Re-Init,
 keine Änderung an Credentials und kein Upstream-Git-Reset.
