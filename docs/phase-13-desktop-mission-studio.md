@@ -90,6 +90,24 @@ browser validation on the Raspberry Pi still pending.
   Luftraum und RTH müssen vor einem Einsatz in DJI Pilot 2 geprüft werden.
 - Edit coordinates, reorder/insert/remove waypoints, add optional
   **take-photo action** at each point, fit route to map.
+- **Nächste Editor-Stufe (gestapelter Entwicklungsbranch):** flüchtige
+  Rückgängig/Wiederherstellen-Historie für Wegpunkt- und Formänderungen
+  (höchstens 60 Zustände). Gleichzeitige Texteingabe im selben Feld wird
+  zu einem Rückgängig-Schritt zusammengefasst. Strg+Z, Strg+Y und
+  Strg+Umschalt+Z funktionieren außerhalb von Eingabefeldern; dort
+  bleiben die nativen Tastaturfunktionen des Browsers erhalten.
+- Nicht gespeicherte Änderungen werden direkt im Editor angezeigt.
+  Vor dem Laden einer anderen Mission, einem neuen Entwurf, einem KMZ-Import,
+  dem Löschen sowie beim Verlassen der Seite wird vor möglichem Verlust
+  gewarnt. Ein verspäteter Ladeaufruf darf neuere Bearbeitungen nicht
+  überschreiben. Keine automatische lokale Zwischenspeicherung oder
+  Übertragung an DJI; History lebt nur bis zum Schließen der Browserseite.
+- Koordinaten in Wegpunktliste und Kopierfunktion haben **7 Dezimalstellen**.
+  Zusätzlich kann zwischen dem gewählten und folgenden Wegpunkt ein
+  Koordinaten-Mittelpunkt eingefügt werden (mit Datumsgrenzen-Normalisierung).
+  Das ist **keine** Geländehöhen-, Flugkorridor- oder Sicherheitsfreigabe.
+  Das Zwischenpunkt-Werkzeug respektiert die maximale WPML-Wegpunktzahl.
+
 - Selected aircraft: DJI Matrice 4T (default) or Matrice 4E.
 - Editable mission metadata: name, description, uniform takeoff-relative
   height, horizontal airspeed, safe takeoff height, RTH height, finish action.

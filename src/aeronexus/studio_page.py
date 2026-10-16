@@ -83,6 +83,11 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .route-option span{color:#eaf3ff;font-weight:600;font-size:14px}
 .route-explain{margin:7px 0 12px;color:#a6c4de;font-size:12px;line-height:1.5}
 .route-status{padding:9px 11px;border-left:3px solid #5088b5;background:#10263d;border-radius:6px;color:#b7d9f4;font-size:12px;line-height:1.5;margin-bottom:10px}
+.editor-dirty{font-size:12px;padding:6px 9px;border-radius:7px;color:#a0efcf;background:#123e34;border:1px solid #316d56}
+.editor-dirty.unsaved{color:#ffdeaa;background:#3a2c1a;border-color:#7c5a2b}
+.editor-tools{display:flex;gap:7px;margin:9px 0;flex-wrap:wrap}
+.editor-tools button{flex:1}
+.coordinate-help{font-size:11px;color:#a9c6df;margin:6px 0 10px}
 .route-analysis{padding:12px;border:1px solid #3b5879;background:#12283f;border-radius:11px;margin:12px 0}
 .route-analysis h3{margin:0 0 10px;color:#d5eaff}
 .analysis-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
@@ -116,6 +121,8 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="status" id="notice" role="status">Missionen werden automatisch vom Raspberry Pi geladen…</div>
 <label>Gespeicherte Missionen<select id="mission-list"><option value="">Neuer Entwurf</option></select></label>
 <div class="button-row"><button id="new-mission">Neu</button><button id="save-mission" class="primary">Speichern</button><button id="delete-mission" class="danger" disabled>Löschen</button></div>
+<div class="editor-tools"><button id="undo-edit" disabled title="Strg+Z (außer in Eingabefeldern)">↶ Rückgängig</button><button id="redo-edit" disabled title="Strg+Umschalt+Z / Strg+Y">↷ Wiederherstellen</button></div>
+<div id="editor-dirty" class="editor-dirty" role="status" aria-live="polite">Keine ungespeicherten Änderungen</div>
 <fieldset id="mission-fields">
 <label>Missionsname<input id="mission-name" maxlength="100" value="Neue Wegpunktmission"></label>
 <label>Beschreibung<textarea id="mission-description" rows="2" maxlength="1000" placeholder="Aufgabe, Einsatzgebiet, Hinweise"></textarea></label>
@@ -152,11 +159,13 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div id="point-editor" hidden>
 <h3>Wegpunkt <span id="edit-index">1</span> bearbeiten</h3>
 <div class="field-row">
-<label>Breitengrad<input id="point-lat" type="number" min="-90" max="90" step="0.0000001"></label>
-<label>Längengrad<input id="point-lon" type="number" min="-180" max="180" step="0.0000001"></label>
+<label>Breitengrad (WGS84)<input id="point-lat" type="number" min="-90" max="90" step="0.0000001" inputmode="decimal"></label>
+<label>Längengrad (WGS84)<input id="point-lon" type="number" min="-180" max="180" step="0.0000001" inputmode="decimal"></label>
 </div>
+<p class="coordinate-help">Koordinaten auf 7 Dezimalstellen begrenzt (WGS84, Grad). Zwischenpunkt: Koordinatenmittelwert zwischen Auswahl und nächstem Wegpunkt – keine Hindernis- oder Geländeprüfung.</p>
 <label style="flex-direction:row;align-items:center"><input id="point-photo" type="checkbox" style="width:auto"> Foto am Wegpunkt aufnehmen</label>
 <div class="button-row"><button id="apply-point">Übernehmen</button><button id="remove-point" class="danger">Entfernen</button></div>
+<div class="button-row"><button id="insert-midpoint">Zwischenpunkt danach</button><button id="copy-point">WGS84 kopieren</button></div>
 </div>
 <hr>
 <label>Eigene AeroNexus-KMZ wieder öffnen<input type="file" id="import-kmz" accept=".kmz,application/vnd.google-earth.kmz"></label>
@@ -213,6 +222,10 @@ const $=id=>document.getElementById(id);
 const els=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=String(text);return el};
 const EMPTY=()=>({name:"Neue Wegpunktmission",description:"",drone_model:"matrice4t",altitude_m:50,speed_mps:5,takeoff_security_height_m:20,rth_height_m:60,finish_action:"goHome",close_route:false,waypoints:[]});
 let mission=EMPTY(),missionId=null,selected=-1,addMode=false,epoch=0,knownMissions=[],knownMedia=[],displayMedia=20,mediaUrls=[],previewUrl=null;
+const FORM_IDS=["mission-name","mission-description","mission-model","mission-altitude",
+  "mission-speed","mission-takeoff","mission-rth","mission-finish"];
+const HISTORY_LIMIT=60;
+let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Fixed initial view of Forst (Baden), postal code 76694, approximate town centre.
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
@@ -251,6 +264,124 @@ function syncForm(){
   $("mission-speed").value=mission.speed_mps;$("mission-takeoff").value=mission.takeoff_security_height_m;
   $("mission-rth").value=mission.rth_height_m;$("mission-finish").value=mission.finish_action;
   $("close-route").checked=mission.close_route===true;
+}
+// Keep undo history in volatile browser memory only; no mission is autosaved.
+// Snapshots preserve typed form text (including incomplete numeric values).
+function editorSnapshot(){
+  const form={};
+  for(const id of FORM_IDS)form[id]=$(id).value;
+  form["close-route"]=$("close-route").checked;
+  // Canonicalize metadata in the snapshot, even before getForm() is called.
+  // Saving must not add a phantom undo step with identical visible fields.
+  const draft=JSON.parse(JSON.stringify(mission));
+  draft.name=form["mission-name"].trim();
+  draft.description=form["mission-description"];
+  draft.drone_model=form["mission-model"];
+  draft.finish_action=form["mission-finish"];
+  draft.close_route=form["close-route"];
+  for(const [id,key] of [
+    ["mission-altitude","altitude_m"],["mission-speed","speed_mps"],
+    ["mission-takeoff","takeoff_security_height_m"],["mission-rth","rth_height_m"]
+  ]){
+    if(form[id].trim()!==""){
+      const value=Number(form[id]);
+      if(Number.isFinite(value))draft[key]=value;
+    }
+  }
+  return {mission:draft,form,selected};
+}
+function editorSignature(snapshot){
+  return JSON.stringify({mission:snapshot.mission,form:snapshot.form});
+}
+function editorDirty(){
+  return cleanSnapshot!==null&&editorSignature(editorSnapshot())!==cleanSnapshot;
+}
+function editorState(){
+  const dirty=editorDirty();
+  $("editor-dirty").textContent=dirty?"Ungespeicherte Änderungen":"Keine ungespeicherten Änderungen";
+  $("editor-dirty").classList.toggle("unsaved",dirty);
+  $("undo-edit").disabled=editIndex<=0;
+  $("redo-edit").disabled=editIndex<0||editIndex>=editHistory.length-1;
+}
+function historyReset(){
+  editHistory=[editorSnapshot()];
+  editIndex=0;
+  editGroup=null;
+  cleanSnapshot=editorSignature(editHistory[0]);
+  editorState();
+}
+function historyRecord(group=null){
+  const current=editorSnapshot();
+  if(editIndex>=0&&editorSignature(editHistory[editIndex])===editorSignature(current)){
+    editHistory[editIndex].selected=selected;
+    if(group===null)editGroup=null;
+    editorState();
+    return;
+  }
+  // Coalesce consecutive keystrokes in the same form control.
+  if(group!==null&&group===editGroup&&editIndex===editHistory.length-1&&editIndex>0){
+    editHistory[editIndex]=current;
+  }else{
+    editHistory=editHistory.slice(0,editIndex+1);
+    editHistory.push(current);
+    if(editHistory.length>HISTORY_LIMIT)editHistory.shift();
+    editIndex=editHistory.length-1;
+  }
+  editGroup=group;
+  editorState();
+}
+function historyApply(index){
+  if(index<0||index>=editHistory.length)return false;
+  const saved=editHistory[index];
+  mission=JSON.parse(JSON.stringify(saved.mission));
+  selected=saved.selected;
+  for(const id of FORM_IDS)$(id).value=saved.form[id];
+  $("close-route").checked=saved.form["close-route"];
+  editIndex=index;
+  editGroup=null;
+  redraw();
+  editorState();
+  return true;
+}
+function undoEdit(){return historyApply(editIndex-1);}
+function redoEdit(){return historyApply(editIndex+1);}
+function historySaved(signature){
+  cleanSnapshot=signature===undefined?editorSignature(editorSnapshot()):signature;
+  editorState();
+}
+function allowDiscard(){
+  return !editorDirty()||window.confirm(
+    "Ungespeicherte Missionsänderungen verwerfen? Diese können nicht wiederhergestellt werden.");
+}
+function isTextEditing(target){
+  if(!target)return false;
+  if(target.isContentEditable)return true;
+  const tag=String(target.tagName||"").toLowerCase();
+  return tag==="input"||tag==="textarea"||tag==="select";
+}
+function midpointCoordinates(a,b){
+  if(!a||!b||!Number.isFinite(a.latitude)||!Number.isFinite(a.longitude)||
+     !Number.isFinite(b.latitude)||!Number.isFinite(b.longitude)||
+     Math.abs(a.latitude)>90||Math.abs(b.latitude)>90||
+     Math.abs(a.longitude)>180||Math.abs(b.longitude)>180)return null;
+  const delta=(((b.longitude-a.longitude+540)%360)+360)%360-180;
+  const lat=+((a.latitude+b.latitude)/2).toFixed(7);
+  const lon=+(((((a.longitude+delta/2)+540)%360+360)%360)-180).toFixed(7);
+  if(lat===0&&lon===0)return null;
+  return {latitude:lat,longitude:lon,take_photo:false};
+}
+function insertMidpoint(){
+  if(selected<0||selected>=mission.waypoints.length-1)return false;
+  if(resolvedWaypoints().length>=500){
+    notice("Maximal 500 ausführbare WPML-Wegpunkte erlaubt.",true);return false;
+  }
+  const point=midpointCoordinates(mission.waypoints[selected],mission.waypoints[selected+1]);
+  if(!point){notice("Zwischenpunkt aus ungültigen Koordinaten.",true);return false;}
+  mission.waypoints.splice(selected+1,0,point);
+  selected++;
+  redraw();historyRecord();
+  notice("Zwischenpunkt eingefügt · vor dem Flug Wegführung prüfen.");
+  return true;
 }
 function getForm(){
   mission.name=$("mission-name").value.trim();
@@ -315,7 +446,7 @@ function getMap(){
     const lon=Number(((((event.latlng.lng+540)%360)-180)).toFixed(7));
     if(!Number.isFinite(lat)||!Number.isFinite(lon)||(lat===0&&lon===0))return;
     mission.waypoints.push({latitude:lat,longitude:lon,take_photo:false});
-    selected=mission.waypoints.length-1;redraw();
+    selected=mission.waypoints.length-1;redraw();historyRecord();
   });
 }
 function mapWarning(text){
@@ -462,7 +593,7 @@ function redraw(){
     cardText(row,"div","point-index",n+1);
     const desc=cardText(row,"div","");
     cardText(desc,"b","",p.take_photo?"📷 Foto-Wegpunkt":"Wegpunkt "+(n+1));
-    cardText(desc,"small","",p.latitude.toFixed(6)+", "+p.longitude.toFixed(6));
+    cardText(desc,"small","",p.latitude.toFixed(7)+", "+p.longitude.toFixed(7));
     if(n>0&&analysis.valid){
       const leg=analysis.segments[n-1];
       if(leg)cardText(desc,"small","","Von WP "+n+": "+formatRouteDistance(leg.meters));
@@ -474,7 +605,7 @@ function redraw(){
       button.disabled=(n+delta<0||n+delta>=mission.waypoints.length);
       button.addEventListener("click",()=>{
         const to=n+delta;[mission.waypoints[n],mission.waypoints[to]]=[mission.waypoints[to],mission.waypoints[n]];
-        selected=to;redraw();
+        selected=to;redraw();historyRecord();
       });
     }
   });
@@ -489,8 +620,12 @@ function redraw(){
   mission.waypoints.forEach((p,n)=>{
     L.marker([p.latitude,p.longitude],{icon:waypointIcon(n,n===selected),draggable:true}).on("dragend",event=>{
       const latlng=event.target.getLatLng();
-      mission.waypoints[n]={...mission.waypoints[n],latitude:+latlng.lat.toFixed(7),longitude:+latlng.lng.toFixed(7)};
-      selected=n;redraw();
+      const lat=+latlng.lat.toFixed(7);
+      const lon=+(((((latlng.lng+540)%360)+360)%360)-180).toFixed(7);
+      if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)||
+         (lat===0&&lon===0)){notice("Ungültige GPS-Koordinaten.",true);redraw();return;}
+      mission.waypoints[n]={...mission.waypoints[n],latitude:lat,longitude:lon};
+      selected=n;redraw();historyRecord();
     }).on("click",()=>{selected=n;redraw();}).addTo(waypointsLayer);
   });
   if(mission.waypoints.length>=2){
@@ -524,27 +659,59 @@ async function loadMissions(){
   const res=await api("/api/v1/studio/missions");knownMissions=(await res.json()).missions;
   updateMissionSelect();
 }
-async function loadMission(id){
-  if(!id){newMission();return;}
+async function loadMission(id,{skipConfirm=false}={}){
+  if(id===(missionId||"")){updateMissionSelect();return true;}
+  if(!skipConfirm&&!allowDiscard()){updateMissionSelect();return false;}
+  if(!id){newMission({skipConfirm:true});return true;}
+  const startSignature=editorSignature(editorSnapshot());
   const res=await api("/api/v1/studio/missions/"+encodeURIComponent(id));
-  const data=await res.json();mission=data.mission;missionId=data.id;selected=-1;
-  syncForm();updateMissionSelect();redraw();fitMission();notice("Mission geladen: "+mission.name);
+  const data=await res.json();
+  // A late network response must never overwrite edits made during loading.
+  if(editorSignature(editorSnapshot())!==startSignature){
+    updateMissionSelect();
+    throw new Error("Entwurf wurde während des Ladens geändert; Mission nicht übernommen.");
+  }
+  mission=data.mission;missionId=data.id;selected=-1;
+  syncForm();updateMissionSelect();redraw();fitMission();historyReset();
+  notice("Mission geladen: "+mission.name);
+  return true;
 }
-function newMission(){mission=EMPTY();missionId=null;selected=-1;syncForm();updateMissionSelect();redraw();notice("Neuer Entwurf. Klicke auf die Karte, um Wegpunkte hinzuzufügen.");}
+function newMission({skipConfirm=false}={}){
+  if(!skipConfirm&&!allowDiscard()){updateMissionSelect();return false;}
+  mission=EMPTY();missionId=null;selected=-1;
+  syncForm();updateMissionSelect();redraw();historyReset();
+  notice("Neuer Entwurf. Klicke auf die Karte, um Wegpunkte hinzuzufügen.");
+  return true;
+}
 async function saveMission(){
   getForm();
+  historyRecord();
+  const saveSignature=editorSignature(editorSnapshot());
+  const startingId=missionId;
   const editing=!!missionId;
   const path="/api/v1/studio/missions"+(editing?"/"+encodeURIComponent(missionId):"");
   const response=await api(path,{method:editing?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(mission)});
-  const saved=await response.json();missionId=saved.id;
+  const saved=await response.json();
+  // A late save must not bind another newly opened draft to the wrong ID.
+  if(missionId!==startingId||
+     (startingId===null&&editorSignature(editorSnapshot())!==saveSignature)){
+    await loadMissions();
+    notice("Ältere Mission gespeichert. Der aktuell offene Entwurf blieb unverändert.");
+    return;
+  }
+  missionId=saved.id;
+  // Do not mark concurrent edits clean: baseline is the submitted snapshot.
+  historySaved(saveSignature);
   await loadMissions();notice("Gespeichert auf dem Pi: "+mission.name);
 }
 async function removeMission(){
-  if(!missionId||!confirm("Mission wirklich dauerhaft löschen?"))return;
+  if(!missionId||!allowDiscard()||
+     !window.confirm("Mission wirklich dauerhaft löschen?"))return;
   await api("/api/v1/studio/missions/"+encodeURIComponent(missionId),{method:"DELETE"});
-  newMission();await loadMissions();notice("Mission gelöscht");
+  newMission({skipConfirm:true});await loadMissions();notice("Mission gelöscht");
 }
 async function importMission(){
+  if(!allowDiscard())return;
   const file=$("import-kmz").files?.[0];
   if(!file)throw new Error("Bitte eine AeroNexus-KMZ-Datei auswählen");
   if(file.size>2*1024*1024)throw new Error("KMZ darf maximal 2 MiB groß sein");
@@ -554,7 +721,7 @@ async function importMission(){
   const record=await response.json();
   $("import-kmz").value="";
   await loadMissions();
-  await loadMission(record.id);
+  await loadMission(record.id,{skipConfirm:true});
   notice("AeroNexus-KMZ als bearbeitbare Mission importiert. Änderungen vor dem Flug prüfen.");
 }
 async function exportMission(){
@@ -683,14 +850,35 @@ async function showFleetOnMap(){
 function wire(){
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.addEventListener("click",()=>switchTab(el.dataset.tab)));
   $("mission-list").addEventListener("change",e=>loadMission(e.target.value).catch(err=>notice(err.message,true)));
-  $("new-mission").addEventListener("click",newMission);
+  $("new-mission").addEventListener("click",()=>newMission());
+  $("undo-edit").addEventListener("click",undoEdit);
+  $("redo-edit").addEventListener("click",redoEdit);
+  for(const id of FORM_IDS){
+    $(id).addEventListener("input",()=>{
+      if(id==="mission-speed")updateRouteAnalysis();
+      historyRecord("typing:"+id);
+    });
+    $(id).addEventListener("change",()=>historyRecord());
+  }
+  window.addEventListener("beforeunload",e=>{
+    if(!editorDirty())return;
+    e.preventDefault();
+    e.returnValue="";
+  });
+  window.addEventListener("keydown",e=>{
+    if(isTextEditing(e.target)||e.altKey||!(e.ctrlKey||e.metaKey))return;
+    const key=String(e.key||"").toLowerCase();
+    if(key==="z"||key==="y"){
+      e.preventDefault();
+      if(key==="y"||e.shiftKey)redoEdit();else undoEdit();
+    }
+  });
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
   $("delete-mission").addEventListener("click",()=>removeMission().catch(err=>notice(err.message,true)));
   $("close-route").addEventListener("change",e=>{
     mission.close_route=e.target.checked;
-    redraw();
+    redraw();historyRecord();
   });
-  $("mission-speed").addEventListener("input",updateRouteAnalysis);
   $("export-mission").addEventListener("click",()=>exportMission().catch(err=>notice(err.message,true)));
   $("import-mission").addEventListener("click",()=>importMission().catch(err=>notice(err.message,true)));
   $("add-mode").addEventListener("click",()=>{
@@ -707,10 +895,19 @@ function wire(){
     if(!$("point-lat").value.trim()||!$("point-lon").value.trim()||
       !Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180||
       (lat===0&&lon===0)){notice("Ungültige WGS84-Koordinaten (0/0 ist kein GPS-Fix)",true);return;}
-    mission.waypoints[selected]={latitude:lat,longitude:lon,take_photo:$("point-photo").checked};redraw();
+    mission.waypoints[selected]={latitude:+lat.toFixed(7),longitude:+lon.toFixed(7),take_photo:$("point-photo").checked};
+    redraw();historyRecord();
   });
   $("remove-point").addEventListener("click",()=>{
-    if(selected<0)return;mission.waypoints.splice(selected,1);selected=-1;redraw();
+    if(selected<0)return;mission.waypoints.splice(selected,1);selected=-1;redraw();historyRecord();
+  });
+  $("insert-midpoint").addEventListener("click",insertMidpoint);
+  $("copy-point").addEventListener("click",async()=>{
+    const p=mission.waypoints[selected];if(!p)return;
+    try{
+      await navigator.clipboard.writeText(p.latitude.toFixed(7)+", "+p.longitude.toFixed(7));
+      notice("WGS84-Koordinaten kopiert.");
+    }catch(_){notice("Kopieren nicht möglich. Koordinaten im Editor markieren.",true);}
   });
   $("upload-media").addEventListener("click",()=>uploadMedia().catch(err=>$("media-notice").textContent=err.message));
   $("refresh-media").addEventListener("click",()=>loadMedia().catch(err=>$("media-notice").textContent=err.message));
@@ -719,7 +916,7 @@ function wire(){
   $("preview-close").addEventListener("click",closePreview);$("media-dialog").addEventListener("close",closePreview);
   $("refresh-fleet").addEventListener("click",()=>loadFleet().catch(err=>$("fleet-notice").textContent=err.message));
   $("show-fleet-map").addEventListener("click",()=>showFleetOnMap().catch(err=>notice(err.message,true)));
-  getMap();redraw();
+  getMap();redraw();historyReset();
 }
 wire();
 loadWorkspace();
