@@ -83,6 +83,14 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .route-option span{color:#eaf3ff;font-weight:600;font-size:14px}
 .route-explain{margin:7px 0 12px;color:#a6c4de;font-size:12px;line-height:1.5}
 .route-status{padding:9px 11px;border-left:3px solid #5088b5;background:#10263d;border-radius:6px;color:#b7d9f4;font-size:12px;line-height:1.5;margin-bottom:10px}
+.route-analysis{padding:12px;border:1px solid #3b5879;background:#12283f;border-radius:11px;margin:12px 0}
+.route-analysis h3{margin:0 0 10px;color:#d5eaff}
+.analysis-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.analysis-grid>div{padding:9px;border-radius:7px;background:#091d32}
+.analysis-grid small{font-size:11px;color:#afc9df;display:block}
+.analysis-grid strong{font-size:17px;display:block;font-variant-numeric:tabular-nums;color:#f1f8ff;margin-top:3px}
+.analysis-warning{color:#ffd0a4;font-size:12px;line-height:1.5;margin:9px 0 0}
+.analysis-warning:empty{display:none}
 footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 @media(max-width:1000px){.layout{grid-template-columns:320px minmax(0,1fr)}header{gap:9px}.auth{min-width:250px}}
 @media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}header{padding:11px}.map-bar{top:8px;left:8px;right:8px}}
@@ -129,6 +137,17 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </label>
 <p class="route-explain">Eine geschlossene Route fliegt wirklich zurück zum ersten Wegpunkt. Im DJI-WPML-Export wird dafür ein zusätzlicher Wegpunkt angelegt, nicht nur eine Linie gezeichnet. Die Return-to-Home-Einstellung bleibt unabhängig davon.</p>
 <div id="route-status" class="route-status" role="status" aria-live="polite">Offene Route. Noch keine Wegpunkte.</div>
+<section class="route-analysis" aria-labelledby="route-analysis-title">
+<h3 id="route-analysis-title">Routenanalyse · theoretische Werte</h3>
+<div class="analysis-grid">
+<div><small>Wegstrecke (geradlinig)</small><strong id="route-distance">–</strong></div>
+<div><small>Flugzeit bei Sollgeschwindigkeit</small><strong id="route-duration">–</strong></div>
+<div><small>Flugsegmente</small><strong id="route-legs">0</strong></div>
+<div><small>Rückweg zu WP 1</small><strong id="route-return">–</strong></div>
+</div>
+<p id="route-analysis-warning" class="analysis-warning" role="status" aria-live="polite"></p>
+<p class="note">WGS84-Großkreisentfernungen zwischen Wegpunkten. Nur ideale horizontale Reisezeit; kein Start/Steigflug, Bremsen, Schweben, Wind, Hindernisse, Gelände, RTH, Landung oder Akkuverbrauch. Keine Freigabe zum Fliegen.</p>
+</section>
 <div id="point-list"></div>
 <div id="point-editor" hidden>
 <h3>Wegpunkt <span id="edit-index">1</span> bearbeiten</h3>
@@ -337,6 +356,81 @@ function resolvedWaypoints(){
   }
   return points;
 }
+// Planning estimates use only local WGS84 coordinates, never live DJI flight data.
+function geoDistanceMeters(a,b){
+  if(!a||!b)return null;
+  const valid=p=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&
+    Math.abs(p.latitude)<=90&&Math.abs(p.longitude)<=180&&
+    !(p.latitude===0&&p.longitude===0);
+  if(!valid(a)||!valid(b))return null;
+  const rad=Math.PI/180;
+  const latA=a.latitude*rad,latB=b.latitude*rad;
+  const dLat=(b.latitude-a.latitude)*rad;
+  // Trigonometric haversine gives the shortest arc over the antimeridian.
+  const dLon=(b.longitude-a.longitude)*rad;
+  const h=Math.sin(dLat/2)**2+
+    Math.cos(latA)*Math.cos(latB)*Math.sin(dLon/2)**2;
+  return 2*6371008.8*Math.asin(Math.sqrt(Math.min(1,Math.max(0,h))));
+}
+function routeMetrics(points,closeRoute,speedMps){
+  const invalid={valid:false,segments:[],distanceMeters:null,seconds:null,
+    returnMeters:null,executedPoints:0};
+  if(!Array.isArray(points)||!points.length)return invalid;
+  const route=points.slice();
+  if(closeRoute&&points.length>=2){
+    const first=points[0],last=points[points.length-1];
+    if(first.latitude!==last.latitude||first.longitude!==last.longitude)
+      route.push(first);
+  }
+  let distance=0,returnMeters=null;
+  const segments=[];
+  for(let n=1;n<route.length;n++){
+    const meters=geoDistanceMeters(route[n-1],route[n]);
+    if(meters===null)return invalid;
+    segments.push({from:n,to:n+1,meters});
+    distance+=meters;
+    if(closeRoute&&n===route.length-1&&route.length>points.length)
+      returnMeters=meters;
+  }
+  if(route.length===1&&geoDistanceMeters(route[0],route[0])===null)
+    return invalid;
+  const speedOK=Number.isFinite(speedMps)&&speedMps>0&&speedMps<=15;
+  return {valid:true,segments,distanceMeters:distance,
+    seconds:speedOK&&segments.length?distance/speedMps:null,
+    returnMeters,executedPoints:route.length};
+}
+function formatRouteDistance(metres){
+  if(metres===null||!Number.isFinite(metres))return "–";
+  return metres<1000?Math.round(metres).toLocaleString("de-DE")+" m":
+    (metres/1000).toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})+" km";
+}
+function formatRouteDuration(seconds){
+  if(seconds===null||!Number.isFinite(seconds))return "–";
+  const rounded=Math.ceil(seconds);
+  const hours=Math.floor(rounded/3600),mins=Math.floor(rounded%3600/60),secs=rounded%60;
+  return hours?hours+" h "+String(mins).padStart(2,"0")+" min":
+    mins?mins+" min "+String(secs).padStart(2,"0")+" s":secs+" s";
+}
+function updateRouteAnalysis(){
+  const speedRaw=$("mission-speed").value;
+  const speed=speedRaw.trim()===""?NaN:Number(speedRaw);
+  const data=routeMetrics(mission.waypoints,mission.close_route===true,speed);
+  $("route-distance").textContent=formatRouteDistance(data.distanceMeters);
+  $("route-duration").textContent=formatRouteDuration(data.seconds);
+  $("route-legs").textContent=String(data.segments.length);
+  $("route-return").textContent=formatRouteDistance(data.returnMeters);
+  const unique=new Set(mission.waypoints.map(p=>p.latitude+","+p.longitude)).size;
+  const problems=[];
+  if(!data.valid)problems.push("Keine auswertbaren gültigen WGS84-Wegpunkte.");
+  else if(data.executedPoints<2)problems.push("Mindestens zwei Wegpunkte für den KMZ-Export erforderlich.");
+  if(data.executedPoints>500)problems.push("Mehr als 500 ausführbare Wegpunkte.");
+  if(mission.close_route&&(mission.waypoints.length<3||unique<3))
+    problems.push("Geschlossene Route: mindestens drei verschiedene Koordinaten erforderlich.");
+  if(!Number.isFinite(speed)||speed<=0||speed>15)
+    problems.push("Sollgeschwindigkeit muss größer 0 und höchstens 15 m/s sein.");
+  $("route-analysis-warning").textContent=problems.join(" ");
+  return data;
+}
 function updateRouteStatus(){
   const count=mission.waypoints.length;
   const info=$("route-status");
@@ -359,6 +453,7 @@ function updateRouteStatus(){
 function redraw(){
   $("point-count").textContent=mission.waypoints.length;
   updateRouteStatus();
+  const analysis=updateRouteAnalysis();
   const body=$("point-list");body.replaceChildren();
   mission.waypoints.forEach((p,n)=>{
     const row=cardText(body,"div","point-row"+(n===selected?" selected":""));
@@ -366,6 +461,10 @@ function redraw(){
     const desc=cardText(row,"div","");
     cardText(desc,"b","",p.take_photo?"📷 Foto-Wegpunkt":"Wegpunkt "+(n+1));
     cardText(desc,"small","",p.latitude.toFixed(6)+", "+p.longitude.toFixed(6));
+    if(n>0&&analysis.valid){
+      const leg=analysis.segments[n-1];
+      if(leg)cardText(desc,"small","","Von WP "+n+": "+formatRouteDistance(leg.meters));
+    }
     desc.addEventListener("click",()=>{selected=n;redraw();map.setView([p.latitude,p.longitude],Math.max(map.getZoom(),15));});
     const tools=cardText(row,"div","flex");
     for(const [label,delta] of [["↑",-1],["↓",1]]){
@@ -589,6 +688,7 @@ function wire(){
     mission.close_route=e.target.checked;
     redraw();
   });
+  $("mission-speed").addEventListener("input",updateRouteAnalysis);
   $("export-mission").addEventListener("click",()=>exportMission().catch(err=>notice(err.message,true)));
   $("import-mission").addEventListener("click",()=>importMission().catch(err=>notice(err.message,true)));
   $("add-mode").addEventListener("click",()=>{
