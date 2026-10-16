@@ -79,5 +79,6 @@ systemctl --user is-active aeronexusadvanced
 Open the HTTPS dashboard on your phone, connect with the **AeroNexus status
 token**, expand the technical table and verify values against the DJI Pilot 2
 display. Disconnect and confirm device cards, library rows and track controls
-disappear. Expect **400 tests** (395 previously verified plus five new UI
-regression tests); the updated code has not yet been run on the Pi.
+disappear. Expect **401 tests** (400 confirmed on the Pi for Phase 11 plus one new
+root-redirect regression test). The latest redirect change has not yet been
+tested on the Pi.
