@@ -1,17 +1,19 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 16. Oktober 2026  
-**Phase:** 16 (DJI-Cockpit: Live-/Frischeanzeige, RTK und Statistiken)
-implementiert und in GitHub Actions getestet; Phase 15 FlightHub Operations
-Center auf Raspberry Pi 5/Chrome live bestätigt. Phase 9 Cloud-MQTT-Feed
-und optionaler Cloud API 2 BFF weiter deaktiviert.  
+**Phase:** 17 (Mission Studio: P1 GeoObjekte/GeoPhoto, P2 lokale
+Flächenflugstreifen und WSS-Cache-Ereignisse, P4 GeoTIFF-/STL-Vorschau)
+nach PR #4 in main integriert und in GitHub Actions getestet.
+Phase 15/16 FlightHub Operations Center auf Raspberry Pi 5/Chrome live
+bestätigt; Phase 17 auf Pi/Chrome noch **nicht** live geprüft.
+Phase 9 Cloud-MQTT und optionaler Cloud API 2 BFF bleiben deaktiviert.  
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
-**Letzter auf Raspberry Pi 5 bestätigter Teststand:** **537 Tests,
-1 Warnung** (Phase 15), systemd-Dienst `active`. DJI Matrice 4T in
-Operations Center live bestätigt.
-**Aktueller GitHub-Actions-Teststand:** **543 Tests, 1 Warnung**
-(Python 3.12; Phase 16 inklusive RTK-Scroll-Korrektur). Neuer Pi-Test
-der Scroll-Korrektur noch ausstehend.
+**Letzter dokumentierter Pi-Teststand:** **541 Tests, 1 Warnung**
+(Phase 16, vor RTK-Scroll-Korrektur), systemd-Dienst `active`.
+DJI Matrice 4T im Operations Center live bestätigt.
+**Aktueller GitHub-Actions-Teststand:** **579 Tests, 1 Warnung**
+(Python 3.12; PR #4 einschließlich Phase 17). Ein Pi-/Chrome-Test
+der neu integrierten Funktionen sowie der RTK-Scroll-Korrektur steht aus.
 
 ## Bestätigt auf Raspberry Pi 5
 
@@ -237,6 +239,28 @@ der Scroll-Korrektur noch ausstehend.
   unnötiges DOM-Rebuild beim 15-Sekunden-Refresh) ist mit
   **GitHub Actions/main: 543 Tests bestanden, 1 Warnung** geprüft.
   Pi-/Chrome-Nachtest dieser Scrollkorrektur ist noch ausstehend.
+
+## Phase 17 – GeoPhoto, lokale Geo-Objekte, Flächenstreifen, Gelände
+
+- PR **#4** am 16.10.2026 in `main` übernommen (Merge `7fabe6836030`).
+  **GitHub Actions: 579 passed, 1 warning** (Python 3.12, inkl.
+  Node-JavaScript-Syntax, API-/LAN-Zugriff, Geo-/STL-/WSS-Regressionen).
+- Neuer eigenständiger, streng validierter Geo-Objekt-Speicher mit Punkt,
+  Linie, Polygon, Kreis sowie CRUD im Mission Studio.
+- GeoPhoto-Metadaten für lokal gespeicherte Bilder (manuelle GPS-
+  Position, Höhe, Heading/Pitch/Roll, Aufnahmezeit und Notiz),
+  eigene Kartenmarker. Keine automatische EXIF- oder Bildabdeckungsrechnung.
+- Parallele Flugstreifen innerhalb von Polygonen als **Vorschau**,
+  **keine** zusammenhängende flugfertige DJI-WPML-Route.
+- Optionaler WSS-Statusereigniskanal `AERONEXUS_STUDIO_EVENTS=1` nur
+  bei explizitem HTTPS-LAN-Zugriff. Standardmäßig deaktiviert.
+- Begrenzter GeoTIFF-Import mit optionalen Python-GDAL-Bindings,
+  schematische isometrische Höhenvorschau und lokaler binärer STL-Export.
+  Ohne GDAL: GeoTIFF-API meldet Fehler statt falsche Geländedaten.
+- DJI-Flugbefehle weiter 403; vorhandene WPML-Missionen unverändert.
+- **Nicht auf Pi/Chrome installiert oder mit realem GDAL, GeoTIFF,
+  WSS und DJI Pilot 2 importgetestet**. Siehe
+  `docs/phase-17-geo-photo-survey-terrain.md`.
 
 ## Nicht live verifiziert
 
