@@ -1,20 +1,31 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 17. Oktober 2026  
-**Phase:** 17 (Mission Studio: P1 GeoObjekte/GeoPhoto, P2 lokale
-Flächenflugstreifen und WSS-Cache-Ereignisse, P4 GeoTIFF-/STL-Vorschau)
-nach PR #4 in main integriert und in GitHub Actions getestet.
-Phase 15/16 FlightHub Operations Center auf Raspberry Pi 5/Chrome live
-bestätigt; Phase 17 auf Pi/Chrome noch **nicht** live geprüft.
+**Phase:** 18 (interaktiver lokaler Canvas-3D-Terrain-Viewer, in Entwicklung).
+Phase 17 mit P1 Geo-Objekten, P2 Flächenflugstreifen und P4
+GeoTIFF/STL aus PR #4/#9 im Raspberry-Pi-5-/Chrome-LAN getestet.
+Der neue Phase-18-Viewer ist vor eigenem Pi-/Chrome-Test noch **nicht
+live abgenommen**. Siehe `docs/phase-18-interactive-terrain.md`.
 Phase 9 Cloud-MQTT und optionaler Cloud API 2 BFF bleiben deaktiviert.  
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
-**Letzter dokumentierter Pi-Teststand:** **541 Tests, 1 Warnung**
-(Phase 16, vor RTK-Scroll-Korrektur), systemd-Dienst `active`.
-DJI Matrice 4T im Operations Center live bestätigt.
-**Bekannter GitHub-Actions-Teststand:** Phase-17-Merge **579 Tests,
-1 Warnung** (PR #4); späterer Main-Stand einschließlich weiterer DJI-
-Erweiterungen **606 Tests, 1 Warnung** (PR #8, Python 3.12).
-Neue Pi-Tests/Chrome-Abnahme für Phase 17 stehen weiterhin aus.
+**Zuletzt bestätigter Pi-Teststand (Phase 17):** **619 Tests,
+1 Warnung**, Python 3.13.5, systemd-`active`, HTTPS-`/health` und
+`/studio` erfolgreich; Debian-GDAL 3.10.3 und NumPy 2.2.4 in
+der AeroNexus-venv importierbar, `pip check` fehlerfrei.
+Pi/Chrome: Geo-Polygonverwaltung und parallele Streifen sichtbar; GeoTIFF
+mit synthetischem 32×32-Test-DEM importiert, Höhen 120,003–184,327 m,
+Drahtgitter angezeigt und STL heruntergeladen. **Reale DEMs, Geoid-
+Höhenbezüge und Phase-18-Interaktionen noch nicht bestätigt.**
+DJI Matrice 4T im Operations Center in früherer Phase live bestätigt.
+
+## Phase 18 – geplanter Browser-Abnahmetest
+
+- Interaktive große 3D-Geländeansicht mit Pointer-Rotation, Neigung,
+  Zoom, Höhenfarben, Drahtgitter und separater Höhenüberhöhung.
+- Keine Änderung an der GeoTIFF-/STL-API oder den Höhenwerten.
+- Tests, Grenzen und Pi-Anleitung:
+  `docs/phase-18-interactive-terrain.md`.
+- Der Branch/PR und GitHub Actions ersetzen keinen realen Browser-Test.
 
 ## Bestätigt auf Raspberry Pi 5
 
