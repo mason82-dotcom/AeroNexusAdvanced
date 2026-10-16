@@ -155,6 +155,27 @@ Commit `3f0190488` (Pi-Test für Phase 12/13 noch ausstehend).
   sind noch erforderlich. Details:
   `docs/phase-13-desktop-mission-studio.md`.
 
+## Phase 14 – ohne Token in Status & Chrome Studio (CI bestätigt)
+
+- **`/status` und `/studio` ohne Login-/Token-Eingabefelder**;
+  lokale Flottendaten, FlightHub-Bibliothek, Missionen und Medien
+  werden nach Seitenaufruf automatisch geladen.
+- **Opt-in Pflicht:** `AERONEXUS_LAN_NO_TOKEN=1` und
+  `AERONEXUS_LAN_HOST=192.168.178.63` in der privaten Pi-`.env`.
+  LAN-Modus ist ausschließlich für direkte HTTPS-Verbindungen aus
+  `192.168.178.0/24` (und Loopback) vorgesehen; Host, Origin,
+  Fetch-Metadata und Peer-IP werden geprüft.
+- Damit können **alle Geräte im Heimnetz** GPS-/Seriennummern sehen
+  und lokale Studio-Missionen und Medien ändern/löschen. Niemals über
+  öffentliche Ports, Reverse Proxies oder Gastnetz veröffentlichen.
+- Zusätzlich den ursprünglich fatalen JavaScript-Klammerfehler im
+  Leaflet-Kartencode behoben, der das komplette Chrome-Skript blockierte.
+  Neue `node --check`-Regressionstests.
+- **GitHub Actions: 486 Tests bestanden, 1 Warnung** (Python 3.12);
+  Raspberry-Pi- und Chrome-Live-Test der Phase 14 noch ausstehend.
+  Siehe `docs/phase-14-token-free-lan.md`.
+- Flugsteuerung und DJI-Dock-Integration bleiben gesperrt.
+
 ## Nicht live verifiziert
 
 - On-Premises-Topologie (`projects/{uuid}/topologies`): nur mit
