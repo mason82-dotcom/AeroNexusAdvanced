@@ -251,6 +251,8 @@ def test_phase18_3d_viewer_controls_keep_local_read_only_terrain():
     assert 'function terrainProjection(grid,view,width,height)' in page
     assert 'function terrainDrawCanvas(canvas,grid,view)' in page
     assert 'function terrainBindPointer(canvas)' in page
+    assert 'const loadSerial=++terrainLoadSerial;' in page
+    assert 'if(loadSerial!==terrainLoadSerial)return;' in page
     assert 'function terrainResetView()' in page
     assert "Keine DJI-Missionsausführung" in page
     assert "Höhenwerte bleiben in Metern" in page
