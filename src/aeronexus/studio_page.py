@@ -78,6 +78,11 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .empty{padding:30px;border:1px dashed #45607f;border-radius:12px;color:#a5bad1}
 .way-marker{width:27px;height:27px;border-radius:50%;background:#2f96db;border:2px solid #f2f9ff;display:grid;place-items:center;color:#fff;font-weight:700;box-shadow:0 3px 12px #0007}
 .way-marker.selected{background:#f0b04b;color:#101520}
+.route-option{display:flex;flex-direction:row;align-items:center;gap:10px;padding:12px;background:#172b43;border:1px solid #405c7c;border-radius:10px;cursor:pointer}
+.route-option input{width:18px;height:18px;flex:0 0 auto;accent-color:#55b4f5}
+.route-option span{color:#eaf3ff;font-weight:600;font-size:14px}
+.route-explain{margin:7px 0 12px;color:#a6c4de;font-size:12px;line-height:1.5}
+.route-status{padding:9px 11px;border-left:3px solid #5088b5;background:#10263d;border-radius:6px;color:#b7d9f4;font-size:12px;line-height:1.5;margin-bottom:10px}
 footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 @media(max-width:1000px){.layout{grid-template-columns:320px minmax(0,1fr)}header{gap:9px}.auth{min-width:250px}}
 @media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}header{padding:11px}.map-bar{top:8px;left:8px;right:8px}}
@@ -117,6 +122,12 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <h2>Wegpunkte <span id="point-count" class="badge">0</span></h2>
 <div class="button-row"><button id="add-mode">+ Auf Karte setzen</button><button id="fit-mission">Route einpassen</button></div>
 <div class="note">„Auf Karte setzen“ aktivieren, dann klicken. Punkte lassen sich ziehen, bearbeiten, sortieren und löschen.</div>
+<label class="route-option" for="close-route">
+<input id="close-route" type="checkbox">
+<span>Route schließen (letzten Wegpunkt mit erstem verbinden)</span>
+</label>
+<p class="route-explain">Eine geschlossene Route fliegt wirklich zurück zum ersten Wegpunkt. Im DJI-WPML-Export wird dafür ein zusätzlicher Wegpunkt angelegt, nicht nur eine Linie gezeichnet. Die Return-to-Home-Einstellung bleibt unabhängig davon.</p>
+<div id="route-status" class="route-status" role="status" aria-live="polite">Offene Route. Noch keine Wegpunkte.</div>
 <div id="point-list"></div>
 <div id="point-editor" hidden>
 <h3>Wegpunkt <span id="edit-index">1</span> bearbeiten</h3>
@@ -180,7 +191,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 "use strict";
 const $=id=>document.getElementById(id);
 const els=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=String(text);return el};
-const EMPTY=()=>({name:"Neue Wegpunktmission",description:"",drone_model:"matrice4t",altitude_m:50,speed_mps:5,takeoff_security_height_m:20,rth_height_m:60,finish_action:"goHome",waypoints:[]});
+const EMPTY=()=>({name:"Neue Wegpunktmission",description:"",drone_model:"matrice4t",altitude_m:50,speed_mps:5,takeoff_security_height_m:20,rth_height_m:60,finish_action:"goHome",close_route:false,waypoints:[]});
 let mission=EMPTY(),missionId=null,selected=-1,addMode=false,epoch=0,knownMissions=[],knownMedia=[],displayMedia=20,mediaUrls=[],previewUrl=null;
 // Fixed initial view of Forst (Baden), postal code 76694, approximate town centre.
 // Loading other saved missions does not modify this default for the next page load.
@@ -219,6 +230,7 @@ function syncForm(){
   $("mission-model").value=mission.drone_model;$("mission-altitude").value=mission.altitude_m;
   $("mission-speed").value=mission.speed_mps;$("mission-takeoff").value=mission.takeoff_security_height_m;
   $("mission-rth").value=mission.rth_height_m;$("mission-finish").value=mission.finish_action;
+  $("close-route").checked=mission.close_route===true;
 }
 function getForm(){
   mission.name=$("mission-name").value.trim();
@@ -229,6 +241,12 @@ function getForm(){
   mission.takeoff_security_height_m=Number($("mission-takeoff").value);
   mission.rth_height_m=Number($("mission-rth").value);
   mission.finish_action=$("mission-finish").value;
+  mission.close_route=$("close-route").checked;
+  const resolved=resolvedWaypoints();
+  if(resolved.length>500)throw new Error("Geschlossene Missionen dürfen höchstens 500 ausführbare Wegpunkte haben.");
+  if(mission.close_route&&mission.waypoints.length>=2&&
+     new Set(mission.waypoints.map(p=>p.latitude+","+p.longitude)).size<3)
+    throw new Error("Route schließen erfordert mindestens 3 unterschiedliche Wegpunkte.");
   if(!mission.name||mission.name.length>100)throw new Error("Bitte gültigen Missionsnamen eingeben.");
   for(const [key,min,max] of [["altitude_m",2,500],["speed_mps",0.1,15],["takeoff_security_height_m",1.2,1500],["rth_height_m",2,500]]){
     if(!Number.isFinite(mission[key])||mission[key]<min||mission[key]>max)throw new Error("Ungültiger Wert: "+key);
@@ -304,8 +322,42 @@ function centerOnForst(){
 function waypointIcon(n,active){
   return L.divIcon({className:"",html:'<div class="way-marker'+(active?' selected':'')+'">'+(n+1)+'</div>',iconSize:[28,28],iconAnchor:[14,14]});
 }
+function closingAddsWaypoint(){
+  const points=mission.waypoints;
+  if(!mission.close_route||points.length<2)return false;
+  const first=points[0],last=points[points.length-1];
+  return first.latitude!==last.latitude||first.longitude!==last.longitude;
+}
+function resolvedWaypoints(){
+  const points=mission.waypoints.slice();
+  if(closingAddsWaypoint()){
+    // Return point must never inherit a camera action from waypoint 1.
+    points.push({...points[0],take_photo:false});
+  }
+  return points;
+}
+function updateRouteStatus(){
+  const count=mission.waypoints.length;
+  const info=$("route-status");
+  if(!mission.close_route){
+    info.textContent="Offene Route: "+count+" Wegpunkte · kein Rückflugsegment eingeplant.";
+    return;
+  }
+  const distinct=new Set(mission.waypoints.map(p=>p.latitude+","+p.longitude)).size;
+  if(count<3||distinct<3){
+    info.textContent="Route schließen ausgewählt: mindestens 3 unterschiedliche Wegpunkte für den Export erforderlich.";
+    return;
+  }
+  const extra=closingAddsWaypoint();
+  const total=count+(extra?1:0);
+  info.textContent=extra
+    ?"Geschlossene Route: "+count+" Wegpunkte + 1 echter Rückkehr-Wegpunkt im DJI-WPML-Export ("+total+" insgesamt)."
+    :"Geschlossene Route: der letzte Wegpunkt liegt bereits auf Wegpunkt 1 ("+total+" insgesamt).";
+  if(total>500)info.textContent+=" Maximale WPML-Wegpunktzahl überschritten.";
+}
 function redraw(){
   $("point-count").textContent=mission.waypoints.length;
+  updateRouteStatus();
   const body=$("point-list");body.replaceChildren();
   mission.waypoints.forEach((p,n)=>{
     const row=cardText(body,"div","point-row"+(n===selected?" selected":""));
@@ -340,7 +392,18 @@ function redraw(){
     }).on("click",()=>{selected=n;redraw();}).addTo(waypointsLayer);
   });
   if(mission.waypoints.length>=2){
-    lines=L.polyline(mission.waypoints.map(p=>[p.latitude,p.longitude]),{color:"#44aaf8",weight:4,opacity:.9}).addTo(map);
+    // Solid lines are regular waypoints; dashed segment 4 → 1 is an actual
+    // return leg in WPML, not only a decorative polygon stroke.
+    lines=L.layerGroup().addTo(map);
+    L.polyline(mission.waypoints.map(p=>[p.latitude,p.longitude]),
+      {color:"#44aaf8",weight:4,opacity:.9}).addTo(lines);
+    if(closingAddsWaypoint()){
+      const first=mission.waypoints[0],last=mission.waypoints[mission.waypoints.length-1];
+      L.polyline([[last.latitude,last.longitude],[first.latitude,first.longitude]],{
+        color:"#ffce74",weight:4,dashArray:"10 9",opacity:1
+      }).bindTooltip("Rückflug zum ersten Wegpunkt · echter DJI-WPML-Wegpunkt")
+        .addTo(lines);
+    }
   }
 }
 function fitMission(){
@@ -521,6 +584,10 @@ function wire(){
   $("new-mission").addEventListener("click",newMission);
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
   $("delete-mission").addEventListener("click",()=>removeMission().catch(err=>notice(err.message,true)));
+  $("close-route").addEventListener("change",e=>{
+    mission.close_route=e.target.checked;
+    redraw();
+  });
   $("export-mission").addEventListener("click",()=>exportMission().catch(err=>notice(err.message,true)));
   $("import-mission").addEventListener("click",()=>importMission().catch(err=>notice(err.message,true)));
   $("add-mode").addEventListener("click",()=>{
