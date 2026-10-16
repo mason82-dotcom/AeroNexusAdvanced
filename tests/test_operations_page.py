@@ -178,3 +178,26 @@ def test_no_dji_task_create_or_microfrontend_runtime():
         assert path not in page
     assert "DJI" in page
     assert "nur lesen" in page.lower() or "Nur lesen" in page
+
+
+def test_flight_task_media_catalog_from_cli_is_metadata_only():
+    html = render_operations()
+    assert "Medienliste anzeigen" in html
+    assert "async function viewTaskMedia(projectId,taskUuid,container)" in html
+    assert '/tasks/"+encodeURIComponent(taskUuid)+"/media' in html
+    assert "Keine Download- oder Vorschau-URLs freigegeben" in html
+    assert "file.size_bytes" in html
+    assert "original_url" not in html
+    assert "preview_url" not in html
+
+
+def test_cloud_api2_optional_source_status_and_backend_not_exposed():
+    html = render_operations()
+    assert 'id="cloud-api-panel"' in html
+    assert 'id="cloud-api-state"' in html
+    assert 'getJSON("/api/v1/cloudapi2/devices")' in html
+    assert '"dji-cloud-api-2"' in html
+    assert "Cloud-API-2-Schnittstelle nicht verfügbar" in html
+    assert "AERONEXUS_CLOUDAPI2_BFF_TOKEN" not in html
+    assert "Bearer " not in html
+    assert "SDK-Backend" in html
