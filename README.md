@@ -89,6 +89,33 @@ These use the existing authenticated local API; the detailed legacy table and
 FlightHub library remain available. The browser clears protected information
 on disconnect, including results from late requests.
 
+## Desktop Mission Studio (phase 13)
+
+A dedicated Chrome/desktop workspace is available at
+**`https://192.168.178.63:8000/studio`** once the current code is installed
+and the existing user service has been restarted. Use the same independent
+AeroNexus status token as for the dashboard (never the DJI organization key).
+
+- Desktop-sized interactive OpenStreetMap/Esri map with click/drag waypoints,
+  mission metadata, point editing/reordering and optional photo actions.
+- Create/save/reopen/edit/delete waypoint drafts locally on the Pi.
+- Download DJI waypoint KMZ (`wpmz/template.kml`, `wpmz/waylines.wpml`)
+  for **manual** review/import in DJI Pilot 2; initial aircraft profiles
+  Matrice 4T and Matrice 4E, uniform height relative to takeoff.
+- Local private media library: upload, search, preview and delete
+  JPEG/PNG/WebP/MP4 (25 MiB maximum per file).
+- Read-only fleet tab with optional map plotting of valid *fresh* GPS.
+- Planned missions and media are stored under
+  `~/.local/share/aeronexusadvanced` with private permissions, **outside Git**.
+- Leaflet, OSM and Esri map tiles are third-party browser requests; the tile
+  providers learn the selected map viewport, but no AeroNexus token is sent.
+- **No** DJI mission upload or execution, Dock, flight command, live airspace
+  or terrain validation. The WPML exporter implements an intentionally
+  constrained waypoint subset and is **not yet acceptance-tested in Pilot 2**;
+  check every exported mission before flying.
+
+See [Phase 13 desktop studio and WPML scope](docs/phase-13-desktop-mission-studio.md).
+
 ## Running on the Pi (systemd + HTTPS)
 
 `deploy/pi/` contains a local-CA certificate script, a launcher that refuses
