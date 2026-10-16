@@ -53,6 +53,24 @@ browser validation on the Raspberry Pi still pending.
   which case manually choose satellite from the map dropdown. We do not
   circumvent an explicit OSM restriction or fetch tiles in bulk.
 - Click-to-place WGS84 waypoints, draggable markers, connected route line.
+- **Schalter „Route schließen“:** Die letzte Koordinate wird mit dem
+  ersten Wegpunkt verbunden. Das Rückflugsegment erscheint auf der Karte
+  **gelb gestrichelt** und wird beim KMZ-Export als **tatsächlich
+  ausgeführter zusätzlicher WPML-Wegpunkt** geschrieben: vier editierbare
+  Punkte erzeugen fünf ausführbare WPML-Wegpunkte (`1→2→3→4→1`).
+  Die Einstellung bleibt beim Speichern, Laden und Re-Import eigener
+  AeroNexus-KMZ-Dateien erhalten. Der zusätzliche WP wird beim
+  Abschalten wieder aus dem Export entfernt, nicht aus dem Entwurf.
+  Bereits explizit vorhandene Rückkehrpunkte werden nicht dupliziert.
+  Der Rückkehr-WP löst **keine automatisch duplizierte Fotoaktion** aus.
+- **Grenzen:** Zum Schließen sind mindestens drei unterschiedliche
+  Wegpunkt-Koordinaten nötig; maximal 500 **ausführbare** WPML-Wegpunkte
+  (also gewöhnlich 499 editierbare + ein Rückkehr-WP). Der Schalter
+  steuert **nicht** DJI Return-to-Home (`goHome`), das weiterhin eine
+  unabhängige Mission-Endaktion bleibt. Ein Rückflug zu WP1 bedeutet
+  weder automatisch Landung noch den tatsächlichen DJI-Homepoint.
+  Geflogen wird die gezeichnete Route; Flugweg, Höhen, Hindernisse,
+  Luftraum und RTH müssen vor einem Einsatz in DJI Pilot 2 geprüft werden.
 - Edit coordinates, reorder/insert/remove waypoints, add optional
   **take-photo action** at each point, fit route to map.
 - Selected aircraft: DJI Matrice 4T (default) or Matrice 4E.
@@ -63,6 +81,10 @@ browser validation on the Raspberry Pi still pending.
 - Re-import **previously exported AeroNexus waypoint KMZ files** to edit
   their supported waypoint subset; reject external/complex DJI archives
   with unknown actions instead of silently rewriting them.
+  A repeated last waypoint at exactly the first coordinate, with no
+  camera action, is inferred as a closed-route return leg on re-import;
+  older manually duplicated final points can therefore be normalized
+  into the reversible „Route schließen“ switch with identical flight geometry.
 - Export DJI waypoint **KMZ** locally using exactly
   `wpmz/template.kml` and `wpmz/waylines.wpml`. The exporter uses XML,
   not unsafe string interpolation. All coordinates serialize as
