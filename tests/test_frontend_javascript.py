@@ -122,9 +122,30 @@ const previousDetails=body().querySelector("#cockpit-technical");
 assert.equal(previousDetails.open,false);
 previousDetails.open=true;
 body().scrollTop=22;
+// Two refresh cycles with identical content, only received-age changing,
+// must retain the exact DOM nodes and scroll offsets (no Chrome repaint).
+api.setState([{...base,age_seconds:5}],"SYNTHETIC");
 api.renderCockpit();
+assert.strictEqual(body().querySelector("#cockpit-technical"),previousDetails);
+assert.equal(value("cockpit-received"),"Vor 5 s empfangen");
+assert.equal(body().scrollTop,22);
+api.setState([{...base,age_seconds:7}],"SYNTHETIC");
+api.renderCockpit();
+assert.strictEqual(body().querySelector("#cockpit-technical"),previousDetails);
+assert.equal(body().scrollTop,22);
+assert.equal(value("cockpit-received"),"Vor 7 s empfangen");
+// A changed real telemetry sample must repaint but preserve expansion/scroll.
+api.setState([{...base,telemetry:{...base.telemetry,battery_percent:86}}],"SYNTHETIC");
+api.renderCockpit();
+assert.notStrictEqual(body().querySelector("#cockpit-technical"),previousDetails);
 assert.equal(body().querySelector("#cockpit-technical").open,true);
 assert.equal(body().scrollTop,22);
+assert.ok(summary().includes("86 %"));
+const rawCards=body().querySelector("#cockpit-technical")
+  .children.find(x=>x.className==="cockpit")
+  .children.filter(x=>x.className.includes("cockpit-raw"));
+assert.equal(rawCards.length,1);
+assert.ok(allText(rawCards[0]).includes("is_fixed:not_started"));
 
 api.setState([{...base,online:false}],"SYNTHETIC");
 api.renderCockpit();
