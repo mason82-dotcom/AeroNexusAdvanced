@@ -62,6 +62,20 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .cockpit>div{background:#102339;border-radius:8px;padding:10px;min-width:0}
 .cockpit>div span{display:block;font-size:11px;color:#a6bdd7}
 .cockpit>div b{font-size:17px;display:block;overflow-wrap:anywhere;margin-top:4px}
+.cockpit-status-row{margin:9px 0;gap:6px;flex-shrink:0}
+.cockpit-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;flex-shrink:0;margin:1px 0 10px}
+.cockpit-summary .hero-value{background:#102c46;border:1px solid #335773;border-radius:10px;padding:9px;min-width:0}
+.cockpit-summary .hero-value.battery{grid-column:1/-1}
+.hero-value .hero-label{font-size:11px;color:#b4cce5;display:block}
+.hero-value strong{display:block;font-size:18px;overflow-wrap:anywhere;margin-top:3px}
+.hero-value.battery strong{font-size:23px}
+.cockpit-info{font-size:11px;color:#bad2e8;line-height:1.5;margin:0 0 9px}
+.cockpit-section-title{font-size:13px;font-weight:700;margin:12px 0 7px}
+.cockpit-technical{border-top:1px solid #385574;margin-top:11px;padding-top:9px}
+.cockpit-technical summary{cursor:pointer;color:#a9d9fa;font-size:13px;font-weight:700;padding:5px 0}
+.cockpit-technical summary:focus-visible{outline:2px solid #8bd7fc}
+.cockpit-technical[open] .cockpit{margin-top:8px}
+.cockpit-secondary-note{color:#b4c6db;font-size:11px;line-height:1.5;padding:8px 0}
 .progress{width:100%;height:12px;accent-color:#6bd7a8;margin:6px 0}
 .progress.low{accent-color:#e5a776}
 .select-wide{width:100%;min-width:0}
@@ -154,7 +168,12 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <h2 id="cockpit-name">Keine Drohne ausgewählt</h2>
 <label class="sub" for="cockpit-select">Gerät auswählen</label>
 <select id="cockpit-select" class="select-wide" aria-label="Cockpit-Fluggerät wählen"><option value="">Keine Fluggeräte</option></select>
-<div class="row" style="margin:10px 0"><span id="cockpit-freshness" class="badge">Unbekannt</span><span id="cockpit-received" class="sub">Empfangszeit ausstehend</span></div>
+<div class="row cockpit-status-row">
+<span id="cockpit-connection" class="badge">Verbindung unbekannt</span>
+<span id="cockpit-freshness" class="badge">Daten unbekannt</span>
+<span id="cockpit-received" class="sub">Empfangszeit ausstehend</span>
+</div>
+<div id="cockpit-summary" class="cockpit-summary" aria-label="Wichtigste Fluggerätedaten"></div>
 <div id="cockpit-content" class="scroll grow"><div class="note">Die Cockpitwerte werden lokal geladen…</div></div>
 </section>
 <section class="panel grow">
@@ -327,66 +346,136 @@ function metric(parent,title,value){
   add(box,"span","",title);
   add(box,"b","",value);
 }
+function rtkLabel(raw){
+  const officialObserved={
+    "is_fixed:not_started":"RTK nicht gestartet",
+    "is_fixed:fixing":"RTK-Fix läuft",
+    "is_fixed:fixing_successful":"RTK-Fix erfolgreich",
+    "is_fixed:fixing_failed":"RTK-Fix fehlgeschlagen"
+  };
+  // This map is deliberately limited to strings already handled in /status.
+  // Unknown raw values stay accessible only in the technical section.
+  return typeof raw==="string"?(officialObserved[raw]||"RTK-Status unbekannt"):"Nicht übermittelt";
+}
+function modeLabel(t){
+  const modes={0:"Standby",1:"Startvorbereitung",2:"Startbereit",3:"Manueller Flug",
+    4:"Automatischer Start",5:"Routenflug",9:"Rückkehr (RTH)",10:"Automatische Landung"};
+  return typeof t.flight_mode_label==="string"&&t.flight_mode_label.trim()?
+    t.flight_mode_label.trim():
+    t.flight_mode_code==null?"–":(modes[t.flight_mode_code]||"DJI-Code "+t.flight_mode_code);
+}
+function connectionStatus(device){
+  if(device.online===true)
+    return device.freshness==="fresh"?["Online","good"]:["Zuletzt online","warn"];
+  if(device.online===false)
+    return device.freshness==="fresh"?["Offline","bad"]:["Zuletzt offline","warn"];
+  return ["Verbindung unbekannt","warn"];
+}
+function freshnessStatus(device){
+  const labels={
+    fresh:"Daten aktuell",stale:"Daten veraltet",missing:"Keine Telemetrie",
+    unknown_age:"Alter unbekannt",clock_skew:"Zeitabweichung"
+  };
+  return [labels[device.freshness]||"Status unbekannt",
+    device.freshness==="fresh"?"good":"warn"];
+}
+function hero(parent,label,value,extra=""){
+  const box=add(parent,"div","hero-value"+(extra?" "+extra:""));
+  add(box,"span","hero-label",label);
+  add(box,"strong","",value);
+  return box;
+}
 function renderCockpit(){
   const options=$("cockpit-select");options.replaceChildren();
   const available=selectedDevices();
   if(!available.some(d=>d.device_id===currentDevice))currentDevice=available[0]?.device_id||"";
-  for(const d of available){const option=add(options,"option","",d.name||d.device_id);option.value=d.device_id;}
+  for(const d of available){
+    const option=add(options,"option","",d.name||d.device_id);option.value=d.device_id;
+  }
   options.value=currentDevice;
-  const body=$("cockpit-content");body.replaceChildren();
+  const summary=$("cockpit-summary");
+  const body=$("cockpit-content");
+  const detailsWasOpen=body.querySelector("#cockpit-technical")?.open===true;
+  const oldScroll=body.scrollTop;
+  summary.replaceChildren();body.replaceChildren();
   const d=available.find(x=>x.device_id===currentDevice);
   if(!d){
     message("cockpit-name","Kein Fluggerät ausgewählt");
+    message("cockpit-connection","Verbindung unbekannt");
     message("cockpit-freshness","Keine Daten");
     message("cockpit-received","Kein Datenempfang");
     add(body,"div","note","Kein Fluggerät vom gewählten FlightHub-Projekt empfangen.");
     return;
   }
   message("cockpit-name",d.name||"Unbenanntes Fluggerät");
-  const state=d.freshness==="fresh"?"Aktuell":d.freshness==="stale"?"Veraltet":"Nicht verfügbar";
-  message("cockpit-freshness",state);
-  $("cockpit-freshness").className="badge "+(state==="Aktuell"?"good":"warn");
-  message("cockpit-received",finite(d.age_seconds)?"Vor "+Math.floor(d.age_seconds)+" s empfangen":"Empfangsalter unbekannt");
+  const [connection,connectionTone]=connectionStatus(d);
+  const [freshness,freshnessTone]=freshnessStatus(d);
+  message("cockpit-connection",connection);
+  $("cockpit-connection").className="badge "+connectionTone;
+  message("cockpit-freshness",freshness);
+  $("cockpit-freshness").className="badge "+freshnessTone;
+  message("cockpit-received",finite(d.age_seconds)&&d.age_seconds>=0?
+    "Vor "+Math.floor(d.age_seconds)+" s empfangen":"Empfangsalter unbekannt");
   const t=d.telemetry||{};
-  if(finite(t.battery_percent)&&t.battery_percent>=0&&t.battery_percent<=100){
-    add(body,"div","sub","Akku (letzter Messwert)");
-    const level=add(body,"progress","progress"+(t.battery_percent<=30?" low":""));
-    level.max=100;level.value=t.battery_percent;
-    add(body,"div","badge "+(t.battery_percent<=30?"warn":"good"),formatNumber(t.battery_percent,0,"%"));
+  const isCurrent=d.freshness==="fresh"&&d.online===true;
+  const labelSuffix=isCurrent?" (letzter Messwert)":" (gespeichert)";
+  const battery=finite(t.battery_percent)&&t.battery_percent>=0&&t.battery_percent<=100?
+    t.battery_percent:null;
+  const batteryCard=hero(summary,"Akku"+labelSuffix,
+    battery===null?"–":formatNumber(battery,0,"%"),"battery");
+  if(battery!==null){
+    const level=add(batteryCard,"progress","progress"+(battery<=30?" low":""));
+    level.max=100;level.value=battery;
+    level.setAttribute("aria-label","Akkustand "+Math.round(battery)+" Prozent (AeroNexus-Anzeige)");
   }
-  const grid=add(body,"div","cockpit");
-  const modes={0:"Standby",1:"Startvorbereitung",2:"Startbereit",3:"Manueller Flug",
-    4:"Automatischer Start",5:"Routenflug",9:"Rückkehr (RTH)",10:"Automatische Landung"};
-  metric(grid,"Flugmodus",t.flight_mode_label||
-    (t.flight_mode_code==null?"–":(modes[t.flight_mode_code]||"DJI-Code "+t.flight_mode_code)));
-  metric(grid,"Höhe über Start",formatNumber(t.elevation_m,1,"m"));
+  hero(summary,"Flugmodus",modeLabel(t));
+  hero(summary,"Höhe über Start",formatNumber(t.elevation_m,1,"m"));
+  hero(summary,"Geschwindigkeit horizontal",formatNumber(t.horizontal_speed_mps,1,"m/s"));
+  hero(summary,"RTK-Status",rtkLabel(t.rtk_state));
+  if(!isCurrent){
+    add(body,"div","cockpit-info critical",
+      "Keine bestätigte Live-Verbindung. Die folgenden Werte sind nur zuletzt übermittelte Messwerte.");
+  }else{
+    add(body,"div","cockpit-info",
+      "Gerät online, Statusdaten aktuell. Messwerte sind die zuletzt von DJI gemeldeten Werte.");
+  }
+  const warnings=Array.isArray(d.health)?d.health:[];
+  if(warnings.length){
+    add(body,"div","cockpit-section-title","HMS · "+warnings.length+" zuletzt gemeldete Hinweise");
+    for(const alert of warnings.slice(0,6)){
+      const warning=add(body,"div","cockpit-alert");
+      add(warning,"b","",alert.level==="warning"?"Warnung":
+        alert.level==="reminder"?"Hinweis":"Meldung");
+      add(warning,"div","",alert.message&&alert.message!==alert.code?
+        alert.message:"Code: "+text(alert.code));
+    }
+    add(body,"div","cockpit-secondary-note",
+      "HMS-Meldungen besitzen hier keine gesonderte garantierte Ereigniszeit.");
+  }
+  const technical=add(body,"details","cockpit-technical");
+  technical.id="cockpit-technical";
+  technical.open=detailsWasOpen;
+  add(technical,"summary","","Technische Details und Flugstatistik");
+  const grid=add(technical,"div","cockpit");
   metric(grid,"Absolute Höhe",formatNumber(t.height_m,1,"m"));
-  metric(grid,"Geschwindigkeit horizontal",formatNumber(t.horizontal_speed_mps,1,"m/s"));
+  metric(grid,"Geschwindigkeit vertikal",formatNumber(t.vertical_speed_mps,1,"m/s"));
   if(finite(t.speed_mps))
     metric(grid,"Geschwindigkeit (SDK)",formatNumber(t.speed_mps,1,"m/s"));
-  metric(grid,"Geschwindigkeit vertikal",formatNumber(t.vertical_speed_mps,1,"m/s"));
   metric(grid,"Distanz zum Homepoint",formatNumber(t.home_distance_m,0,"m"));
-  metric(grid,"Flugzeit gesamt",finite(t.total_flight_time_s)?
-    formatNumber(t.total_flight_time_s/3600,1,"h"):"–");
-  metric(grid,"Flugstarts gesamt",text(t.total_flight_sorties));
-  metric(grid,"GPS-Satelliten",text(t.gps_satellites));
-  metric(grid,"RTK-Satelliten",text(t.rtk_satellites));
-  metric(grid,"RTK-Status",text(t.rtk_state));
-  metric(grid,"Akkuspannung",finite(t.battery_voltage_mv)?formatNumber(t.battery_voltage_mv/1000,2,"V"):"–");
+  metric(grid,"GPS-Satelliten (DJI)",text(t.gps_satellites));
+  metric(grid,"RTK-Satelliten (DJI)",text(t.rtk_satellites));
+  metric(grid,"RTK-Status (Rohwert)",text(t.rtk_state));
+  metric(grid,"Akkuspannung",finite(t.battery_voltage_mv)?
+    formatNumber(t.battery_voltage_mv/1000,2,"V"):"–");
   metric(grid,"Akkutemperatur",formatNumber(t.battery_temperature_c,1,"°C"));
-  const warnings=Array.isArray(d.health)?d.health:[];
-  if(d.freshness!=="fresh"){
-    add(body,"div","note","Achtung: angezeigte Telemetrie sind alte oder zeitlich nicht zuordenbare letzte Messwerte. Keine aktuellen Flugwerte.");
-  }
-  if(warnings.length){
-    add(body,"h3","","HMS (zuletzt übermittelt)");
-    for(const a of warnings.slice(0,6)){
-      const warning=add(body,"div","cockpit-alert");
-      add(warning,"b","",a.level==="warning"?"Warnung":a.level==="reminder"?"Hinweis":"Meldung");
-      add(warning,"div","",a.message&&a.message!==a.code?a.message:"Code: "+text(a.code));
-    }
-    add(body,"div","sub","HMS-Meldungen besitzen hier keine gesonderte garantierte Ereigniszeit.");
-  }
+  metric(grid,"Flugzeit gesamt (API)",finite(t.total_flight_time_s)?
+    formatNumber(t.total_flight_time_s/3600,1,"h"):"–");
+  metric(grid,"Flugstarts gesamt (API)",text(t.total_flight_sorties));
+  add(technical,"div","cockpit-secondary-note",
+    "Flugzeit und Flugstarts sind die von DJI zuletzt gelieferten API-Werte. " +
+    "0 bedeutet nicht zwingend, dass das Fluggerät nie geflogen ist. " +
+    "Satellitenanzahlen sind gemeldete Werte und keine Bestätigung eines GPS-/RTK-Fixes.");
+  body.scrollTop=oldScroll;
 }
 function renderCatalog(){
   const body=$("catalog-items");body.replaceChildren();
