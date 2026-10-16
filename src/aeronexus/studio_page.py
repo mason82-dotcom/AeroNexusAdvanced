@@ -389,7 +389,9 @@ function routeMetrics(points,closeRoute,speedMps){
     if(meters===null)return invalid;
     segments.push({from:n,to:n+1,meters});
     distance+=meters;
-    if(closeRoute&&n===route.length-1&&route.length>points.length)
+    if(closeRoute&&n===route.length-1&&route.length>=3&&
+       route[n].latitude===route[0].latitude&&
+       route[n].longitude===route[0].longitude)
       returnMeters=meters;
   }
   if(route.length===1&&geoDistanceMeters(route[0],route[0])===null)
