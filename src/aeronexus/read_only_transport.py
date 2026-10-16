@@ -3,7 +3,7 @@
 No default endpoint is assumed. Callers must supply an allowlisted path.
 """
 from collections.abc import Mapping
-from uuid import uuid4
+from uuid import UUID, uuid4
 import httpx
 from .providers import ProviderConfig, ProviderKind
 
@@ -31,7 +31,8 @@ class ReadOnlyTransport:
                 or any(part in ("", ".", "..") for part in path.split("/")[1:])):
             raise ValueError("Unsafe API path")
 
-    async def get(self, path: str, params: Mapping[str, str | int] | None = None) -> dict:
+    async def get(self, path: str, params: Mapping[str, str | int] | None = None,
+                  *, project_uuid: str | None = None) -> dict:
         self._validate_path(path)
         if path not in self._allowed_paths:
             raise ReadOnlyTransportError("API path not approved")
@@ -41,8 +42,17 @@ class ReadOnlyTransport:
                 type(v) not in (str, int) for k, v in params.items()
             ):
                 raise ValueError("Invalid query parameters")
+        if project_uuid is not None:
+            if not isinstance(project_uuid, str):
+                raise ValueError("Invalid project UUID")
+            try:
+                project_uuid = str(UUID(project_uuid))
+            except ValueError as exc:
+                raise ValueError("Invalid project UUID") from exc
         headers = {"X-User-Token": self._config.access_token,
                    "X-Language": "en", "X-Request-Id": str(uuid4())}
+        if project_uuid is not None:
+            headers["X-Project-Uuid"] = project_uuid
         try:
             async with httpx.AsyncClient(
                 base_url=self._config.base_url, timeout=15,
