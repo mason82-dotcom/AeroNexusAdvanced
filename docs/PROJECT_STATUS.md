@@ -61,10 +61,11 @@
 - FlightHub-Polling **aktiv**: alle 15 s, Telemetrie gilt nach 45 s
   als veraltet; Browser-Aktualisierung alle 5 s.
 - Ein Polling-Zyklus kostet je Projekt 2 + 2 × Geräte GET-Aufrufe.
-- MQTT-Feed (Phase 9) in `.env` aktiviert, Broker aber nicht erreichbar
-  (AeroNexus-Stack aus) → Status „Broker nicht erreichbar“, harmlose
-  Wiederverbindungsversuche. Bei Nichtnutzung
-  `AERONEXUS_CLOUD_MQTT_ENABLED=0` setzen.
+- MQTT-Feed (Phase 9) **deaktiviert** (`AERONEXUS_CLOUD_MQTT_ENABLED=0`);
+  aktive Datenquelle ist FlightHub 2.
+- FlightHub-Bibliothek (Routen, Karten-Modelle, Flugaufträge) wird alle
+  10 min gelesen (`AERONEXUS_FH_CATALOG_SECONDS`); live bestätigt:
+  5 Routen, 5 3D-Modelle, 0 Flugaufträge, Systemstatus OK.
 - Der Launcher verweigert HTTP auf einer LAN-Adresse ohne TLS und eine
   `.env`, die nicht `chmod 600` ist.
 
@@ -90,7 +91,9 @@
   `docs/phase-10-flighthub-fleet.md`.
 - **Übernommen aus `alecad/dji-flighthub2-cli`** (Apache-2.0, `NOTICE`):
   EU-Gateway/Regionen, OpenAPI v0.1, `{"list": null}`-Toleranz,
-  typisierte Fehler mit Request-ID, Retry/Backoff für GET.
+  typisierte Fehler mit Request-ID, Retry/Backoff für GET, HMS,
+  Projektbibliothek (Routen, Modelle, Flugaufträge) und Flugspur als
+  GeoJSON (`/api/v1/flighthub/catalog`, `.../tasks/{uuid}/track`).
 - **Sicherheitsanforderungen unverändert:** keine Flugbefehle, keine
   Steuerungsübernahme, keine Schreiboperationen; DJI-Dock-Integration
   ausgeschlossen; nur Drohnen und Fernsteuerungen im Bestand.
@@ -113,8 +116,8 @@
 4. Fernsteuerung (RC Plus 2) über FlightHub: prüfen, ob
    `topologies/history` oder ein anderer lesender Endpunkt die RC
    liefert; sonst über den Phase-9-MQTT-Feed abbilden.
-5. Optional: Flugaufträge und Flugspuren lesend anzeigen
-   (`flight-task/list`, `flight-task/{uuid}/track`).
+5. Flugspur-GeoJSON mit einem echten FlightHub-Flugauftrag prüfen
+   (bisher keine Aufträge im Projekt).
 
 ## Wiederaufnahme
 

@@ -13,4 +13,6 @@ Adapted items (src/aeronexus):
   GET retry/backoff policy honouring Retry-After
 - flight hub list parsers: tolerance for {"list": null} empty collections
 - flighthub_hms.py: HMS endpoint usage
+- flighthub_catalog.py: wayline/model/flight-task listings and the flight
+  track GeoJSON Feature shape (fh2 task track --geojson)
 Only read-only functionality was adopted; no write or flight-control operations.

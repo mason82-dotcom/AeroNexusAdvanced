@@ -25,7 +25,8 @@ h1{font-size:clamp(25px,4vw,36px);margin:4px 0}h2{font-size:18px;margin:0 0 14px
 .controls{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.controls input{background:#0d1b2a;border:1px solid #486078;border-radius:7px;padding:11px;color:white;min-width:min(100%,300px)}
 button{background:#3573b5;color:white;border:0;border-radius:7px;padding:11px 18px;cursor:pointer;font-weight:650}
 button:hover{background:#438acd}button:focus-visible,input:focus-visible{outline:2px solid #8ac5ff}
-table{border-collapse:collapse;width:100%;min-width:1240px;font-size:13px}th{text-align:left;color:#b8cae0;font-weight:600}
+table{border-collapse:collapse;width:100%;min-width:1240px;font-size:13px}
+table.compact{min-width:760px}h3{font-size:15px;margin:18px 0 8px;color:#c9d8e8}th{text-align:left;color:#b8cae0;font-weight:600}
 td,th{padding:13px 11px;border-bottom:1px solid #30435a;vertical-align:top}
 .scroller{overflow-x:auto}.good{color:#8bdfbb}.warn{color:#ffcd7b}.bad{color:#ffadac}
 code,pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#c9d8e8}
@@ -71,6 +72,16 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 </table>
 </div>
 </section>
+<section class="panel">
+<h2>FlightHub-Bibliothek</h2>
+<div class="subtle" id="catalog-info">Nach dem Verbinden: Routen, Karten-Modelle und Flugaufträge der FlightHub-Projekte (nur lesen).</div>
+<h3>Routen</h3>
+<div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Typ</th><th>Fluggerät</th><th>Linsen</th><th>Geändert</th><th>Größe</th></tr></thead><tbody id="waylines"></tbody></table></div>
+<h3>Karten-Modelle</h3>
+<div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Typ</th><th>Auf Karte</th><th>Geändert</th><th>Größe</th></tr></thead><tbody id="models"></tbody></table></div>
+<h3>Flugaufträge</h3>
+<div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Art</th><th>Status</th><th>Gestartet</th><th>Wegpunkte</th><th>Flugspur</th></tr></thead><tbody id="tasks"></tbody></table></div>
+</section>
 <footer>Zeitstempel = Eingang bei AeroNexus, nicht DJI-Ereigniszeit. Veraltete Messwerte sind keine Live-Werte. Die Anzeige ruft selbst keine DJI-Endpunkte auf.</footer>
 </main>
 <script>
@@ -102,6 +113,59 @@ function keyValues(t) {
     add("Sat.",t.gps_satellites+" GPS / "+asText(t.rtk_satellites)+" RTK");
   return parts.length?parts.join(" \u00b7 "):"\u2013";
 }
+const modelNames={"0-99-0":"Matrice 4E","0-99-1":"Matrice 4T","0-100-0":"Matrice 4D","0-100-1":"Matrice 4TD",
+  "0-77-0":"Mavic 3E","0-77-1":"Mavic 3T","0-77-2":"Mavic 3M","0-91-0":"Matrice 3D","0-91-1":"Matrice 3TD",
+  "0-67-0":"Matrice 30","0-67-1":"Matrice 30T","0-89-0":"Matrice 350 RTK","0-60-0":"Matrice 300 RTK"};
+const templateNames={waypoint:"Wegpunkte",mapping_2d:"Fl\u00e4che 2D",mapping_3d:"Schr\u00e4g 3D",
+  mapping_strip:"Korridor",facade:"Fassade",solid:"K\u00f6rper",mapping_gobject:"Objekt"};
+const taskStates={waiting:"Wartet",starting_failure:"Startfehler",executing:"L\u00e4uft",paused:"Pausiert",
+  terminated:"Abgebrochen",success:"Erfolgreich",suspended:"Ausgesetzt",timeout:"Zeit\u00fcberschreitung",
+  partially_done:"Teilweise",preparing:"Vorbereitung",unknown:"Unbekannt"};
+const taskTypes={immediate:"Sofort",timed:"Geplant",recurring:"Wiederkehrend",continuous:"Dauerhaft"};
+function size(b){return b===null||b===undefined?null:b>1048576?(b/1048576).toFixed(1)+" MB":(b/1024).toFixed(0)+" KB";}
+function date(sec){return sec?new Date(sec*1000).toISOString().slice(0,16).replace("T"," ")+" UTC":null;}
+function rowOf(body,values){const row=document.createElement("tr");values.forEach(v=>cell(row,v));body.appendChild(row);return row;}
+function placeholder(body,cols,text){const row=document.createElement("tr");const td=cell(row,text);td.colSpan=cols;td.className="subtle";body.appendChild(row);}
+async function downloadTrack(project,task,name){
+  try{
+    const r=await fetch("/api/v1/flighthub/projects/"+encodeURIComponent(project)+"/tasks/"+encodeURIComponent(task)+"/track",
+      {cache:"no-store",headers:{"Authorization":"Bearer "+accessToken}});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const url=URL.createObjectURL(new Blob([await r.text()],{type:"application/geo+json"}));
+    const a=document.createElement("a");a.href=url;a.download=(name||"flugspur").replace(/[^A-Za-z0-9_-]+/g,"_")+".geojson";
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){byId("catalog-info").textContent="Flugspur nicht verf\u00fcgbar ("+e.message+").";}
+}
+async function updateCatalog() {
+  if(!accessToken)return;
+  const lists={waylines:byId("waylines"),models:byId("models"),tasks:byId("tasks")};
+  try{
+    const r=await fetch("/api/v1/flighthub/catalog",{cache:"no-store",headers:{"Authorization":"Bearer "+accessToken}});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const data=await r.json();
+    Object.values(lists).forEach(b=>b.replaceChildren());
+    for(const p of data.projects){
+      const pname=p.name||p.project_id;
+      if(p.waylines===null)placeholder(lists.waylines,7,pname+": nicht lesbar");
+      for(const w of p.waylines||[])rowOf(lists.waylines,[pname,w.name,(w.template_types||[]).map(t=>templateNames[t]||t).join(", "),
+        modelNames[w.device_model_key]||w.device_model_key,(w.lenses||[]).join(", ").toUpperCase(),date(w.updated_at),size(w.size_bytes)]);
+      if(p.models===null)placeholder(lists.models,6,pname+": nicht lesbar");
+      for(const m of p.models||[])rowOf(lists.models,[pname,m.name,m.file_type==="model_3d"?"3D":m.file_type==="model_2d"?"2D":null,
+        m.show_on_map?"Ja":"Nein",m.updated_at_ms?date(Math.floor(m.updated_at_ms/1000)):null,size(m.size_bytes)]);
+      if(p.tasks===null)placeholder(lists.tasks,7,pname+": nicht lesbar");
+      for(const t of p.tasks||[]){
+        const row=rowOf(lists.tasks,[pname,t.name,taskTypes[t.task_type]||t.task_type,taskStates[t.status]||t.status,
+          t.run_at,t.total_waypoints===null?null:(t.current_waypoint_index??0)+"/"+t.total_waypoints]);
+        const td=document.createElement("td");const b=document.createElement("button");b.type="button";b.textContent="GeoJSON";
+        b.addEventListener("click",()=>downloadTrack(p.project_id,t.uuid,t.name));td.appendChild(b);row.appendChild(td);
+      }
+    }
+    for(const [key,b] of Object.entries(lists))if(!b.children.length)placeholder(b,7,key==="tasks"?
+      "Keine Flugauftr\u00e4ge in den letzten "+((data.projects[0]||{}).task_window_days||30)+" Tagen":"Keine Eintr\u00e4ge");
+    byId("catalog-info").textContent=data.updated_at?"Stand: "+data.updated_at+" (Aktualisierung alle paar Minuten)":
+      "Noch nicht geladen (FlightHub-Polling aus oder erster Abruf l\u00e4uft).";
+  }catch(e){byId("catalog-info").textContent="Bibliothek nicht verf\u00fcgbar ("+e.message+").";}
+}
 function statusLabel(v) {
   return ({fresh:"Aktuell",stale:"Veraltet",missing:"Keine Daten",
            unknown_age:"Zeit unbekannt",clock_skew:"Uhrzeitfehler"})[v] || "Unbekannt";
@@ -119,6 +183,8 @@ async function updateSummary() {
     byId("unknown").textContent=data.missing+data.unknown_age+data.clock_skew;
     byId("health").textContent=data.health_warnings;
     byId("timestamp").textContent="Letzter Aufruf: "+data.server_time+" · Polling: "+data.polling;
+    const fh=data.flighthub||{};
+    byId("timestamp").textContent+=" · FlightHub: "+({ok:"OK",error:"Fehler",unknown:"unbekannt"}[fh.system_status]||"unbekannt");
     const feed=data.live_feed||{state:"disabled"};
     byId("feed").textContent="Live-Feed (DJI Cloud API): "+(feedStates[feed.state]||"unbekannt")+
       (feed.state==="disabled"?"":" · "+feed.accepted+" ok / "+feed.rejected+" verworfen");
@@ -167,14 +233,16 @@ async function updateDevices() {
 byId("connect").addEventListener("click",()=>{
   const token=byId("token").value;
   if(!token){byId("message").textContent="Bitte Status-Token eingeben.";return;}
-  accessToken=token;byId("token").value="";updateDevices();
+  accessToken=token;byId("token").value="";updateDevices();updateCatalog();
 });
 byId("disconnect").addEventListener("click",()=>{
   accessToken="";byId("token").value="";byId("devices").replaceChildren();
+  ["waylines","models","tasks"].forEach(id=>byId(id).replaceChildren());
   byId("device-info").textContent="Details getrennt.";byId("message").textContent="Getrennt";
 });
 updateSummary();
 setInterval(()=>{updateSummary();updateDevices();},intervalMs);
+setInterval(updateCatalog,60000);
 </script>
 </body>
 </html>"""

@@ -122,8 +122,39 @@ twice the poll interval (e.g. poll 15 s, stale 45 s), otherwise devices turn
 3. Enable polling and open `/status`: the RC row shows battery, the M4T row
    battery, satellites, flight mode, height and speed, plus HMS alerts.
 
+## Project library (waylines, models, flight tasks)
+
+Public Cloud only, refreshed separately every `AERONEXUS_FH_CATALOG_SECONDS`
+(default 600, `0` = off; one cycle = system status + 3 GETs per project):
+
+| Endpoint | Shown |
+|---|---|
+| `GET /system_status` | `flighthub.system_status` in the summary |
+| `GET /wayline` | name, template type, aircraft model, lenses, update time, size |
+| `GET /model` | name, 2D/3D, shown on map, update time, size |
+| `GET /flight-task/list` (last 30 days) | name, type, status, start, waypoint progress |
+| `GET /flight-task/{uuid}/track` | GeoJSON LineString `[lon, lat, height]`, on demand |
+
+- Authenticated API: `GET /api/v1/flighthub/catalog` and
+  `GET /api/v1/flighthub/projects/{project_id}/tasks/{task_uuid}/track`
+  (`application/geo+json`, cached 5 min). Tracks are fetched only for tasks
+  listed in the local library, so the endpoint cannot probe arbitrary IDs.
+- Wayline download URLs (signed links), dock/aircraft serials and operator
+  accounts are not stored or forwarded. Each list is best effort: one failing
+  list is shown as "not readable" without hiding the others.
+- The anonymous summary only carries counts (`flighthub.waylines`, `models`,
+  `tasks`).
+- Live 2026-10-16: 5 waylines and 5 3D models read; flight task list empty
+  (RC flights with Pilot 2 are not FlightHub flight tasks; tasks come from
+  docks or tasks created in FlightHub). `flight-alerts` (200400) and
+  `live-shares` (231011) answered business errors and are not used.
+- Feature set and GeoJSON shape follow dji-flighthub2-cli (`fh2 wayline list`,
+  `fh2 model list`, `fh2 task list`, `fh2 task track --geojson`).
+
 ## Not adopted from dji-flighthub2-cli
 
-Flight commands, control acquisition, task creation, live stream start,
-uploads, annotations and reconstruction are write or flight-control
-operations; AeroNexusAdvanced stays read-only.
+Flight commands, control acquisition, task creation and status changes,
+live stream start, stream converters, uploads (wayline, open modeling),
+annotations, member management and reconstruction are write, cost or
+flight-control operations; wayline downloads hand out signed URLs.
+AeroNexusAdvanced stays read-only.

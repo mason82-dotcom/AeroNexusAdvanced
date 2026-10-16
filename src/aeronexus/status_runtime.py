@@ -47,6 +47,10 @@ class StatusRuntime:
     live_feed: Callable[[], dict] | None = None
     # Live FlightHub HMS alerts per (provider, project, device); None = not read.
     health: dict[tuple[ProviderKind, str, str], tuple[dict, ...]] = field(default_factory=dict)
+    # FlightHub project library (waylines, models, tasks) per (provider, project).
+    catalog: dict[tuple[ProviderKind, str], dict] = field(default_factory=dict)
+    flighthub_system_ok: bool | None = None
+    catalog_updated_at: datetime | None = None
 
     def device_views(
         self, provider: ProviderKind | None = None,
@@ -113,4 +117,10 @@ class StatusRuntime:
             "live_feed": {"state": "disabled"} if self.live_feed is None else self.live_feed(),
             "health_warnings": sum(any(a.get("level") == "warning" for a in v["health"])
                                    for v in views),
+            "flighthub": {
+                "system_status": {None: "unknown", True: "ok", False: "error"}[self.flighthub_system_ok],
+                "catalog_updated_at": utc_iso(self.catalog_updated_at),
+                **{key: sum(len(c.get(key) or []) for c in self.catalog.values())
+                   for key in ("waylines", "models", "tasks")},
+            },
         }

@@ -6,14 +6,16 @@ unless an independent dashboard bearer token is configured.
 import asyncio
 from contextlib import asynccontextmanager
 import os
+import time
 from enum import Enum
 from secrets import compare_digest
 
 from fastapi import FastAPI, Header, HTTPException, Query, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
+from .flighthub_catalog import read_task_track
 from .flighthub_poller import FlightHubFleetRefresher, FlightHubPollSettings
 from .providers import ProviderKind
 from .status_page import render_page
@@ -28,6 +30,8 @@ async def lifespan(app: FastAPI):
     poll_settings = FlightHubPollSettings.from_env()
     feed = None
     poll_task = None
+    app.state.flighthub = None
+    app.state.track_cache = {}
     stop_polling = asyncio.Event()
     if settings is not None:
         runtime = app.state.status_runtime
@@ -37,9 +41,10 @@ async def lifespan(app: FastAPI):
         feed.start(asyncio.get_running_loop())
     if poll_settings is not None:
         runtime = app.state.status_runtime
+        refresher = FlightHubFleetRefresher(runtime, poll_settings)
+        app.state.flighthub = refresher
         poller = ReadOnlyStatusPoller(
-            runtime, FlightHubFleetRefresher(runtime, poll_settings),
-            interval_seconds=poll_settings.interval_seconds)
+            runtime, refresher, interval_seconds=poll_settings.interval_seconds)
         poll_task = asyncio.create_task(poller.run(stop_polling))
     app.state.cloud_feed = feed
     try:
@@ -131,6 +136,57 @@ async def status_devices(
     devices = app.state.status_runtime.device_views(provider, project_id)
     return {"total": len(devices), "offset": offset, "limit": limit,
             "devices": list(devices[offset:offset + limit])}
+
+
+@app.get("/api/v1/flighthub/catalog")
+async def flighthub_catalog(response: Response,
+                            authorization: str | None = Header(default=None)) -> dict:
+    """Authenticated project library (waylines, models, tasks); local copy only."""
+    _no_cache(response)
+    _require_dashboard_token(authorization)
+    runtime = app.state.status_runtime
+    projects = []
+    for (provider, project_id), catalog in runtime.catalog.items():
+        project = runtime.inventory._projects.get((provider, project_id))
+        projects.append({"provider": provider.value, "project_id": project_id,
+                         "name": project.name if project else None, **catalog})
+    return {"updated_at": runtime.summary()["flighthub"]["catalog_updated_at"],
+            "projects": projects}
+
+
+TRACK_CACHE_SECONDS = 300
+TRACK_CACHE_ENTRIES = 32
+
+
+@app.get("/api/v1/flighthub/projects/{project_id}/tasks/{task_uuid}/track")
+async def flighthub_task_track(project_id: str, task_uuid: str, response: Response,
+                               authorization: str | None = Header(default=None)):
+    """Flown track as GeoJSON. Only tasks listed in the local library are
+    fetched, so the endpoint cannot be used to probe arbitrary FlightHub IDs."""
+    _no_cache(response)
+    _require_dashboard_token(authorization)
+    refresher = app.state.flighthub
+    runtime = app.state.status_runtime
+    if refresher is None or refresher.settings.config.kind != ProviderKind.PUBLIC_V2:
+        raise HTTPException(status_code=404, detail="FlightHub library not enabled")
+    catalog = runtime.catalog.get((ProviderKind.PUBLIC_V2, project_id))
+    tasks = (catalog or {}).get("tasks") or []
+    if not any(task.get("uuid") == task_uuid for task in tasks):
+        raise HTTPException(status_code=404, detail="Unknown flight task")
+    key = (project_id, task_uuid)
+    cache = app.state.track_cache
+    cached = cache.get(key)
+    if cached is None or time.monotonic() - cached[0] > TRACK_CACHE_SECONDS:
+        try:
+            feature = await read_task_track(refresher.settings.config, project_id, task_uuid)
+        except (ValueError, RuntimeError):
+            # Provider error text is not forwarded.
+            raise HTTPException(status_code=502, detail="Track not available from FlightHub")
+        if len(cache) >= TRACK_CACHE_ENTRIES:
+            cache.pop(min(cache, key=lambda k: cache[k][0]))
+        cache[key] = cached = (time.monotonic(), feature)
+    return JSONResponse(cached[1], media_type="application/geo+json",
+                        headers=dict(response.headers))
 
 
 @app.get("/status", response_class=HTMLResponse)

@@ -5,6 +5,9 @@ DJI Pilot 2 on the remote controller (RC Plus 2 / RC Pro) connects to its EMQX
 broker and pushes telemetry ("OSD") about once per second. AeroNexusAdvanced
 can subscribe to that telemetry and show it in the status dashboard.
 
+Status 2026-10-16: disabled on the dev Pi (`AERONEXUS_CLOUD_MQTT_ENABLED=0`);
+FlightHub 2 (phase 10) is the active data source.
+
 ## What it does
 
 - Connects to EMQX with the dedicated `aeronexus_osd` account. The AeroNexus

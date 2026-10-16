@@ -86,6 +86,33 @@ def hms_payload():
     ]}}
 
 
+TASK = "0c3bd5a2-6c2e-4b52-9f3a-1d2e3f4a5b6c"
+CATALOG_PAYLOADS = {
+    "/openapi/v2.0/system_status": lambda: {"code": 0, "message": ""},
+    "/openapi/v2.0/wayline": lambda: {"code": 0, "data": {"list": [
+        {"id": "w1", "name": "Dach Nord", "template_types": ["mapping_2d", "bogus"],
+         "device_model_key": "0-99-1", "update_time": 1760000000, "size": 2048,
+         "payload_information": [{"domain": "1", "type": "89", "lens_type": "ir"},
+                                 {"domain": "1", "type": "89", "lens_type": "wide"}],
+         "download_url": "https://signed.example/secret"}]}},
+    "/openapi/v2.0/model": lambda: {"code": 0, "data": {"list": [
+        {"id": 7, "name": "Hof 3D", "file_type": "model_3d", "show_on_map": True,
+         "size": 99, "update_at": 1760000000000, "create_at": 1}]}},
+    "/openapi/v2.0/flight-task/list": lambda: {"code": 0, "data": {"list": [
+        {"uuid": TASK, "name": "Inspektion", "task_type": "immediate", "status": "success",
+         "sn": "DOCKSN", "run_at": "2026-10-01T10:00:00Z", "total_waypoints": 12,
+         "current_waypoint_index": 12, "exceptions": [{"code": 1}]},
+        {"uuid": "not-a-uuid", "name": "kaputt"}]}},
+    f"/openapi/v2.0/flight-task/{TASK}/track": lambda: {"code": 0, "data": {
+        "name": "Inspektion", "wayline_uuid": "w1", "track": {
+            "drone_sn": "SECRET-SN", "flight_distance": 512, "flight_duration": 300,
+            "points": [{"timestamp": 1, "latitude": 49.1, "longitude": 8.5, "height": 40.5},
+                       {"timestamp": 2, "latitude": 0, "longitude": 0, "height": 0},
+                       {"timestamp": 3, "latitude": 95, "longitude": 8.5, "height": 1},
+                       {"timestamp": 4, "latitude": 49.2, "longitude": 8.6, "height": 41}]}}},
+}
+
+
 @pytest.fixture
 def fake_get(monkeypatch):
     calls = []
@@ -104,6 +131,8 @@ def fake_get(monkeypatch):
                                                   "organization_id": "ABC123"}]}}
         if path == "/openapi/v2.0/device/hms":
             return hms_payload()
+        if path in CATALOG_PAYLOADS:
+            return CATALOG_PAYLOADS[path]()
         if path.endswith("/topologies"):
             return topologies()
         if path == "/openapi/v2.0/project" or path.endswith("/projects"):

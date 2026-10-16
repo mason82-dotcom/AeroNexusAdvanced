@@ -95,7 +95,8 @@ OpenAPI permissions are documented in:
 - [Phase 8.5 aircraft discovery](docs/phase-8-5-device-discovery.md)
 - [Phase 8.6 detailed aircraft state](docs/phase-8-6-aircraft-state.md)
 - [Phase 10 fleet probe and polling](docs/phase-10-flighthub-fleet.md):
-  `python -m aeronexus.probe_fleet`
+  `python -m aeronexus.probe_fleet`; project library (waylines, models,
+  flight tasks) and flight tracks as GeoJSON via the authenticated API
 
 Never commit DJI tokens, serial numbers or location data. Do not disable TLS
 certificate verification.

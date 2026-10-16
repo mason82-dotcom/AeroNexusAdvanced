@@ -15,19 +15,23 @@ Environment:
   AERONEXUS_DJI_ORGANIZATION_ID   public, optional: organization short code (e.g. shown
                                   in FlightHub); checks that the key belongs to it
   AERONEXUS_FH_POLL_SECONDS       10..3600, default 30
+  AERONEXUS_FH_CATALOG_SECONDS    public library refresh (waylines, models, tasks,
+                                  system status): 0 = off, 60..86400, default 600
 """
 from collections.abc import Mapping
 from dataclasses import dataclass
 import os
 import re
+import time
 from uuid import UUID
 
+from .flighthub_catalog import read_catalog, read_system_status
 from .flighthub_fleet import sync_project_fleet
 from .flighthub_hms import read_public_hms
 from .live_project_sync import read_project_page
 from .providers import REGIONS, ProviderConfig, ProviderKind
 from .read_only_transport import ReadOnlyTransport
-from .status_runtime import StatusRuntime
+from .status_runtime import StatusRuntime, utc_now
 
 
 _TRUE = ("1", "true", "yes", "on")
@@ -43,6 +47,7 @@ class FlightHubPollSettings:
     project_uuids: tuple[str, ...]
     interval_seconds: int = 30
     organization_code: str | None = None
+    catalog_interval_seconds: int = 600
 
     def __post_init__(self):
         if self.config.kind not in (ProviderKind.PUBLIC_V2, ProviderKind.ONPREM_V2):
@@ -51,6 +56,9 @@ class FlightHubPollSettings:
             raise ValueError("AERONEXUS_DJI_ORGANIZATION_UUID required for On-Premises")
         if type(self.interval_seconds) is not int or not 10 <= self.interval_seconds <= 3600:
             raise ValueError("AERONEXUS_FH_POLL_SECONDS must be 10..3600")
+        if (type(self.catalog_interval_seconds) is not int or not (
+                self.catalog_interval_seconds == 0 or 60 <= self.catalog_interval_seconds <= 86400)):
+            raise ValueError("AERONEXUS_FH_CATALOG_SECONDS must be 0 or 60..86400")
         if len(self.project_uuids) > MAX_PROJECTS:
             raise ValueError("Too many projects selected")
         if self.organization_code is not None and (
@@ -86,7 +94,11 @@ class FlightHubPollSettings:
         except ValueError as exc:
             raise ValueError("AERONEXUS_FH_POLL_SECONDS must be an integer") from exc
         code = env.get("AERONEXUS_DJI_ORGANIZATION_ID", "").strip() or None
-        return cls(config, _uuid(org) if org else None, projects, interval, code)
+        try:
+            catalog = int(env.get("AERONEXUS_FH_CATALOG_SECONDS", "600"))
+        except ValueError as exc:
+            raise ValueError("AERONEXUS_FH_CATALOG_SECONDS must be an integer") from exc
+        return cls(config, _uuid(org) if org else None, projects, interval, code, catalog)
 
 
 def _uuid(value: str) -> str:
@@ -106,6 +118,7 @@ class FlightHubFleetRefresher:
         self.devices_synced = 0
         self.hms_ok: bool | None = None
         self.organization_verified = False
+        self._catalog_due = 0.0
 
     async def _verify_organization(self) -> None:
         """Once per process: the key must see the configured organization."""
@@ -147,6 +160,26 @@ class FlightHubFleetRefresher:
         self.projects_synced, self.devices_synced = len(selected), devices
         known = [r for r in hms_results if r is not None]
         self.hms_ok = all(known) if known else None
+        await self._refresh_catalog(selected)
+
+    async def _refresh_catalog(self, projects) -> None:
+        """Library changes rarely: refreshed on its own, slower interval."""
+        settings = self.settings
+        if (settings.config.kind != ProviderKind.PUBLIC_V2 or not settings.catalog_interval_seconds
+                or not projects or time.monotonic() < self._catalog_due):
+            return
+        self._catalog_due = time.monotonic() + settings.catalog_interval_seconds
+        try:
+            self.runtime.flighthub_system_ok = await read_system_status(
+                settings.config, projects[0].project_id)
+        except (ValueError, RuntimeError):
+            self.runtime.flighthub_system_ok = False
+        catalog = {}
+        for project in projects:
+            catalog[(project.provider, project.project_id)] = await read_catalog(
+                settings.config, project.project_id)
+        self.runtime.catalog = catalog
+        self.runtime.catalog_updated_at = utc_now()
 
     async def _refresh_health(self, provider: ProviderKind, project_id: str) -> bool | None:
         """HMS is best effort: a failure keeps telemetry and drops stale alerts."""
