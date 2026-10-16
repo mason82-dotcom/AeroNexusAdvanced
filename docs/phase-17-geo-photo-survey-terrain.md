@@ -1,8 +1,12 @@
 # Phase 17 – Mission Studio P1/P2/P4 (lokale Planung, kein DJI-Flugkommando)
 
-**Stand 16. Oktober 2026:** Implementierung im Entwicklungsbranch, GitHub-Actions-
-Tests ausgeführt. Nicht auf dem Raspberry Pi installiert und nicht mit echten
-GeoTIFF-/Matrice-Daten oder in Chrome produktiv überprüft.
+**Stand 17. Oktober 2026:** Phase 17 ist seit PR #4 in `main` integriert.
+Die ergänzenden Pi-Bereitschaftsprüfungen und Geo-Editor-/DEM-Sicherungen
+werden separat per Pull Request geprüft. **Nicht live auf dem Pi oder in
+Chrome bestätigt**; keine realen GeoTIFF-/Matrice-Flugdaten verwendet.
+
+Für die kontrollierte Pi-Installation und manuelle Abnahme siehe
+[Phase-17-Pi-Validierung](phase-17-pi-validation.md).
 
 ## Module und Bedienung
 
