@@ -28,6 +28,7 @@ def ingest_project_batch(inventory: Inventory, provider: ProviderKind,
         _projects=inventory._projects.copy(),
         _devices=inventory._devices.copy(),
         _telemetry=inventory._telemetry.copy(),
+        _received_at=inventory._received_at.copy(),
     )
     parsed_devices = parse_devices(provider, project_id, devices)
     device_count = register_devices(staging, parsed_devices)
@@ -35,4 +36,5 @@ def ingest_project_batch(inventory: Inventory, provider: ProviderKind,
     snapshot_count = register_snapshots(staging, project_id, snapshots)
     inventory._devices.update(staging._devices)
     inventory._telemetry.update(staging._telemetry)
+    inventory._received_at.update(staging._received_at)
     return device_count, snapshot_count
