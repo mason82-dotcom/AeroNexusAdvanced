@@ -1,14 +1,16 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 16. Oktober 2026  
-**Phase:** 13 (Desktop Mission Studio) implementiert und auf GitHub Actions
-Python 3.12 getestet; Live-FlightHub und Phase 11 auf Raspberry Pi verifiziert.
-Phase 9 (DJI Cloud API MQTT-Feed) implementiert, noch nicht live getestet.  
+**Phase:** 16 (DJI-Cockpit: Live-/Frischeanzeige, RTK und Statistiken)
+implementiert und in GitHub Actions getestet; Phase 15 FlightHub Operations
+Center auf Raspberry Pi 5/Chrome live bestätigt. Phase 9 Cloud-MQTT-Feed
+und optionaler Cloud API 2 BFF weiter deaktiviert.  
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
-**Letzter auf Raspberry Pi 5 bestätigter Teststand:** 401 Tests (Phase 11
-inkl. Root-Weiterleitung), Live-Matrice 4T im Chrome/Android-Dashboard.
-**Aktueller GitHub-Actions-Teststand:** 468 Tests, Python 3.12,
-Commit `3f0190488` (Pi-Test für Phase 12/13 noch ausstehend).
+**Letzter auf Raspberry Pi 5 bestätigter Teststand:** **537 Tests,
+1 Warnung** (Phase 15), systemd-Dienst `active`. DJI Matrice 4T in
+Operations Center live bestätigt.
+**Aktueller GitHub-Actions-Teststand:** **541 Tests, 1 Warnung**
+(Python 3.12; Phase 16 Cockpit), Pi-Test für Phase 16 noch ausstehend.
 
 ## Bestätigt auf Raspberry Pi 5
 
@@ -17,14 +19,16 @@ Commit `3f0190488` (Pi-Test für Phase 12/13 noch ausstehend).
 - Installation: `aeronexusadvanced` 0.1.0, editierbar, zusätzlich
   `paho-mqtt` 2.1.0 (Extra `mqtt`)
 - `python -m pip check`: **No broken requirements found**
-- **401 passed, 1 warning** auf dem Pi (Phase 11 inkl. Root-Weiterleitung)
-  ohne `env -u` bestätigt. Die Testisolierung ist damit behoben:
-  `tests/conftest.py` entfernt reale DJI- und Token-Umgebungsvariablen
-  ausschließlich in den Fixture-Läufen; die produktive Organisationsprüfung
-  bleibt erhalten.
-- Phase-12-/Phase-13-Code inklusive WPML und Medienverwaltung wurde in
-  **GitHub Actions/Python 3.12 mit 468 Tests** erfolgreich geprüft.
-  Vollständiger Pi-Test auf Python 3.13 und Chrome-Interaktion stehen aus.
+- **537 passed, 1 warning** auf dem Pi (Phase 15) und
+  `systemctl --user is-active aeronexusadvanced` → `active`.
+  Die Testisolierung in `tests/conftest.py` verhindert den Zugriff
+  automatisierter Tests auf produktive DJI- und Token-Umgebungsvariablen;
+  produktive Konfiguration bleibt unverändert.
+- Phase 13/14 Mission Studio und LAN-Zugriff sind auf dem Pi getestet.
+  Phase 15 Operations Center mit der Matrice 4T im Chrome live gezeigt:
+  aktueller FlightHub-Status, 5 Routen, 5 Modelle, HMS und OSD.
+  Phase 16 hat **541 GitHub-Actions-Tests** bestanden, der
+  aktuelle Pi-/Chrome-Smoke-Test steht noch aus.
 - Bekannte, derzeit nicht blockierende Warnung:
   `StarletteDeprecationWarning` in `fastapi/testclient.py`
   zu `httpx` / `httpx2`.
@@ -194,10 +198,36 @@ Commit `3f0190488` (Pi-Test für Phase 12/13 noch ausstehend).
   offiziellen SDK-BFF (x86_64-Host). DRONE-only, keine DOCKs; OSD/HMS
   auf gültige Werte und Zeitstempel begrenzt. Ohne BFF bleibt der
   Adapter abgeschaltet, FlightHub 2 weiterhin betriebsbereit.
-- **GitHub Actions/main: 537 Tests bestanden, 1 Warnung**, Stand
-  `f12cc7da63` (Python 3.12). Auf dem Raspberry Pi und in Chrome
-  noch nicht getestet.
+- **GitHub Actions/main: 537 Tests bestanden, 1 Warnung** auf dem
+  Phase-15-Stand; Raspberry Pi 5 mit Python 3.13 ebenfalls
+  **537 passed, 1 warning**, Operations Center in Chrome bestätigt.
+  Der beim Live-Test beobachtete Fluggerätstatus der Matrice 4T:
+  online, frisch, Spannung 16,365 V, Akku 87 %, Temperatur 32,2 °C,
+  Flugmodus 0 (Standby), RTK `is_fixed:not_started`,
+  HMS `0x16070042` ohne verifizierte Beschreibung.
 - Dokumentation: `docs/phase-15-dji-sources-operations.md`.
+
+## Phase 16 – kompaktes DJI-Cockpit, geprüft
+
+- Anzeige der Gerätekonnektivität (Online/Offline/Unbekannt) **getrennt**
+  von der Aktualität der empfangenen Daten (fresh/stale/missing/unknown_age/
+  clock_skew): frischer Offline-Status wird nicht als Live-Telemetrie
+  fehlinterpretiert.
+- Oben fixierte Kurzübersicht von Akku, Modus, Start-relativer Höhe,
+  horizontaler Geschwindigkeit und RTK; bei veralteten oder Offline-Daten
+  eindeutiger Hinweis „nur letzte Messwerte“.
+- Die im Status-Dashboard bereits verwendete, begrenzte RTK-Texttabelle
+  wird übernommen (`is_fixed:not_started` → „RTK nicht gestartet“).
+  Rohwerte verbleiben im aufklappbaren Technik-Bereich.
+- Flugzeit/Flugstarts explizit **API-Werte**, insbesondere bedeuten
+  jeweils 0 nicht gesichert eine nie geflogene Drohne.
+  GPS-/RTK-Satellitenzahlen bleiben „laut DJI“, nicht GPS-Fix-Nachweis.
+- HMS nur mit authentischem DJI-Code und übermitteltem Klartext.
+  Aufgeklappte Details und Scrollposition bleiben bei 15-s-Updates.
+- Zusätzliche Node.js-DOM-Regressionstests testen echte Rendererreaktionen
+  bei Online-, Offline-, Stale- und unbekannten Statusangaben.
+  **GitHub Actions/main: 541 Tests bestanden, 1 Warnung**.
+  Neuer Pi-/Chrome-Live-Test Phase 16 noch ausstehend.
 
 ## Nicht live verifiziert
 
