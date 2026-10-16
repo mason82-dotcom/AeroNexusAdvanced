@@ -42,6 +42,24 @@ python -m pip check
 python -m pytest -q
 ```
 
+## Tokenfreier HTTPS-LAN-Betrieb (Phase 14)
+
+In `/status` und `/studio` gibt es **keine Token-Eingabefelder** mehr.
+Beide Seiten laden Flottendaten, die FlightHub-Bibliothek und lokale
+Studio-Daten automatisch.
+
+Dieser Betrieb ist **ausdrücklich zu aktivieren**: in der privaten `.env`
+`AERONEXUS_LAN_NO_TOKEN=1` und `AERONEXUS_LAN_HOST=192.168.178.63`
+setzen, danach den bestehenden HTTPS-systemd-Dienst neu starten.
+Der Server prüft direkte Client-IP im Heimnetz `192.168.178.0/24`,
+HTTPS, Host und Origin; keine Router-Portweiterleitung.
+
+**Warnung:** Alle Geräte im Heimnetz erhalten damit Zugriff auf
+Seriennummern, Flugpositionen, Projektbibliothek und können lokale
+Missionen/Medien speichern, ändern oder löschen. DJI-Flugbefehle
+bleiben gesperrt. Weitere Details:
+[Phase 14 – tokenfreier LAN-Modus](docs/phase-14-token-free-lan.md).
+
 ## Local read-only status dashboard (phase 8.7)
 
 ```bash
@@ -67,7 +85,7 @@ the web server's memory.
 
 - `GET /health` — liveness
 - `GET /api/v1/status/summary` — anonymous, non-identifying counters
-- `GET /api/v1/status/devices` — authenticated device details and telemetry
+- `GET /api/v1/status/devices` — protected details; token-free for trusted LAN when Phase 14 is enabled
 - `GET /status` — auto-updating local web dashboard
 - `POST /api/v1/flight/command` — always forbidden (HTTP 403)
 
@@ -85,16 +103,16 @@ Full setup: [Phase 8.7 status dashboard](docs/phase-8-7-fleet-status.md).
 The mobile-first [Phase 11 device diagnostics](docs/phase-11-dashboard-diagnostics.md)
 adds aircraft status cards, battery bars, GPS/RTK/flight-state diagnostics,
 received-data age, HMS notifications and a visible last-successful-sync status.
-These use the existing authenticated local API; the detailed legacy table and
-FlightHub library remain available. The browser clears protected information
-on disconnect, including results from late requests.
+These use the local API, which is protected either by the legacy bearer mode
+or the opt-in HTTPS-LAN policy. The full technical table and FlightHub
+library remain available; pages auto-load without a browser login.
 
 ## Desktop Mission Studio (phase 13)
 
 A dedicated Chrome/desktop workspace is available at
 **`https://192.168.178.63:8000/studio`** once the current code is installed
-and the existing user service has been restarted. Use the same independent
-AeroNexus status token as for the dashboard (never the DJI organization key).
+and the existing user service has been restarted. There is **no login form**.
+Enable the Phase 14 HTTPS-LAN policy in `.env` before use.
 
 - Desktop-sized interactive OpenStreetMap/Esri map with click/drag waypoints,
   mission metadata, point editing/reordering and optional photo actions.
@@ -150,9 +168,10 @@ docker run --rm -p 127.0.0.1:8000:8000 aeronexusadvanced:dev
 - No DJI flight commands or remote configuration writes.
 - No DJI Dock integration.
 - HTTPS is mandatory for DJI provider origins.
-- Dashboard details are fail-closed unless a strong, separate status token
-  is configured; bind the service to localhost and use SSH tunnel or
-  authenticated TLS reverse proxy for remote viewing.
+- Protected data requires either a separate strong bearer token (legacy
+  backend) or the explicit Phase 14 direct HTTPS-LAN mode. The browser UIs
+  have no token form, so LAN mode must be enabled for their automatic data
+  loading. No reverse proxy or port-forwarding in passwordless mode.
 - In-memory device inventory; no persistence, access-control roles,
   production-grade rate limiting; FlightHub polling is opt-in.
 - The Cloud API MQTT feed is subscribe-only (OSD); it never publishes.
