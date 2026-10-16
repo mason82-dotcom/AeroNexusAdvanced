@@ -71,6 +71,14 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .library-scroll{max-height:310px;min-height:125px}
 .tracks-scroll{min-height:125px;flex:1}
 .tracks-scroll button,.library-scroll button{font-size:12px;padding:5px 8px}
+.task-filter{display:flex;gap:7px;margin:10px 0;flex-wrap:wrap}
+.task-filter button{font-size:12px;flex:1;padding:6px 8px}
+.task-filter button.active{border-color:#77bfeb;background:#2b577b;font-weight:700}
+.task-day{font-size:12px;color:#9ccbea;border-bottom:1px solid #365270;padding:9px 0 5px;margin-top:8px}
+.task-state{font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:7px;margin:6px 0}
+.task-state.pending{color:#a9ccfa}.task-state.active{color:#78e9bd}
+.task-state.complete{color:#94dfaa}.task-state.failed{color:#ffacb6}
+.task-progress{margin:6px 0;font-size:11px;color:#b5c9e1}
 .legend{border-top:1px solid #35516d;margin-top:10px;padding-top:8px}
 div[hidden],section[hidden],aside[hidden]{display:none!important}
 .point-icon{width:22px;height:22px;border:2px solid white;border-radius:50%;display:grid;place-items:center;color:#fff;background:#287ac4;font-size:11px;font-weight:700;box-shadow:0 2px 7px #0019}
@@ -149,6 +157,11 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <div id="catalog-info" class="sub">Katalog wird geladen…</div>
 <div class="scroll library-scroll" id="catalog-items"></div>
 <h3>Flugaufträge und Tracks</h3>
+<div class="task-filter" role="group" aria-label="Flugaufträge filtern">
+<button id="tasks-in-progress" type="button" class="active">Aktiv / Offen</button>
+<button id="tasks-finished" type="button">Abgeschlossen</button>
+<button id="tasks-all" type="button">Alle</button>
+</div>
 <div class="scroll tracks-scroll" id="flight-tracks"><div class="note">Lade Aufgaben…</div></div>
 <div class="sub">Flugspuren nur bei tatsächlich vorhandenen FlightHub-Aufträgen; GeoJSON stammt aus dem vorhandenen schreibgeschützten lokalen Endpunkt.</div>
 </section>
@@ -167,7 +180,7 @@ const elem=(tag,className,text)=>{
 const add=(parent,tag,css,text)=>{const result=elem(tag,css,text);parent.appendChild(result);return result;};
 const home={lat:49.1533,lon:8.58417,zoom:15};
 let map=null,tileLayer=null,mapLayers={},deviceLayer=null,routeLayer=null;
-let devices=[],projects=[],missionList=[],currentProject="",currentDevice="",currentOverlay=null;
+let devices=[],projects=[],missionList=[],currentProject="",currentDevice="",currentOverlay=null,taskFilter="progress";
 let refreshing=false,refreshCount=0,stopped=false;
 function message(id,text){$(id).textContent=text;}
 function text(value,fallback="–"){return value===null||value===undefined||value===""?fallback:String(value)}
@@ -374,25 +387,84 @@ function renderCatalog(){
     }
   }
 }
+// Status groups follow the display logic in DJI's public V2 demo, but
+// these values are normalized from our actual FlightHub PUBLIC task API.
+// Never present an unknown state as a successful or live-running task.
+const taskStates={
+  waiting:["Ausstehend","pending","progress"],
+  preparing:["Vorbereitung","pending","progress"],
+  executing:["In Ausführung","active","progress"],
+  paused:["Pausiert","pending","progress"],
+  suspended:["Ausgesetzt","pending","progress"],
+  success:["Erfolgreich","complete","finished"],
+  partially_done:["Teilweise abgeschlossen","failed","finished"],
+  terminated:["Abgebrochen","failed","finished"],
+  starting_failure:["Start fehlgeschlagen","failed","finished"],
+  timeout:["Zeitüberschreitung","failed","finished"]
+};
+function taskState(status){
+  return Object.hasOwn(taskStates,status)?taskStates[status]:
+    ["Unbekannter Status","pending","unknown"];
+}
+function taskDate(t){
+  const raw=t.run_at||t.begin_at||t.completed_at;
+  if(!raw||typeof raw!=="string")return "Zeit unbekannt";
+  const date=new Date(raw);
+  if(!Number.isFinite(date.getTime()))return "Zeit unbekannt";
+  return date.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"});
+}
 function renderTracks(){
   const body=$("flight-tracks");body.replaceChildren();
-  let count=0;
-  for(const p of selectedProjectCatalog()){
-    if(p.tasks===null){add(body,"div","note","Flugaufträge für "+text(p.name)+" nicht abrufbar.");continue;}
-    for(const task of (p.tasks||[]).slice(0,30)){
-      count++;
-      const card=add(body,"div","list-card");
-      add(card,"b","",task.name||"Unbenannter Flugauftrag");
-      add(card,"small","",text(p.name||p.project_id)+" · "+text(task.status)+" · "+text(task.run_at));
-      if(task.uuid){
-        const btn=add(card,"button","","Flugspur auf Karte");
-        btn.type="button";
-        btn.addEventListener("click",()=>viewTrack(p.project_id,task).catch(err=>
-          message("map-message","Flugspur nicht verfügbar: "+err.message)));
-      }
+  const tabs={
+    progress:$("tasks-in-progress"),finished:$("tasks-finished"),all:$("tasks-all")
+  };
+  for(const [kind,button] of Object.entries(tabs)){
+    button.classList.toggle("active",taskFilter===kind);
+    button.setAttribute("aria-pressed",String(taskFilter===kind));
+  }
+  const selected=[];
+  let unavailable=false;
+  for(const project of selectedProjectCatalog()){
+    if(project.tasks===null||project.tasks===undefined){unavailable=true;continue;}
+    for(const task of project.tasks||[]){
+      const state=taskState(task.status);
+      if(taskFilter!=="all"&&state[2]!==taskFilter)continue;
+      selected.push({project,task,state});
     }
   }
-  if(!count&&!body.children.length)add(body,"div","note","Keine Flugaufträge im abgefragten Zeitraum (in der Regel 30 Tage).");
+  selected.sort((a,b)=>
+    String(b.task.run_at||b.task.begin_at||"").localeCompare(
+      String(a.task.run_at||a.task.begin_at||"")));
+  let currentDay="";
+  for(const {project,task,state} of selected.slice(0,150)){
+    const day=taskDate(task);
+    if(day!==currentDay){add(body,"div","task-day",day);currentDay=day;}
+    const card=add(body,"div","list-card");
+    add(card,"b","",task.name||"Unbenannter Flugauftrag");
+    add(card,"span","task-state "+state[1],state[0]);
+    add(card,"small","",text(project.name||project.project_id)+" · "+text(task.task_type)+
+      " · "+text(task.run_at||task.begin_at,"Zeit unbekannt"));
+    if(typeof task.current_waypoint_index==="number"&&
+      typeof task.total_waypoints==="number"&&task.total_waypoints>0)
+      add(card,"div","task-progress","Wegpunktfortschritt laut DJI: "+
+        task.current_waypoint_index+" / "+task.total_waypoints);
+    if(task.exceptions>0)
+      add(card,"div","critical","DJI meldet "+task.exceptions+" Ausnahme(n).");
+    if(task.media_upload_status)
+      add(card,"div","sub","Medienübertragung laut DJI: "+task.media_upload_status);
+    if(task.uuid){
+      const btn=add(card,"button","","Historische Flugspur auf Karte");
+      btn.type="button";
+      btn.addEventListener("click",()=>viewTrack(project.project_id,task).catch(err=>
+        message("map-message","Flugspur nicht verfügbar: "+err.message)));
+    }
+  }
+  if(!selected.length){
+    add(body,"div","note",unavailable?
+      "Keine passenden Aufgaben im verfügbaren Katalog. Mindestens ein Projekt ist derzeit nicht abrufbar.":
+      "Keine passenden Flugaufträge im abgefragten Zeitraum (in der Regel 30 Tage).");
+  }
+  if(selected.length>150)add(body,"div","sub","Anzeige auf 150 Flugaufträge begrenzt.");
 }
 async function getJSON(path){
   const response=await fetch(path,{cache:"no-store"});
@@ -508,6 +580,10 @@ async function refreshAll(){
 }
 function wire(){
   $("refresh-now").addEventListener("click",refreshAll);
+  const taskTabs=[["tasks-in-progress","progress"],["tasks-finished","finished"],["tasks-all","all"]];
+  for(const [id,value] of taskTabs){
+    $(id).addEventListener("click",()=>{taskFilter=value;renderTracks();});
+  }
   $("project-filter").addEventListener("change",event=>selectProject(event.target.value));
   $("cockpit-select").addEventListener("change",event=>{
     currentDevice=event.target.value;renderCockpit();renderDevices();
