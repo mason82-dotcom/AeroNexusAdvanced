@@ -314,7 +314,7 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
-let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,studioSocket=null,studioFleetLoading=false;
+let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainLoadSerial=0,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
   $("auth-message").textContent=text;
@@ -1278,12 +1278,16 @@ function terrainBindPointer(canvas){
   },{passive:false});
 }
 async function previewTerrain(){
+  const loadSerial=++terrainLoadSerial;
   const file=$("terrain-file").files?.[0];
   if(!file)throw new Error("Zuerst DEM-GeoTIFF auswählen");
   if(file.size>8*1024*1024)throw new Error("GeoTIFF maximal 8 MiB");
   const r=await api("/api/v1/studio/terrain/geotiff",{
     method:"POST",headers:{"Content-Type":"image/tiff"},body:file});
-  const data=await r.json();terrainGrid=data.grid;
+  const data=await r.json();
+  // An old upload must not overwrite a newly selected DEM in the viewer.
+  if(loadSerial!==terrainLoadSerial)return;
+  terrainGrid=data.grid;
   drawTerrainPreview(terrainGrid);
   $("terrain-export").disabled=false;
   $("terrain-open-large").disabled=false;
@@ -1400,6 +1404,7 @@ function wire(){
   $("terrain-preview").addEventListener("click",()=>previewTerrain().catch(err=>$("terrain-message").textContent=err.message));
   $("terrain-export").addEventListener("click",()=>exportTerrain().catch(err=>$("terrain-message").textContent=err.message));
   $("terrain-file").addEventListener("change",()=>{
+    terrainLoadSerial++;
     terrainGrid=null;
     $("terrain-export").disabled=true;
     $("terrain-open-large").disabled=true;
