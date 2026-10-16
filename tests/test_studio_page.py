@@ -67,3 +67,12 @@ def test_private_content_loaded_only_with_bearer_token():
     assert 'function logout()' in page
     assert 'epoch++' in page
     assert 'textContent' in page
+
+
+def test_wpml_reimport_exposed_for_saved_aeronexus_routes():
+    page = render_studio()
+    assert 'id="import-kmz"' in page
+    assert 'id="import-mission"' in page
+    assert '/api/v1/studio/missions/import.kmz' in page
+    assert 'async function importMission()' in page
+    assert 'AeroNexus-KMZ als bearbeitbare Mission importiert' in page
