@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import pytest
 from pydantic import ValidationError
 
-from aeronexus.wpml_export import Waypoint, WaypointMission, export_kmz, import_kmz, KML_NS, WPML_NS
+from aeronexus.wpml_export import Waypoint, WaypointMission, export_kmz, import_kmz, waypoints_for_export, KML_NS, WPML_NS
 
 
 W = f"{{{WPML_NS}}}"
@@ -165,3 +165,109 @@ def test_import_rejects_unsupported_action():
         output.writestr("wpmz/waylines.wpml", route)
     with pytest.raises(ValueError, match="Unsupported waypoint action"):
         import_kmz(buffer.getvalue())
+
+
+def closed_draft(**changes):
+    """A route with four editable points and a fifth executed return point."""
+    return draft(waypoints=[
+        {"latitude": 49.1623682, "longitude": 8.5939103, "take_photo": True},
+        {"latitude": 49.162372, "longitude": 8.595573},
+        {"latitude": 49.163281, "longitude": 8.596909},
+        {"latitude": 49.164732, "longitude": 8.595031},
+    ], close_route=True, **changes)
+
+
+def test_closed_route_exports_a_real_fifth_wpml_waypoint():
+    mission = closed_draft()
+    assert len(mission.waypoints) == 4
+    assert len(waypoints_for_export(mission)) == 5
+    template, waylines = files(mission)
+    for root in (template, waylines):
+        points = root.findall(".//" + K + "Placemark")
+        assert len(points) == 5
+        assert [p.find(W + "index").text for p in points] == [
+            "0", "1", "2", "3", "4",
+        ]
+        assert points[4].find(".//" + K + "coordinates").text == (
+            points[0].find(".//" + K + "coordinates").text
+        )
+        # The return leg reaches waypoint 1 but never repeats its photo action.
+        assert points[0].find(".//" + W + "actionActuatorFunc").text == "takePhoto"
+        assert points[4].find(".//" + W + "actionGroup") is None
+    assert waylines.findall(".//" + K + "Placemark")[4].find(
+        W + "executeHeight"
+    ).text == "50"
+    assert waylines.find(".//" + W + "finishAction").text == "goHome"
+
+
+def test_closed_route_import_restores_reversible_checkbox():
+    first = closed_draft()
+    imported = import_kmz(export_kmz(first, timestamp_ms=10))
+    assert imported.close_route is True
+    assert imported.model_dump() == first.model_dump()
+    # Re-export keeps the executed route closed and does not create 6 points.
+    second_template, second_waylines = files(imported)
+    assert len(second_template.findall(".//" + K + "Placemark")) == 5
+    assert len(second_waylines.findall(".//" + K + "Placemark")) == 5
+
+
+def test_switching_closed_route_off_eliminates_fifth_wpml_waypoint():
+    first = closed_draft()
+    original = first.model_copy(update={"close_route": False})
+    assert len(first.waypoints) == len(original.waypoints) == 4
+    template, route = files(original)
+    assert len(route.findall(".//" + K + "Placemark")) == 4
+    assert route.findall(".//" + K + "Placemark")[-1].find(
+        ".//" + K + "coordinates"
+    ).text != route.findall(".//" + K + "Placemark")[0].find(
+        ".//" + K + "coordinates"
+    ).text
+    assert import_kmz(export_kmz(original, timestamp_ms=11)).close_route is False
+
+
+def test_closed_route_with_existing_return_point_does_not_duplicate_point():
+    mission = draft(close_route=True, waypoints=[
+        {"latitude": 49.12, "longitude": 8.51},
+        {"latitude": 49.13, "longitude": 8.52},
+        {"latitude": 49.14, "longitude": 8.53},
+        {"latitude": 49.12, "longitude": 8.51},
+    ])
+    assert len(waypoints_for_export(mission)) == 4
+    _, route = files(mission)
+    assert len(route.findall(".//" + K + "Placemark")) == 4
+    imported = import_kmz(export_kmz(mission, timestamp_ms=12))
+    assert imported.close_route is True
+    assert len(imported.waypoints) == 3
+    assert len(waypoints_for_export(imported)) == 4
+
+
+def test_closed_route_rejects_fewer_than_three_distinct_points():
+    mission = draft(close_route=True)
+    with pytest.raises(ValueError, match="at least 3 distinct"):
+        export_kmz(mission, timestamp_ms=13)
+    mission = draft(close_route=True, waypoints=[
+        {"latitude": 49.12, "longitude": 8.51},
+        {"latitude": 49.13, "longitude": 8.52},
+        {"latitude": 49.12, "longitude": 8.51},
+    ])
+    with pytest.raises(ValueError, match="at least 3 distinct"):
+        export_kmz(mission, timestamp_ms=13)
+
+
+def test_closed_route_enforces_500_total_executed_wpml_points():
+    points = [
+        {"latitude": round(49.1 + i * 0.00001, 7), "longitude": 8.6}
+        for i in range(500)
+    ]
+    max_draft = draft(waypoints=points)
+    assert len(waypoints_for_export(max_draft)) == 500
+    # 500 editable points + actual final return = 501, never export this.
+    max_closed = draft(close_route=True, waypoints=points)
+    assert len(waypoints_for_export(max_closed)) == 501
+    with pytest.raises(ValueError, match="between 2 and 500 executed"):
+        export_kmz(max_closed, timestamp_ms=14)
+
+
+def test_closed_route_requires_strict_boolean():
+    with pytest.raises(ValidationError):
+        draft(close_route="true")
