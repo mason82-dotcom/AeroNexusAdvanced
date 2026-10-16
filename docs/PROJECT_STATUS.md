@@ -176,6 +176,29 @@ Commit `3f0190488` (Pi-Test für Phase 12/13 noch ausstehend).
   Siehe `docs/phase-14-token-free-lan.md`.
 - Flugsteuerung und DJI-Dock-Integration bleiben gesperrt.
 
+## Phase 15 – FlightHub Operations Center und DJI-Quellenvergleich
+
+- Neues **`/operations`** (Chrome): Projektkarte über 76694 Forst,
+  Matrice-4T-Cockpit, Live-OSD/HMS, Status-basierte Flugauftrag-Filter,
+  lokale Missionsvorschau und GeoJSON-Flugspuren. Ohne DJI-Steuerbefehle.
+- Die technischen Beispiele
+  `dji-sdk/FlightHub-2-Frontend-Standalone-Component`,
+  `dji-sdk/FlightHub-2-OpenAPI-V2-Demo`,
+  `dji-sdk/Cloud-API-2` und
+  `alecad/dji-flighthub2-cli` verglichen.
+- **CLI-Erweiterung:** Abruf von Medienmetadaten für bereits bekannte
+  FlightHub-Flugaufträge. Original-URLs, Previews, signierte Links,
+  DJI-Seriennummern und Zugangsdaten werden nicht weitergegeben.
+- Optionaler **DJI Cloud API 2**-Quellenadapter: ausschließlich
+  `GET /api/v1/devices` eines separat laufenden und authentifizierten
+  offiziellen SDK-BFF (x86_64-Host). DRONE-only, keine DOCKs; OSD/HMS
+  auf gültige Werte und Zeitstempel begrenzt. Ohne BFF bleibt der
+  Adapter abgeschaltet, FlightHub 2 weiterhin betriebsbereit.
+- **GitHub Actions/main: 537 Tests bestanden, 1 Warnung**, Stand
+  `f12cc7da63` (Python 3.12). Auf dem Raspberry Pi und in Chrome
+  noch nicht getestet.
+- Dokumentation: `docs/phase-15-dji-sources-operations.md`.
+
 ## Nicht live verifiziert
 
 - On-Premises-Topologie (`projects/{uuid}/topologies`): nur mit
