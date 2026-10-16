@@ -46,7 +46,8 @@ def _no_cache(response: Response) -> None:
 def _require_dashboard_token(authorization: str | None) -> None:
     """Fail closed: do not reuse the DJI API credential for dashboard reads."""
     configured = os.environ.get("AERONEXUS_STATUS_TOKEN", "")
-    if len(configured) < 32:
+    if (not 32 <= len(configured) <= 512 or not configured.isascii()
+            or any(char.isspace() for char in configured)):
         raise HTTPException(status_code=503, detail="Status detail authentication is not configured")
     if (not isinstance(authorization, str) or len(authorization) > 512
             or not authorization.startswith("Bearer ")
