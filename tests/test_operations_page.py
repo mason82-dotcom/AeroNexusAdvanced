@@ -250,3 +250,25 @@ def test_cockpit_is_read_only_and_does_not_invent_hms_explanations():
     assert "innerHTML" not in page
     assert "Authorization" not in page
     assert "localStorage" not in page
+
+
+def test_cockpit_scroll_paint_containment_and_long_rtk_raw_value_wrapping():
+    page = render_operations()
+    # The reported Matrice 4T "is_fixed:not_started" must not paint a ghost
+    # fragment outside the technical section while Chrome scrolls/repaints.
+    assert '#cockpit-content{position:relative;isolation:isolate;contain:paint;' in page
+    assert '#cockpit-summary{position:relative;z-index:1;background:var(--pane)}' in page
+    assert 'scrollbar-gutter:stable' in page
+    assert '.cockpit>div.cockpit-raw{grid-column:1/-1}' in page
+    assert 'white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word' in page
+    assert 'rawRtk.className+=" cockpit-raw"' in page
+
+
+def test_cockpit_does_not_rebuild_dom_when_only_received_age_changes():
+    page = render_operations()
+    assert 'let lastCockpitSignature=null;' in page
+    assert 'const cockpitSignature=JSON.stringify([' in page
+    assert 'd.device_id,d.project_id,d.provider,d.name,d.online,d.freshness,t,d.health' in page
+    assert 'if(cockpitSignature===lastCockpitSignature)return;' in page
+    assert 'lastCockpitSignature=cockpitSignature' in page
+    assert 'message("cockpit-received",finite(d.age_seconds)' in page
