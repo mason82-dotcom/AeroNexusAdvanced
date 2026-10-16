@@ -48,7 +48,18 @@ async def serve_studio_events(socket: WebSocket, runtime, state) -> None:
         previous=event_marker(runtime)
         await socket.send_json({"type":"fleet_changed"})
         while True:
-            await asyncio.sleep(3)
+            # Watch actual disconnects; sleeping without receiving would keep
+            # abandoned sockets counted indefinitely when fleet is idle.
+            try:
+                frame=await asyncio.wait_for(socket.receive(),timeout=3)
+            except asyncio.TimeoutError:
+                frame=None
+            if frame is not None:
+                if frame.get("type")=="websocket.disconnect":
+                    break
+                # No client commands, subscriptions or telemetry writes.
+                await socket.close(code=1003,reason="Read-only event stream")
+                break
             current=event_marker(runtime)
             if current!=previous:
                 previous=current
