@@ -271,7 +271,24 @@ function editorSnapshot(){
   const form={};
   for(const id of FORM_IDS)form[id]=$(id).value;
   form["close-route"]=$("close-route").checked;
-  return {mission:JSON.parse(JSON.stringify(mission)),form,selected};
+  // Canonicalize metadata in the snapshot, even before getForm() is called.
+  // Saving must not add a phantom undo step with identical visible fields.
+  const draft=JSON.parse(JSON.stringify(mission));
+  draft.name=form["mission-name"].trim();
+  draft.description=form["mission-description"];
+  draft.drone_model=form["mission-model"];
+  draft.finish_action=form["mission-finish"];
+  draft.close_route=form["close-route"];
+  for(const [id,key] of [
+    ["mission-altitude","altitude_m"],["mission-speed","speed_mps"],
+    ["mission-takeoff","takeoff_security_height_m"],["mission-rth","rth_height_m"]
+  ]){
+    if(form[id].trim()!==""){
+      const value=Number(form[id]);
+      if(Number.isFinite(value))draft[key]=value;
+    }
+  }
+  return {mission:draft,form,selected};
 }
 function editorSignature(snapshot){
   return JSON.stringify({mission:snapshot.mission,form:snapshot.form});
@@ -670,10 +687,18 @@ async function saveMission(){
   getForm();
   historyRecord();
   const saveSignature=editorSignature(editorSnapshot());
+  const startingId=missionId;
   const editing=!!missionId;
   const path="/api/v1/studio/missions"+(editing?"/"+encodeURIComponent(missionId):"");
   const response=await api(path,{method:editing?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(mission)});
   const saved=await response.json();
+  // A late save must not bind another newly opened draft to the wrong ID.
+  if(missionId!==startingId||
+     (startingId===null&&editorSignature(editorSnapshot())!==saveSignature)){
+    await loadMissions();
+    notice("Ältere Mission gespeichert. Der aktuell offene Entwurf blieb unverändert.");
+    return;
+  }
   missionId=saved.id;
   // Do not mark concurrent edits clean: baseline is the submitted snapshot.
   historySaved(saveSignature);
