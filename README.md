@@ -36,6 +36,26 @@ FlightHub EU provider remains independent. DJI Cloud API 1.18 (2026-10-13)
 adds mainly O4 Ground Station and Dock functions, not a new Matrice 4T
 Pilot 2 API. See [Phase 9 live feed and 1.18 audit](docs/phase-9-cloud-api-live-feed.md).
 
+## DJI Cloud API server under AeroNexusAdvanced (Raspberry Pi 5)
+
+The previously installed `~/Projekte/AeroNexus/edge` server can be staged,
+with its stopped MySQL, Redis, EMQX and MinIO state, into the **gitignored**
+`~/Projekte/AeroNexusAdvanced/cloud-server/` directory. An isolated seven-service
+Compose template uses the existing Pi Docker images, excludes mapping/farming/PV,
+and does not start or delete anything automatically.
+
+```bash
+python3 scripts/migrate_cloud_server.py           # read-only preflight
+python3 scripts/migrate_cloud_server.py --stage   # checked cold copy; no start
+```
+
+Source data, DJI credentials and the prior stopped containers remain intact.
+The copied `edge/.env` is private, distinct from the current FlightHub
+`.env` at the repository root. See
+[Pi migration guide](docs/local-cloud-server-migration.md) for conditions,
+Compose validation, rollout and rollback. **No FlightHub 2 On-Premises
+installation** is included or implied.
+
 ## Development
 
 Requires Python 3.11+.
