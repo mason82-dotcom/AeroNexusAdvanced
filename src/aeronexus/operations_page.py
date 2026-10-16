@@ -37,6 +37,12 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .panel h3{font-size:14px;margin:13px 0 7px}
 .sub{font-size:12px;color:var(--sub);line-height:1.5}
 .scroll{overflow-y:auto;overflow-x:hidden;min-height:0;overscroll-behavior:contain}
+#cockpit-content{position:relative;isolation:isolate;contain:paint;overflow-wrap:anywhere;scrollbar-gutter:stable}
+#cockpit-summary{position:relative;z-index:1;background:var(--pane)}
+#cockpit-content .cockpit-technical{min-width:0;max-width:100%}
+#cockpit-content .cockpit-technical .cockpit>div b{font-size:14px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
+#cockpit-content .cockpit-technical .cockpit>div.cockpit-raw{grid-column:1/-1}
+#cockpit-content .cockpit-technical .cockpit>div.cockpit-raw b{font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .grow{flex:1}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .between{justify-content:space-between}
@@ -207,6 +213,7 @@ const add=(parent,tag,css,text)=>{const result=elem(tag,css,text);parent.appendC
 const home={lat:49.1533,lon:8.58417,zoom:15};
 let map=null,tileLayer=null,mapLayers={},deviceLayer=null,routeLayer=null;
 let devices=[],projects=[],missionList=[],currentProject="",currentDevice="",currentOverlay=null,taskFilter="progress";
+let lastCockpitSignature=null;
 let refreshing=false,refreshCount=0,stopped=false;
 function message(id,text){$(id).textContent=text;}
 function text(value,fallback="–"){return value===null||value===undefined||value===""?fallback:String(value)}
@@ -347,6 +354,7 @@ function metric(parent,title,value){
   const box=add(parent,"div","");
   add(box,"span","",title);
   add(box,"b","",value);
+  return box;
 }
 function rtkLabel(raw){
   const officialObserved={
@@ -397,11 +405,10 @@ function renderCockpit(){
   options.value=currentDevice;
   const summary=$("cockpit-summary");
   const body=$("cockpit-content");
-  const detailsWasOpen=body.querySelector("#cockpit-technical")?.open===true;
-  const oldScroll=body.scrollTop;
-  summary.replaceChildren();body.replaceChildren();
   const d=available.find(x=>x.device_id===currentDevice);
   if(!d){
+    lastCockpitSignature=null;
+    summary.replaceChildren();body.replaceChildren();
     message("cockpit-name","Kein Fluggerät ausgewählt");
     message("cockpit-connection","Verbindung unbekannt");
     message("cockpit-freshness","Keine Daten");
@@ -419,6 +426,16 @@ function renderCockpit(){
   message("cockpit-received",finite(d.age_seconds)&&d.age_seconds>=0?
     "Vor "+Math.floor(d.age_seconds)+" s empfangen":"Empfangsalter unbekannt");
   const t=d.telemetry||{};
+  // Updating "received age" must not tear down a scrolling/open details
+  // panel every 15 seconds if all underlying device readings are unchanged.
+  const cockpitSignature=JSON.stringify([
+    d.device_id,d.project_id,d.provider,d.name,d.online,d.freshness,t,d.health
+  ]);
+  if(cockpitSignature===lastCockpitSignature)return;
+  const detailsWasOpen=body.querySelector("#cockpit-technical")?.open===true;
+  const oldScroll=body.scrollTop;
+  summary.replaceChildren();body.replaceChildren();
+  lastCockpitSignature=cockpitSignature;
   const isCurrent=d.freshness==="fresh"&&d.online===true;
   const labelSuffix=isCurrent?" (letzter Messwert)":" (gespeichert)";
   const battery=finite(t.battery_percent)&&t.battery_percent>=0&&t.battery_percent<=100?
@@ -466,7 +483,8 @@ function renderCockpit(){
   metric(grid,"Distanz zum Homepoint",formatNumber(t.home_distance_m,0,"m"));
   metric(grid,"GPS-Satelliten (DJI)",text(t.gps_satellites));
   metric(grid,"RTK-Satelliten (DJI)",text(t.rtk_satellites));
-  metric(grid,"RTK-Status (Rohwert)",text(t.rtk_state));
+  const rawRtk=metric(grid,"RTK-Status (Rohwert)",text(t.rtk_state));
+  rawRtk.className+=" cockpit-raw";
   metric(grid,"Akkuspannung",finite(t.battery_voltage_mv)?
     formatNumber(t.battery_voltage_mv/1000,2,"V"):"–");
   metric(grid,"Akkutemperatur",formatNumber(t.battery_temperature_c,1,"°C"));
