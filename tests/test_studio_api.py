@@ -185,7 +185,9 @@ def test_closed_route_persists_and_reimports_with_real_return_flight_leg(api):
     assert created.status_code == 201, created.text
     mission_id = created.json()["id"]
     assert created.json()["mission"]["close_route"] is True
-    assert created.json()["mission"]["waypoints"] == draft["waypoints"]
+    assert created.json()["mission"]["waypoints"] == [
+        {**wp, "take_photo": wp.get("take_photo", False)} for wp in draft["waypoints"]
+    ]
     saved = client.get("/api/v1/studio/missions/" + mission_id, headers=HEADERS)
     assert saved.status_code == 200
     assert saved.json()["mission"]["close_route"] is True
@@ -207,7 +209,7 @@ def test_closed_route_persists_and_reimports_with_real_return_flight_leg(api):
     )
     assert reimported.status_code == 201, reimported.text
     assert reimported.json()["mission"]["close_route"] is True
-    assert reimported.json()["mission"]["waypoints"] == draft["waypoints"]
+    assert reimported.json()["mission"]["waypoints"] == created.json()["mission"]["waypoints"]
 
     # Turning the option off must remove only the added return waypoint,
     # never change a finishAction (RTH) configuration.
