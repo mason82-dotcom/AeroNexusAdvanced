@@ -173,3 +173,41 @@ def test_route_analysis_is_live_read_only_and_covers_closing_segment():
     # Calculation requires neither an extra backend API nor flight commands.
     assert '/api/v1/flight/command' not in page
     assert 'innerHTML' not in page
+
+
+
+def test_editor_has_history_dirty_indicator_and_precise_coordinates():
+    page = render_studio()
+    for marker in (
+        'id="undo-edit"', 'id="redo-edit"', 'id="editor-dirty"',
+        'id="insert-midpoint"', 'id="copy-point"',
+        'function editorSnapshot()', 'function historyRecord(group=null)',
+        'function undoEdit()', 'function redoEdit()', 'function historySaved(signature)',
+        'function allowDiscard()', 'function midpointCoordinates(a,b)',
+        'function insertMidpoint()', 'window.addEventListener("beforeunload"',
+        'window.addEventListener("keydown"', 'isTextEditing(e.target)',
+        'mission.waypoints.splice(selected+1,0,point)',
+        'p.latitude.toFixed(7)+", "+p.longitude.toFixed(7)',
+        'mission.waypoints[n]={...mission.waypoints[n],latitude:lat,longitude:lon}',
+    ):
+        assert marker in page
+    assert 'HISTORY_LIMIT=60' in page
+    assert 'innerHTML' not in page
+    assert 'localStorage' not in page
+    assert 'sessionStorage' not in page
+
+
+def test_unsaved_editor_changes_guard_switches_and_saved_baseline():
+    page = render_studio()
+    assert 'if(!skipConfirm&&!allowDiscard()){updateMissionSelect();return false;}' in page
+    assert 'if(!skipConfirm&&!allowDiscard()){updateMissionSelect();return false;}' in page
+    assert 'if(!missionId||!allowDiscard()||' in page
+    assert 'if(!allowDiscard())return;' in page
+    assert 'newMission({skipConfirm:true})' in page
+    assert 'await loadMission(record.id,{skipConfirm:true})' in page
+    assert 'historySaved(saveSignature)' in page
+    assert 'historyReset()' in page
+    assert 'editorSignature(editorSnapshot())!==startSignature' in page
+    assert 'e.returnValue=""' in page
+    assert 'HISTORY_LIMIT=60' in page
+    assert '/api/v1/flight/command' not in page
