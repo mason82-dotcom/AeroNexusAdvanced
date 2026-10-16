@@ -207,7 +207,7 @@ def stage_migration(source: Path, target: Path, template: Path,
     try:
         copy_cold(source, partial)
         # Disable the copied 13-service legacy Compose default. A bare
-        # 'docker compose up' in the new folder must NOT restart the entire
+        # An accidental bare Compose invocation must NOT restart the entire
         # old mapping/farming/PV/TSDK stack by accident.
         run(["sudo", "mv", "--",
              str(partial / "edge/docker-compose.yml"),
