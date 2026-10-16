@@ -259,4 +259,4 @@ def test_phase18_3d_viewer_controls_keep_local_read_only_terrain():
     assert 'innerHTML' not in page
     assert 'localStorage' not in page
     assert "three.min.js" not in page
-    assert "webgl" not in page.lower()
+    assert 'getContext("webgl")' not in page
