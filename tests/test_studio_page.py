@@ -125,3 +125,30 @@ def test_map_uses_esri_satellite_by_default_and_handles_osm_block():
     assert 'mapWarning(' in page
     assert 'Straßenkarten-Kacheln nicht verfügbar' in page
     assert "OpenStreetMap contributors" in page
+
+
+def test_route_close_control_is_reversible_and_stored_as_mission_data():
+    page = render_studio()
+    assert 'id="close-route" type="checkbox"' in page
+    assert 'mission.close_route=e.target.checked' in page
+    assert 'mission.close_route=$("close-route").checked' in page
+    assert '$("close-route").checked=mission.close_route===true' in page
+    assert 'close_route:false,waypoints:[]' in page
+    assert 'function closingAddsWaypoint()' in page
+    assert 'function resolvedWaypoints()' in page
+    assert 'if(closingAddsWaypoint())' in page
+    assert 'points.push({...points[0],take_photo:false})' in page
+    assert 'mission.close_route' in page
+    assert 'async function saveMission()' in page
+
+
+def test_closed_route_draws_real_return_leg_without_changing_rth_action():
+    page = render_studio()
+    assert 'L.polyline([[last.latitude,last.longitude],[first.latitude,first.longitude]]' in page
+    assert 'dashArray:"10 9"' in page
+    assert 'Rückflug zum ersten Wegpunkt · echter DJI-WPML-Wegpunkt' in page
+    assert 'ein zusätzlicher Wegpunkt angelegt' in page
+    assert 'Return-to-Home-Einstellung bleibt unabhängig' in page
+    assert 'mission.finish_action=$("mission-finish").value' in page
+    assert 'Geschlossene Route:' in page
+    assert 'mindestens 3 unterschiedliche Wegpunkte' in page
