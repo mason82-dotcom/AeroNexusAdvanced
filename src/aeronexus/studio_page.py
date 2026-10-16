@@ -124,6 +124,8 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="button-row"><button id="apply-point">Übernehmen</button><button id="remove-point" class="danger">Entfernen</button></div>
 </div>
 <hr>
+<label>Eigene AeroNexus-KMZ wieder öffnen<input type="file" id="import-kmz" accept=".kmz,application/vnd.google-earth.kmz"></label>
+<div class="button-row"><button id="import-mission">KMZ importieren & bearbeiten</button></div>
 <div class="button-row"><button class="primary" id="export-mission">KMZ / DJI WPML exportieren</button></div>
 <p class="note">Exportiert eine Datei mit <code>wpmz/template.kml</code> und <code>wpmz/waylines.wpml</code>. Flugmissionen müssen vor einem Einsatz in DJI Pilot 2 auf Kompatibilität, Höhen, Luftraum, RTH und Sicherheit geprüft werden. Kein automatischer Import zur Drohne.</p>
 </aside>
@@ -314,6 +316,20 @@ async function removeMission(){
   await api("/api/v1/studio/missions/"+encodeURIComponent(missionId),{method:"DELETE"});
   newMission();await loadMissions();notice("Mission gelöscht");
 }
+async function importMission(){
+  if(!accessToken)throw new Error("Zuerst mit dem Status-Token verbinden");
+  const file=$("import-kmz").files?.[0];
+  if(!file)throw new Error("Bitte eine AeroNexus-KMZ-Datei auswählen");
+  if(file.size>2*1024*1024)throw new Error("KMZ darf maximal 2 MiB groß sein");
+  const response=await api("/api/v1/studio/missions/import.kmz",{
+    method:"POST",headers:{"Content-Type":"application/vnd.google-earth.kmz"},body:file
+  });
+  const record=await response.json();
+  $("import-kmz").value="";
+  await loadMissions();
+  await loadMission(record.id);
+  notice("AeroNexus-KMZ als bearbeitbare Mission importiert. Änderungen vor dem Flug prüfen.");
+}
 async function exportMission(){
   getForm();
   if(mission.waypoints.length<2)throw new Error("Mindestens zwei Wegpunkte für WPML nötig.");
@@ -451,6 +467,7 @@ function wire(){
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
   $("delete-mission").addEventListener("click",()=>removeMission().catch(err=>notice(err.message,true)));
   $("export-mission").addEventListener("click",()=>exportMission().catch(err=>notice(err.message,true)));
+  $("import-mission").addEventListener("click",()=>importMission().catch(err=>notice(err.message,true)));
   $("add-mode").addEventListener("click",()=>{
     addMode=!addMode;$("add-mode").textContent=addMode?"Klickmodus beenden":"+ Auf Karte setzen";
     $("add-mode").classList.toggle("primary",addMode);
