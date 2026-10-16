@@ -141,3 +141,30 @@ def test_media_invalid_magic_and_type_rejected(api):
 def test_dji_flight_commands_remain_forbidden(api):
     client, _ = api
     assert client.post("/api/v1/flight/command", headers=HEADERS).status_code == 403
+
+
+def test_import_own_wpml_mission_and_edit_it(api):
+    client, _ = api
+    first = client.post("/api/v1/studio/missions", json=WAYPOINT_MISSION, headers=HEADERS)
+    assert first.status_code == 201
+    src_id = first.json()["id"]
+    exported = client.get(
+        "/api/v1/studio/missions/" + src_id + "/export.kmz", headers=HEADERS)
+    assert exported.status_code == 200
+    restored = client.post(
+        "/api/v1/studio/missions/import.kmz", content=exported.content,
+        headers={**HEADERS, "Content-Type": "application/vnd.google-earth.kmz"})
+    assert restored.status_code == 201, restored.text
+    assert restored.json()["id"] != src_id
+    assert restored.json()["mission"]["waypoints"] == first.json()["mission"]["waypoints"]
+    assert restored.json()["mission"]["drone_model"] == "matrice4t"
+    assert len(client.get("/api/v1/studio/missions", headers=HEADERS).json()["missions"]) == 2
+
+
+def test_import_rejects_non_kmz_and_requires_auth(api):
+    client, _ = api
+    path = "/api/v1/studio/missions/import.kmz"
+    assert client.post(path, content=b"Not-a-KMZ").status_code == 401
+    response = client.post(path, content=b"Not-a-KMZ", headers=HEADERS)
+    assert response.status_code == 422
+    assert client.get("/api/v1/studio/missions", headers=HEADERS).json()["missions"] == []
