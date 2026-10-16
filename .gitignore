@@ -6,3 +6,8 @@ __pycache__/
 *.egg-info/
 logs/
 config/pki/
+
+# DJI local Cloud API server migration: private passwords, licenses, databases,
+# broker state, copied upstream code, logs and proprietary assets.
+# Never commit any part of the staged server.
+/cloud-server/
