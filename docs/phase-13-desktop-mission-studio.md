@@ -32,6 +32,9 @@ browser validation on the Raspberry Pi still pending.
   height, horizontal airspeed, safe takeoff height, RTH height, finish action.
 - New/save/open/edit/delete missions in the Pi's private workspace;
   **nothing is uploaded to DJI**.
+- Re-import **previously exported AeroNexus waypoint KMZ files** to edit
+  their supported waypoint subset; reject external/complex DJI archives
+  with unknown actions instead of silently rewriting them.
 - Export DJI waypoint **KMZ** locally using exactly
   `wpmz/template.kml` and `wpmz/waylines.wpml`. The exporter uses XML,
   not unsafe string interpolation. All coordinates serialize as
@@ -60,8 +63,8 @@ Implemented subset:
   2–500 m, security height 1.2–1500 m and named profiles only.
   Importantly, these software limits are **not** a DJI flight
   authorization or a validation of local aviation rules.
-- Arbitrary external WPML KMZ **import/edit** is not supported in this
-  initial version. The editor can edit missions saved in AeroNexus.
+- **Third-party DJI KMZ files** cannot be edited yet; only AeroNexus
+  generated waypoint KMZ exports can be re-imported and edited.
   Full mapping2d/mapping3d, polygon areas, gimbal actions, per-waypoint
   ellipsoid/terrain height and DJI-specific extended metadata are not
   generated. Those require separately verified device/payload support.
@@ -103,6 +106,7 @@ Implemented subset:
 |---|---|---|
 | GET | `/studio` | Static shell, no identifiers |
 | GET/POST | `/api/v1/studio/missions` | List/create saved drafts |
+| POST | `/api/v1/studio/missions/import.kmz` | Re-import AeroNexus-created waypoint KMZ only |
 | GET/PUT/DELETE | `/api/v1/studio/missions/{uuid}` | Read/update/remove local draft |
 | GET | `/api/v1/studio/missions/{uuid}/export.kmz` | Download offline WPML ZIP |
 | GET/POST | `/api/v1/studio/media` | List/add private files |
