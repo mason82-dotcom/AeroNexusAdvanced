@@ -7,8 +7,8 @@ Phase 9 (DJI Cloud API MQTT-Feed) implementiert, noch nicht live getestet.
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
 **Letzter auf Raspberry Pi 5 bestätigter Teststand:** 401 Tests (Phase 11
 inkl. Root-Weiterleitung), Live-Matrice 4T im Chrome/Android-Dashboard.
-**Aktueller GitHub-Actions-Teststand:** 459 Tests, Python 3.12,
-Commit `25d160c99c` (Pi-Test für Phase 12/13 noch ausstehend).
+**Aktueller GitHub-Actions-Teststand:** 468 Tests, Python 3.12,
+Commit `3f0190488` (Pi-Test für Phase 12/13 noch ausstehend).
 
 ## Bestätigt auf Raspberry Pi 5
 
@@ -23,7 +23,7 @@ Commit `25d160c99c` (Pi-Test für Phase 12/13 noch ausstehend).
   ausschließlich in den Fixture-Läufen; die produktive Organisationsprüfung
   bleibt erhalten.
 - Phase-12-/Phase-13-Code inklusive WPML und Medienverwaltung wurde in
-  **GitHub Actions/Python 3.12 mit 459 Tests** erfolgreich geprüft.
+  **GitHub Actions/Python 3.12 mit 468 Tests** erfolgreich geprüft.
   Vollständiger Pi-Test auf Python 3.13 und Chrome-Interaktion stehen aus.
 - Bekannte, derzeit nicht blockierende Warnung:
   `StarletteDeprecationWarning` in `fastapi/testclient.py`
@@ -141,6 +141,8 @@ Commit `25d160c99c` (Pi-Test für Phase 12/13 noch ausstehend).
   und M4E (99/0, Kamera 88), DJI-WPML-Ordnerstruktur mit
   `template.kml` und `waylines.wpml`; nur ein konservativer
   `waypoint`-Teilumfang.
+- Zusätzlich sicherer Re-Import **eigener AeroNexus-WPML-KMZ** zur
+  Nachbearbeitung. Komplexe Fremdmissionen bewusst nicht unterstützt.
 - Private Medienbibliothek für lokale JPEG/PNG/WebP/MP4-Dateien auf dem Pi,
   max. 25 MiB pro Datei, authentifizierte Vorschau und Löschung.
 - Read-only Flottenansicht und optional GPS-Marker auf Karte.
@@ -148,7 +150,7 @@ Commit `25d160c99c` (Pi-Test für Phase 12/13 noch ausstehend).
   unter `~/.local/share/aeronexusadvanced` (0700, Dateien 0600).
 - **Keine** DJI-Missionsübertragung oder -ausführung, keine
   automatisierte DJI Flugsteuerung oder Dock-Integration.
-- GitHub CI/Python 3.12: **459 passed, 1 warning**. Raspberry Pi/
+- GitHub CI/Python 3.12: **468 passed, 1 warning**. Raspberry Pi/
   Chrome-Test und anschließender manueller DJI-Pilot-2-Importcheck
   sind noch erforderlich. Details:
   `docs/phase-13-desktop-mission-studio.md`.
