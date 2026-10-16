@@ -26,6 +26,26 @@ guard as `/status` and `/studio` when Phase 14 mode is explicitly enabled.
   plausible non-zero GPS coordinates** get a live position marker.
 - Selected-aircraft cockpit: battery, altitude, speed, satellites, RTK,
   received age, OSD and HMS; stale readings are explicitly marked.
+- **Cockpit-Ergonomie nach Matrice-4T-Liveprüfung (Phase 16):** Geräteverbindung
+  (online/offline/zuletzt online/unbekannt) und Alter der übermittelten Daten
+  werden **unabhängig** angezeigt. Eine aktuelle Offline-Meldung ist kein
+  vermeintlicher Telemetriefehler. Oben dauerhaft sichtbare kompakte Werte
+  für Batterie, Flugmodus, Start-relative Höhe, horizontale Geschwindigkeit
+  und den verständlichen RTK-Status; weiteres OSD, Spannung, Temperatur,
+  GPS/RTK-Satellitenzahlen und Statistik in aufklappbaren technischen Details.
+- Die vom Matrice-4T-Status übermittelten Enum-Werte
+  `is_fixed:not_started`, `is_fixed:fixing`,
+  `is_fixed:fixing_successful`, `is_fixed:fixing_failed` werden nur
+  nach der im Projekt bereits bestätigten Zuordnung dargestellt.
+  Unbekannte Werte bleiben im Rohdatenbereich erhalten. Ein Wert von
+  null GPS-/RTK-Satelliten ist ein **vom Anbieter gemeldeter Wert**, keine
+  gesicherte Aussage zum tatsächlichen Empfängerzustand.
+- **Flugzeit gesamt und Flugstarts gesamt sind als API-Werte markiert.**
+  Der bei eingeschalteter Matrice 4T beobachtete Wert 0 bedeutet nicht
+  zwingend eine unbenutzte Drohne. Unbekannte HMS-Codes wie
+  `0x16070042` erhalten keine erfundene DJI-Diagnose. Der aufgeklappte
+  Detailbereich und seine Scrollposition bleiben bei den 15-Sekunden-
+  Aktualisierungen erhalten.
 - FlightHub task inbox: **active / completed / all**, latest known task
   status and waypoint progress, flight track as read-only GeoJSON.
 - Local AeroNexus Mission Studio drafts can be previewed on the map,
