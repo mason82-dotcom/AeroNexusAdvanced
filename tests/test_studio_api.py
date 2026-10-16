@@ -168,3 +168,56 @@ def test_import_rejects_non_kmz_and_requires_auth(api):
     response = client.post(path, content=b"Not-a-KMZ", headers=HEADERS)
     assert response.status_code == 422
     assert client.get("/api/v1/studio/missions", headers=HEADERS).json()["missions"] == []
+
+
+def test_closed_route_persists_and_reimports_with_real_return_flight_leg(api):
+    client, _ = api
+    draft = {
+        **WAYPOINT_MISSION,
+        "close_route": True,
+        "waypoints": [
+            *WAYPOINT_MISSION["waypoints"],
+            {"latitude": 49.181, "longitude": 8.54},
+            {"latitude": 49.182, "longitude": 8.55},
+        ],
+    }
+    created = client.post("/api/v1/studio/missions", json=draft, headers=HEADERS)
+    assert created.status_code == 201, created.text
+    mission_id = created.json()["id"]
+    assert created.json()["mission"]["close_route"] is True
+    assert created.json()["mission"]["waypoints"] == draft["waypoints"]
+    saved = client.get("/api/v1/studio/missions/" + mission_id, headers=HEADERS)
+    assert saved.status_code == 200
+    assert saved.json()["mission"]["close_route"] is True
+
+    exported = client.get(
+        "/api/v1/studio/missions/" + mission_id + "/export.kmz", headers=HEADERS)
+    assert exported.status_code == 200, exported.text[:100]
+    with ZipFile(BytesIO(exported.content)) as archive:
+        template = archive.read("wpmz/template.kml")
+        executed = archive.read("wpmz/waylines.wpml")
+    assert template.count(b"<Placemark>") == 5
+    assert executed.count(b"<Placemark>") == 5
+    assert b"<wpml:finishAction>goHome</wpml:finishAction>" in executed
+
+    reimported = client.post(
+        "/api/v1/studio/missions/import.kmz",
+        content=exported.content,
+        headers={**HEADERS, "Content-Type": "application/vnd.google-earth.kmz"},
+    )
+    assert reimported.status_code == 201, reimported.text
+    assert reimported.json()["mission"]["close_route"] is True
+    assert reimported.json()["mission"]["waypoints"] == draft["waypoints"]
+
+    # Turning the option off must remove only the added return waypoint,
+    # never change a finishAction (RTH) configuration.
+    open_draft = {**reimported.json()["mission"], "close_route": False}
+    response = client.put(
+        "/api/v1/studio/missions/" + reimported.json()["id"],
+        json=open_draft, headers=HEADERS)
+    assert response.status_code == 200
+    open_export = client.get(
+        "/api/v1/studio/missions/" + reimported.json()["id"] + "/export.kmz",
+        headers=HEADERS)
+    with ZipFile(BytesIO(open_export.content)) as archive:
+        assert archive.read("wpmz/waylines.wpml").count(b"<Placemark>") == 4
