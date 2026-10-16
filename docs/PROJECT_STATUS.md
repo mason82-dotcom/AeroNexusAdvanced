@@ -1,8 +1,9 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 16. Oktober 2026  
-**Phase:** 13 (Desktop Mission Studio) implementiert und auf GitHub Actions
-Python 3.12 getestet; Live-FlightHub und Phase 11 auf Raspberry Pi verifiziert.
+**Phase:** 15 (Operations Center und optionale Cloud API 2 SDK-BFF Bridge).
+FlightHub 2 und Phase 11 auf Raspberry Pi live bestätigt; Phase 15 auf
+GitHub Actions/Python 3.12 getestet, echter SDK-BFF-Live-Test ausstehend.
 Phase 9 (DJI Cloud API MQTT-Feed) implementiert, noch nicht live getestet.  
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
 **Letzter auf Raspberry Pi 5 bestätigter Teststand:** 401 Tests (Phase 11
@@ -175,6 +176,24 @@ Commit `3f0190488` (Pi-Test für Phase 12/13 noch ausstehend).
   Raspberry-Pi- und Chrome-Live-Test der Phase 14 noch ausstehend.
   Siehe `docs/phase-14-token-free-lan.md`.
 - Flugsteuerung und DJI-Dock-Integration bleiben gesperrt.
+
+## Phase 15 – Operations Center und DJI Cloud API 2
+
+- `/operations`: FlightHub-Projekte, Flotte, schreibgeschützte Geräte-Telemetrie,
+  WPML-Entwürfe und bekannte Flugaufträge einschließlich bereinigter Medienmetadaten.
+- Optionaler `GET /api/v1/cloudapi2/devices`-Adapter an das gesondert
+  betriebene offizielle SDK-Skeleton-BFF (x86_64), ausschließlich für DRONE-Daten.
+  Der bestehende DJI Cloud API-Zugang ist **kein** BFF-Authentifizierungstoken.
+- SDK-BFF-Bridge bleibt ohne explizite `.env`-Konfiguration ausgeschaltet.
+  Nachgehärtet: HTTP-Streaming mit 1-MB-Grenze **vor** der Antwortpufferung;
+  erneute Prüfung von `lastOsdAt` bei jedem Cacheabruf; alter und aktueller
+  Online-Status getrennt.
+- **GitHub Actions: 539 Tests erfolgreich, 1 bekannte Warnung**
+  (Python 3.12, Feature-PR #1). Pi-/Chrome-/BFF-Live-Prüfung der
+  neuen Schnittstelle steht aus. Änderungen aus PR #1 sind noch nicht
+  in `main` gemergt; den Pi deshalb nicht allein auf Grundlage dieser
+  Branch-Ergebnisse als live-verifiziert betrachten.
+- Referenz: [Phase-15-Dokumentation](phase-15-dji-sources-operations.md).
 
 ## Nicht live verifiziert
 
