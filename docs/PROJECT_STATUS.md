@@ -188,8 +188,10 @@ Commit `3f0190488` (Pi-Test für Phase 12/13 noch ausstehend).
   Nachgehärtet: HTTP-Streaming mit 1-MB-Grenze **vor** der Antwortpufferung;
   erneute Prüfung von `lastOsdAt` bei jedem Cacheabruf; alter und aktueller
   Online-Status getrennt.
-- **GitHub Actions: 539 Tests erfolgreich, 1 bekannte Warnung**
-  (Python 3.12, Feature-PR #1). Pi-/Chrome-/BFF-Live-Prüfung der
+- **GitHub Actions/Python 3.12:** 532 Tests im Feature-Branch,
+  539 Tests im Pull-Request-Merge-Test gegen den aktuellen `main`-Stand;
+  jeweils erfolgreich mit 1 bekannten Warnung.
+  Pi-/Chrome-/BFF-Live-Prüfung der
   neuen Schnittstelle steht aus. Änderungen aus PR #1 sind noch nicht
   in `main` gemergt; den Pi deshalb nicht allein auf Grundlage dieser
   Branch-Ergebnisse als live-verifiziert betrachten.
