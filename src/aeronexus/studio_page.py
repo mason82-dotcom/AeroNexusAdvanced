@@ -12,7 +12,7 @@ HTML = r"""<!doctype html>
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
 <title>AeroNexus Studio · Missionen & Medien</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoN6bKQeB9d2W4=" crossorigin="">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
 :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,"Segoe UI",sans-serif;--ink:#eaf3ff;--muted:#97aec7;--line:#2c425c;--bg:#0a111f;--pane:#111e31;--surface:#172740;--accent:#48a8f5;--good:#62dfb7}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);min-height:100vh;font-size:14px}
