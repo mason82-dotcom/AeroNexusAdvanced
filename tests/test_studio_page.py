@@ -29,8 +29,30 @@ def test_studio_has_desktop_map_media_fleet_tabs():
 
 def test_leaflet_version_is_pinned_and_has_integrity():
     page = render_studio()
-    assert "leaflet@1.9.4" in page
-    assert 'integrity="sha256-' in page
+    parser = _HTML()
+    parser.feed(page)
+    leaflet_css = [
+        attrs for tag, attrs in parser.nodes if tag == "link"
+        and attrs.get("rel") == "stylesheet"
+        and attrs.get("href") == "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+    ]
+    assert len(leaflet_css) == 1
+    # Official Leaflet 1.9.4 quick-start canonical CSS SHA-256.
+    # A previous invalid hash caused Chrome to reject Leaflet CSS,
+    # leaving map tiles scattered across the viewport.
+    assert leaflet_css[0]["integrity"] == (
+        "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    )
+    assert "crossorigin" in leaflet_css[0]
+    leaflet_js = [
+        attrs for tag, attrs in parser.nodes if tag == "script"
+        and attrs.get("src") == "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+    ]
+    assert len(leaflet_js) == 1
+    assert leaflet_js[0]["integrity"] == (
+        "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    )
+    assert "#map{height:100%" in page
     assert "https://tile.openstreetmap.org/" in page
     assert "https://server.arcgisonline.com/" in page
     assert "OpenStreetMap contributors" in page
