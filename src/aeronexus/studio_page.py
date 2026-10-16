@@ -246,7 +246,7 @@ function getMap(){
   map.on("click",event=>{
     if(!addMode)return;
     const lat=+event.latlng.lat.toFixed(7);
-    const lon=+((((event.latlng.lng+540)%360)-180).toFixed(7);
+    const lon=Number(((((event.latlng.lng+540)%360)-180)).toFixed(7));
     if(!Number.isFinite(lat)||!Number.isFinite(lon)||(lat===0&&lon===0))return;
     mission.waypoints.push({latitude:lat,longitude:lon,take_photo:false});
     selected=mission.waypoints.length-1;redraw();
