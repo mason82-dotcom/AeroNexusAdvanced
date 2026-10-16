@@ -8,7 +8,7 @@ Python/FastAPI integration gateway for DJI enterprise data on Raspberry Pi 5.
 |---|---|
 | FlightHub 2 Public Cloud OpenAPI V2 | Project listing, project fleet (aircraft + remote controllers), thing model state, opt-in polling |
 | FlightHub 2 On-Premises OpenAPI V2 | Project listing, project topology (aircraft + remote controllers) with embedded state, opt-in polling |
-| DJI Cloud API (AeroNexus EMQX, Pilot 2) | Opt-in read-only MQTT OSD live feed for aircraft and remote controllers |
+| DJI Cloud API (AeroNexus EMQX, Pilot 2) | Opt-in read-only MQTT OSD live feed; optional event-driven `/state` updates for already known aircraft and controllers |
 | DJI Cloud API 2 (official SDK BFF) | Optional read-only GET of aircraft OSD/HMS snapshots via a separately deployed authenticated x86_64 backend; disabled by default |
 
 The project has a validated local inventory for **aircraft and remote
@@ -28,8 +28,13 @@ not appear as a distinct FlightHub device. See
 [confirmed project status](docs/PROJECT_STATUS.md) for the precise scope.
 
 The DJI Cloud API live feed (phase 9) subscribes read-only to the OSD
-telemetry that DJI Pilot 2 pushes to the AeroNexus MQTT broker:
-[Phase 9 live feed](docs/phase-9-cloud-api-live-feed.md).
+telemetry that DJI Pilot 2 pushes to the AeroNexus MQTT broker; optional
+`AERONEXUS_OSD_STATE_ENABLED=1` also reads approved change-driven
+`thing/product/+/state` packets. The consumer **does not itself provide**
+the Pilot 2 workspace, licence validation or MQTT broker; the legacy
+FlightHub EU provider remains independent. DJI Cloud API 1.18 (2026-10-13)
+adds mainly O4 Ground Station and Dock functions, not a new Matrice 4T
+Pilot 2 API. See [Phase 9 live feed and 1.18 audit](docs/phase-9-cloud-api-live-feed.md).
 
 ## Development
 
