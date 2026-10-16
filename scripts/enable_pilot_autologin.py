@@ -226,7 +226,7 @@ def render_index(content: str) -> tuple[str, bool]:
         "const isVerified = ref<boolean>(false)\n" + NEW_PILOT_LOGIC,
         "license ref + Pilot pairing flow",
     )
-    start = updated.find("onMounted(async () => {\n", updated.index("const pairingRequired = ref"))
+    start = updated.find("onMounted(async () => {\n  verifyLicense()\n")
     if start == -1:
         raise ValueError("Legacy Pilot mounted block missing")
     finish = updated.find("\nfunction verifyLicense () {", start)
