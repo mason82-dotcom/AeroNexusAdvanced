@@ -232,3 +232,31 @@ def test_new_geo_photo_survey_terrain_ui_is_explicitly_local():
     assert "keine verbundenen Flugwege" in page
     assert "no-store" in page
     assert "innerHTML" not in page
+
+
+
+def test_phase18_3d_viewer_controls_keep_local_read_only_terrain():
+    page = render_studio()
+    parser = _HTML()
+    parser.feed(page)
+    ids = {attrs["id"] for _, attrs in parser.nodes if "id" in attrs}
+    for element_id in (
+        "terrain-pane", "terrain-canvas-large", "terrain-open-large",
+        "terrain-reset-view", "terrain-azimuth", "terrain-tilt", "terrain-zoom",
+        "terrain-exaggeration", "terrain-color", "terrain-wire",
+        "terrain-azimuth-value", "terrain-large-message",
+    ):
+        assert element_id in ids
+    assert 'data-tab="terrain-pane"' in page
+    assert 'function terrainProjection(grid,view,width,height)' in page
+    assert 'function terrainDrawCanvas(canvas,grid,view)' in page
+    assert 'function terrainBindPointer(canvas)' in page
+    assert 'function terrainResetView()' in page
+    assert "Keine DJI-Missionsausführung" in page
+    assert "Höhenwerte bleiben in Metern" in page
+    assert '"/api/v1/studio/terrain/export.stl"' in page
+    assert '"/api/v1/studio/terrain/geotiff"' in page
+    assert 'innerHTML' not in page
+    assert 'localStorage' not in page
+    assert "three.min.js" not in page
+    assert "webgl" not in page.lower()
