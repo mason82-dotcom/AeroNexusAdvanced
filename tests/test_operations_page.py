@@ -125,3 +125,56 @@ def test_static_html_has_no_live_identifiers_or_secrets(monkeypatch):
         assert "frame-ancestors 'none'" in res.headers["content-security-policy"]
         assert "https://cdn.jsdelivr.net" in res.headers["content-security-policy"]
         assert client.post("/api/v1/flight/command").status_code == 403
+
+
+def test_dji_public_task_state_inbox_filters_and_groups_existing_cache():
+    page = render_operations()
+    assert 'id="tasks-in-progress"' in page
+    assert 'id="tasks-finished"' in page
+    assert 'id="tasks-all"' in page
+    assert 'function taskState(status)' in page
+    assert 'waiting:["Ausstehend","pending","progress"]' in page
+    assert 'executing:["In Ausführung","active","progress"]' in page
+    assert 'success:["Erfolgreich","complete","finished"]' in page
+    assert 'partially_done:["Teilweise abgeschlossen","failed","finished"]' in page
+    assert 'starting_failure:["Start fehlgeschlagen","failed","finished"]' in page
+    assert 'timeout:["Zeitüberschreitung","failed","finished"]' in page
+    assert '["Unbekannter Status","pending","unknown"]' in page
+    assert 'function taskDate(t)' in page
+    assert 'className' in page
+    assert 'aria-pressed' in page
+    assert 'task.current_waypoint_index' in page
+    assert 'task.total_waypoints' in page
+    assert 'task.media_upload_status' in page
+    assert 'task.exceptions>0' in page
+
+
+def test_cockpit_uses_only_normalized_drone_metrics():
+    page = render_operations()
+    assert "Flugzeit gesamt" in page
+    assert "Flugstarts gesamt" in page
+    assert "Distanz zum Homepoint" in page
+    assert "Höhe über Start" in page
+    assert "Akkuspannung" in page
+    assert "Akkutemperatur" in page
+    assert "RTK-Satelliten" in page
+    assert "angezeigte Telemetrie sind alte" in page
+    assert "DJI-Code" in page
+    assert 'd.kind==="aircraft"' in page
+
+
+def test_no_dji_task_create_or_microfrontend_runtime():
+    page = render_operations()
+    for path in (
+        "/openapi/v2.0/task/api/v1/workspaces/",
+        "/flight-tasks",
+        "FH2.initConfig",
+        "FH2.loadCockpit",
+        "loadWaylineCreation",
+        "x-user-token",
+        "X-Project-Uuid",
+        "paas.js",
+    ):
+        assert path not in page
+    assert "DJI" in page
+    assert "nur lesen" in page.lower() or "Nur lesen" in page
