@@ -76,7 +76,7 @@ const document={
 const window={setInterval(){},addEventListener(){}};
 const fetch=()=>new Promise(()=>{});
 const api=new Function("document","window","fetch",script+
-  "\\nreturn {rtkLabel,modeLabel,connectionStatus,freshnessStatus,renderCockpit,"+
+  "\nreturn {rtkLabel,modeLabel,connectionStatus,freshnessStatus,renderCockpit,"+
   "setState(rows,id){devices=rows;currentDevice=id;}};"
 )(document,window,fetch);
 
