@@ -106,6 +106,19 @@
   Steuerungsübernahme, keine Schreiboperationen; DJI-Dock-Integration
   ausgeschlossen; nur Drohnen und Fernsteuerungen im Bestand.
 
+## Phase 11 – mobile Dashboard-Diagnose (noch nicht auf dem Pi getestet)
+
+- Smartphone-taugliche Gerätekarten mit Akkubalken, Telemetrie-, GPS-/RTK- und
+  HMS-Status, getrennten Höhendaten, Empfangsalter und Frischekennzeichnung.
+- Anzeige des letzten erfolgreichen DJI-Synchronisierungszeitpunkts;
+  zusätzliche FlightHub-Abfragen oder neue DJI-Berechtigungen sind nicht nötig.
+- Geschützte Inhalte und verspätete asynchrone Antworten werden beim
+  Trennen der Dashboard-Sitzung verworfen; die vollständige technische
+  Gerätetabelle bleibt aufklappbar.
+- Code und fünf Regressionstests in GitHub ergänzt; **400 Tests erwartet,
+  vollständiger Pi-Test noch ausstehend**. Dokumentation:
+  `docs/phase-11-dashboard-diagnostics.md`.
+
 ## Nicht live verifiziert
 
 - On-Premises-Topologie (`projects/{uuid}/topologies`): nur mit
