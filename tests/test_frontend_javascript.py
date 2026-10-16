@@ -334,6 +334,12 @@ const el=id=>studio.node(id);
   assert.equal(studio.editorDirty(),true);
   studio.historySaved();
   assert.equal(studio.editorDirty(),false);
+  const preSaveSteps=studio.length;
+  // getForm() copies visible fields to the mission object on save;
+  // this internal synchronization must not create an invisible undo step.
+  studio.mission.name="ABC";
+  studio.historyRecord();
+  assert.equal(studio.length,preSaveSteps);
   studio.undoEdit();
   assert.equal(studio.editorDirty(),true,"undo after save is an unsaved revision");
   studio.redoEdit();
