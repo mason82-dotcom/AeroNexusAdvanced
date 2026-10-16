@@ -23,6 +23,7 @@ from .flighthub_poller import FlightHubFleetRefresher, FlightHubPollSettings
 from .providers import ProviderKind
 from .status_page import render_page
 from .studio_page import render_studio
+from .operations_page import render_operations
 from .studio_workspace import Workspace, WorkspaceError, MAX_MEDIA_BYTES, MEDIA_TYPES
 from .lan_access import lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
@@ -248,6 +249,24 @@ def _studio_workspace(request: Request, authorization: str | None) -> Workspace:
 def _studio_error(exc: WorkspaceError) -> HTTPException:
     return HTTPException(status_code=404 if "not found" in str(exc).lower() else 400,
                          detail=str(exc))
+
+
+@app.get("/operations", response_class=HTMLResponse, include_in_schema=False)
+def operations_page(request: Request, response: Response) -> str:
+    """Local FlightHub-inspired read-only project and cockpit overview."""
+    if lan_mode_enabled():
+        require_lan(request)
+    _no_cache(response)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' data: blob: https://tile.openstreetmap.org "
+        "https://server.arcgisonline.com; "
+        "connect-src 'self' https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    )
+    return render_operations()
 
 
 @app.get("/studio", response_class=HTMLResponse, include_in_schema=False)
