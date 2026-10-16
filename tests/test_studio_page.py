@@ -166,7 +166,8 @@ def test_route_analysis_is_live_read_only_and_covers_closing_segment():
     assert 'function formatRouteDuration(seconds)' in page
     assert 'function updateRouteAnalysis()' in page
     assert 'const analysis=updateRouteAnalysis();' in page
-    assert '$("mission-speed").addEventListener("input",updateRouteAnalysis)' in page
+    assert 'for(const id of FORM_IDS)' in page
+    assert 'if(id==="mission-speed")updateRouteAnalysis();' in page
     assert 'Keine Freigabe zum Fliegen.' in page
     assert 'Nur ideale horizontale Reisezeit' in page
     assert 'if(closeRoute&&n===route.length-1&&route.length>=3' in page
