@@ -206,6 +206,12 @@ def stage_migration(source: Path, target: Path, template: Path,
     partial.mkdir(mode=0o700)
     try:
         copy_cold(source, partial)
+        # Disable the copied 13-service legacy Compose default. A bare
+        # 'docker compose up' in the new folder must NOT restart the entire
+        # old mapping/farming/PV/TSDK stack by accident.
+        run(["sudo", "mv", "--",
+             str(partial / "edge/docker-compose.yml"),
+             str(partial / "edge/docker-compose.legacy.yml")])
         # Compose only the seven essential, locally available services.
         shutil.copyfile(template, partial / "edge/compose.core.yaml")
         run(["sudo", "chmod", "600", str(partial / "edge/.env")])
