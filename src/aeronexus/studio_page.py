@@ -25,7 +25,12 @@ header{display:flex;align-items:center;gap:18px;padding:13px 20px;background:#11
 .brand{font-size:20px;font-weight:800;letter-spacing:-.04em}.brand small{font-size:11px;color:#73b7e8;display:block;letter-spacing:.2em;font-weight:650}
 nav{display:flex;gap:5px;flex-wrap:wrap}nav button{background:transparent;border:0;color:#b8c9dd}nav button.active{background:#23496b;color:#fff}
 .auth{display:flex;gap:7px;align-items:center;flex:1;justify-content:flex-end;min-width:280px}
-.auth input{max-width:300px}.dot{width:9px;height:9px;background:#6b7788;border-radius:50%;display:inline-block}
+.auth input{max-width:300px}
+.auth-message{font-size:12px;flex-basis:100%;text-align:right;color:#c9d9ea;min-height:15px;overflow-wrap:anywhere}
+.auth-message.error{color:#ffacb6}
+.auth-message.ok{color:#9be8c8}
+.auth button[aria-busy="true"]{opacity:.7;cursor:wait}
+.dot{width:9px;height:9px;background:#6b7788;border-radius:50%;display:inline-block}
 .dot.on{background:var(--good)}.muted{color:var(--muted)}.note{font-size:12px;color:#a6b9cc;line-height:1.5}
 .layout{display:grid;grid-template-columns:365px minmax(0,1fr);height:calc(100vh - 73px);min-height:650px}
 .side{overflow-y:auto;border-right:1px solid var(--line);background:var(--pane);padding:18px;min-width:0}
@@ -74,7 +79,7 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .way-marker.selected{background:#f0b04b;color:#101520}
 footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 @media(max-width:1000px){.layout{grid-template-columns:320px minmax(0,1fr)}header{gap:9px}.auth{min-width:250px}}
-@media(max-width:700px){.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}.auth input{max-width:none}header{padding:11px}.map-bar{top:8px;left:8px;right:8px}}
+@media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}.auth input{max-width:none}header{padding:11px}.map-bar{top:8px;left:8px;right:8px}}
 </style>
 </head>
 <body>
@@ -89,7 +94,8 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="auth">
 <span id="auth-dot" class="dot"></span>
 <input id="auth-token" type="password" autocomplete="off" spellcheck="false" aria-label="AeroNexus Status-Token" placeholder="Status-Token (nicht DJI-Token)">
-<button class="primary" id="login">Verbinden</button><button id="logout">Trennen</button>
+<button class="primary" id="login" type="button">Verbinden</button><button id="logout" type="button">Trennen</button>
+<span id="auth-message" class="auth-message" role="status" aria-live="polite">Noch nicht verbunden</span>
 </div>
 </header>
 <div class="layout">
@@ -180,6 +186,23 @@ const EMPTY=()=>({name:"Neue Wegpunktmission",description:"",drone_model:"matric
 let mission=EMPTY(),missionId=null,selected=-1,addMode=false,accessToken="",epoch=0,knownMissions=[],knownMedia=[],displayMedia=20,mediaUrls=[],previewUrl=null;
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,mapTile=null,mapTiles={};
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
+function authMessage(text,state=""){
+  $("auth-message").textContent=text;
+  $("auth-message").className="auth-message"+(state?" "+state:"");
+}
+function loginBusy(isBusy){
+  $("login").disabled=isBusy;
+  $("login").setAttribute("aria-busy",isBusy?"true":"false");
+  $("login").textContent=isBusy?"Prüfe Verbindung…":"Verbinden";
+}
+function errorMessage(error){
+  const detail=String(error?.message||"Unbekannter Fehler");
+  if(detail.includes("HTTP 401"))return "Status-Token abgelehnt (HTTP 401).";
+  if(detail.includes("HTTP 503"))return "Server oder privater Missionsarbeitsbereich nicht bereit (HTTP 503).";
+  if(detail.includes("Failed to fetch")||detail.includes("NetworkError")||detail.includes("Load failed"))
+    return "Netzwerkfehler: HTTPS-Verbindung zum Pi prüfen.";
+  return detail;
+}
 function clean(text){return text===null||text===undefined?"–":String(text)}
 function cardText(parent,tag,cls,text){const el=els(tag,cls,text);parent.appendChild(el);return el}
 function headerToken(){return {"Authorization":"Bearer "+accessToken}}
@@ -349,19 +372,55 @@ function switchTab(id){
 }
 async function login(){
   const value=$("auth-token").value.trim();
-  if(value.length<32){notice("Status-Token muss mindestens 32 Zeichen haben.",true);return;}
-  epoch++;accessToken=value;$("auth-token").value="";
+  if(value.length<32){
+    const msg="Status-Token muss mindestens 32 Zeichen haben.";
+    notice(msg,true);authMessage(msg,"error");return;
+  }
+  // Check the credential against the existing read-only status API first.
+  // A broken/unwritable mission workspace must not look like bad credentials.
+  const session=++epoch;
+  accessToken=value;
+  loginBusy(true);
+  authMessage("Token wird geprüft…");
+  notice("Verbindung zum Raspberry Pi wird geprüft…");
   try{
-    await loadMissions();
+    const response=await api("/api/v1/status/devices?limit=1");
+    await response.json();
+    if(session!==epoch)return;
     $("auth-dot").className="dot on";
-    notice("Verbunden. Lokaler Missionsarbeitsbereich bereit.");
+    $("auth-token").value="";
+    authMessage("Verbunden · Token gültig","ok");
+    notice("Authentifizierung erfolgreich. Lade Missionsarbeitsbereich…");
+    try{
+      await loadMissions();
+      if(session!==epoch)return;
+      notice("Verbunden. Lokaler Missionsarbeitsbereich bereit.");
+      authMessage("Verbunden · Missionen verfügbar","ok");
+    }catch(err){
+      if(session!==epoch)return;
+      const msg=errorMessage(err);
+      notice("Token gültig; Missionsspeicher nicht verfügbar: "+msg,true);
+      authMessage("Verbunden · Missionsspeicherfehler","error");
+    }
+    // The read-only fleet view can still work if local storage is unavailable.
     await Promise.allSettled([loadMedia(),loadFleet()]);
-  }catch(err){logout();notice("Anmeldung fehlgeschlagen: "+err.message,true);}
+  }catch(err){
+    if(session!==epoch)return;
+    const msg=errorMessage(err);
+    accessToken="";
+    $("auth-dot").className="dot";
+    $("auth-token").value="";
+    authMessage(msg,"error");
+    notice("Anmeldung fehlgeschlagen: "+msg,true);
+  }finally{
+    if(session===epoch)loginBusy(false);
+  }
 }
 function revokeMedia(){mediaUrls.forEach(url=>URL.revokeObjectURL(url));mediaUrls=[];}
 function closePreview(){const dlg=$("media-dialog");if(dlg.open)dlg.close();$("preview-content").replaceChildren();if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}}
 function logout(){
   epoch++;accessToken="";$("auth-token").value="";$("auth-dot").className="dot";
+  authMessage("Nicht verbunden");loginBusy(false);
   knownMedia=[];knownMissions=[];revokeMedia();closePreview();
   $("gallery").replaceChildren();$("fleet-grid").replaceChildren();$("more-media").hidden=true;
   $("media-notice").textContent="Nicht verbunden";$("fleet-notice").textContent="Nicht verbunden";
