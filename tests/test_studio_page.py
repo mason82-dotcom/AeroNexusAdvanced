@@ -152,3 +152,24 @@ def test_closed_route_draws_real_return_leg_without_changing_rth_action():
     assert 'mission.finish_action=$("mission-finish").value' in page
     assert 'Geschlossene Route:' in page
     assert 'mindestens 3 unterschiedliche Wegpunkte' in page
+
+
+def test_route_analysis_is_live_read_only_and_covers_closing_segment():
+    page = render_studio()
+    assert 'id="route-distance"' in page
+    assert 'id="route-duration"' in page
+    assert 'id="route-legs"' in page
+    assert 'id="route-return"' in page
+    assert 'id="route-analysis-warning"' in page
+    assert 'function geoDistanceMeters(a,b)' in page
+    assert 'function routeMetrics(points,closeRoute,speedMps)' in page
+    assert 'function formatRouteDuration(seconds)' in page
+    assert 'function updateRouteAnalysis()' in page
+    assert 'const analysis=updateRouteAnalysis();' in page
+    assert '$("mission-speed").addEventListener("input",updateRouteAnalysis)' in page
+    assert 'Keine Freigabe zum Fliegen.' in page
+    assert 'Nur ideale horizontale Reisezeit' in page
+    assert 'if(closeRoute&&n===route.length-1&&route.length>=3' in page
+    # Calculation requires neither an extra backend API nor flight commands.
+    assert '/api/v1/flight/command' not in page
+    assert 'innerHTML' not in page
