@@ -15,7 +15,7 @@ from secrets import compare_digest
 
 from fastapi import FastAPI, Header, HTTPException, Query, Response, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, StreamingResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import datetime
 
 from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
@@ -503,6 +503,7 @@ def studio_media_delete(media_id: str, request: Request, response: Response,
 
 class GeoPhotoPatch(BaseModel):
     """Manually assigned WGS84 photo metadata; never infer unsupported EXIF."""
+    model_config=ConfigDict(extra="forbid")
     latitude: float | None = Field(default=None,ge=-90,le=90,allow_inf_nan=False)
     longitude: float | None = Field(default=None,ge=-180,le=180,allow_inf_nan=False)
     altitude_m: float | None = Field(default=None,ge=-500,le=12000,allow_inf_nan=False)
