@@ -10,7 +10,7 @@ from math import isfinite
 from zipfile import ZIP_DEFLATED, ZipFile
 import xml.etree.ElementTree as ET
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Literal
 
 
@@ -49,6 +49,13 @@ class Waypoint(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     take_photo: bool = False
+
+    @model_validator(mode="after")
+    def valid_gps_fix(self) -> "Waypoint":
+        # DJI uses 0/0 as a missing-fix sentinel, not a usable wayline point.
+        if self.latitude == 0 and self.longitude == 0:
+            raise ValueError("Waypoint at 0,0 is not a valid GPS fix")
+        return self
 
     @field_validator("latitude", "longitude")
     @classmethod
