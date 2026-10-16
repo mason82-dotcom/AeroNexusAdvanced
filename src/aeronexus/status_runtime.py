@@ -66,7 +66,7 @@ class StatusRuntime:
                     freshness = "clock_skew"
                 else:
                     age = round(max(0.0, delta), 3)
-                    freshness = "fresh" if age <= self.settings.stale_after_seconds else "stale"
+                    freshness = "fresh" if delta <= self.settings.stale_after_seconds else "stale"
             sample = ({} if snapshot is None else {
                 key: value for key, value in asdict(snapshot).items()
                 if key not in ("provider", "device_id")
