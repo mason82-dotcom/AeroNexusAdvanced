@@ -264,3 +264,140 @@ def test_studio_route_analysis_geometry_in_node():
         ["node", "-e", _ROUTE_ANALYSIS_RUNTIME_TEST], input=scripts[0],
         text=True, capture_output=True, timeout=15, check=False)
     assert result.returncode == 0, result.stderr
+
+
+# Real Mission Studio browser editor logic evaluated inside Node, with a
+# minimal mocked DOM and no external network calls or DJI devices.
+_STUDIO_HISTORY_RUNTIME_TEST = r"""
+const fs=require("node:fs");
+const assert=require("node:assert/strict");
+const script=fs.readFileSync(0,"utf8");
+const start=script.indexOf("function editorSnapshot(){");
+const stop=script.indexOf("function getForm(){",start);
+const navStart=script.indexOf("async function loadMission(id,{skipConfirm=false}={}){");
+const navStop=script.indexOf("async function saveMission(){",navStart);
+assert.ok(start>=0&&stop>start&&navStart>stop&&navStop>navStart);
+const logic=script.slice(start,stop)+"\n"+script.slice(navStart,navStop);
+const setup=[
+  'const FORM_IDS=["mission-name","mission-description","mission-model",',
+  '"mission-altitude","mission-speed","mission-takeoff","mission-rth","mission-finish"];',
+  'const HISTORY_LIMIT=60;',
+  'const EMPTY=()=>({name:"Neue Wegpunktmission",description:"",drone_model:"matrice4t",',
+  'altitude_m:50,speed_mps:5,takeoff_security_height_m:20,rth_height_m:60,',
+  'finish_action:"goHome",close_route:false,waypoints:[]});',
+  'let mission=EMPTY(),missionId=null,selected=-1,',
+  'editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;',
+  'const values=new Map(),notices=[];',
+  'const window={confirmed:false,confirm(){return this.confirmed;}};',
+  'function $(id){if(!values.has(id))values.set(id,{value:"",checked:false,disabled:false,',
+  'textContent:"",classList:{toggle(){} }});return values.get(id);}',
+  'function redraw(){};function fitMission(){};',
+  'function notice(v){notices.push(v)};',
+  'function syncForm(){const f={"mission-name":mission.name,',
+  '"mission-description":mission.description,"mission-model":mission.drone_model,',
+  '"mission-altitude":mission.altitude_m,"mission-speed":mission.speed_mps,',
+  '"mission-takeoff":mission.takeoff_security_height_m,"mission-rth":mission.rth_height_m,',
+  '"mission-finish":mission.finish_action};for(const [id,v] of Object.entries(f))',
+  '$(id).value=String(v);$("close-route").checked=mission.close_route;}',
+  'function updateMissionSelect(){$("mission-list").value=missionId||"";}',
+  'function resolvedWaypoints(){return mission.waypoints;}',
+  'let request=async()=>({json:async()=>({id:"saved-id",mission:EMPTY()})});',
+  'async function api(){return request();}',
+  logic,
+  'syncForm();historyReset();',
+  'return {editorDirty,historyReset,historyRecord,historySaved,undoEdit,redoEdit,',
+  'allowDiscard,midpointCoordinates,insertMidpoint,newMission,loadMission,',
+  'get mission(){return mission},get selected(){return selected},',
+  'get length(){return editHistory.length},get index(){return editIndex},',
+  'get values(){return values},get notices(){return notices},',
+  'choose(n){selected=n},setMission(v){mission=v;syncForm();historyReset()},',
+  'setConfirm(v){window.confirmed=v},setRequest(v){request=v},',
+  'node(id){return $(id)}};'
+].join("\n");
+const studio=new Function(setup)();
+const el=id=>studio.node(id);
+(async()=>{
+  assert.equal(studio.editorDirty(),false);
+  assert.equal(el("undo-edit").disabled,true);
+  el("mission-name").value="AB";
+  studio.historyRecord("typing:mission-name");
+  el("mission-name").value="ABC";
+  studio.historyRecord("typing:mission-name");
+  assert.equal(studio.length,2,"consecutive keystrokes must coalesce");
+  assert.equal(studio.editorDirty(),true);
+  assert.equal(el("redo-edit").disabled,true);
+  assert.equal(studio.undoEdit(),true);
+  assert.equal(el("mission-name").value,"Neue Wegpunktmission");
+  assert.equal(studio.editorDirty(),false);
+  assert.equal(studio.redoEdit(),true);
+  assert.equal(el("mission-name").value,"ABC");
+  assert.equal(studio.editorDirty(),true);
+  studio.historySaved();
+  assert.equal(studio.editorDirty(),false);
+  studio.undoEdit();
+  assert.equal(studio.editorDirty(),true,"undo after save is an unsaved revision");
+  studio.redoEdit();
+  assert.equal(studio.editorDirty(),false);
+  el("mission-description").value="uncommitted";
+  studio.historyRecord();
+  assert.equal(studio.newMission(),false,"unsaved changes must block new mission");
+  assert.equal(el("mission-description").value,"uncommitted");
+  studio.setConfirm(true);
+  assert.equal(studio.newMission(),true);
+  assert.equal(studio.editorDirty(),false);
+
+  const a={latitude:49.1234567,longitude:179.9,take_photo:true};
+  const b={latitude:49.2234567,longitude:-179.9,take_photo:true};
+  const c={latitude:49.3234567,longitude:-179.8,take_photo:false};
+  studio.mission.waypoints=[a,b,c];
+  studio.historyReset();
+  studio.choose(0);
+  assert.equal(studio.insertMidpoint(),true);
+  assert.equal(studio.mission.waypoints.length,4);
+  const midpoint=studio.mission.waypoints[1];
+  assert.ok(Math.abs(midpoint.longitude-(-180))<0.000001,
+    "midpoint across antimeridian must not jump to longitude 0");
+  assert.equal(midpoint.latitude,49.1734567);
+  assert.equal(midpoint.take_photo,false);
+  assert.equal(studio.editorDirty(),true);
+  studio.undoEdit();
+  assert.equal(studio.mission.waypoints.length,3);
+  studio.redoEdit();
+  assert.equal(studio.mission.waypoints.length,4);
+  assert.equal(studio.editorDirty(),true);
+  assert.equal(studio.midpointCoordinates({latitude:100,longitude:1},b),null);
+  assert.equal(studio.midpointCoordinates({latitude:1,longitude:1},null),null);
+
+  // Switch to a saved mission cannot proceed without explicit confirmation.
+  studio.setConfirm(false);
+  assert.equal(await studio.loadMission("saved-id"),false);
+  assert.equal(studio.editorDirty(),true);
+  studio.setConfirm(true);
+  assert.equal(await studio.loadMission("saved-id"),true);
+  assert.equal(studio.editorDirty(),false);
+  assert.equal(studio.mission.waypoints.length,0);
+
+  // Late network completion must never discard edits started while fetching.
+  let finish;
+  studio.setRequest(()=>new Promise(resolve=>{finish=resolve;}));
+  const delayed=studio.loadMission("second-id");
+  el("mission-name").value="changed while loading";
+  studio.historyRecord();
+  finish({json:async()=>({id:"second-id",mission:{name:"Lost",waypoints:[]}})});
+  await assert.rejects(delayed,/während des Ladens geändert/);
+  assert.equal(el("mission-name").value,"changed while loading");
+  assert.equal(studio.editorDirty(),true);
+})().catch(e=>{console.error(e);process.exitCode=1;});
+"""
+
+
+def test_studio_undo_redo_dirty_navigation_in_node():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js is needed to validate Mission Studio history")
+    page = render_studio()
+    scripts = re.findall(r"<script>(.*?)</script>", page, flags=re.DOTALL)
+    assert len(scripts) == 1
+    result = subprocess.run(
+        ["node", "-e", _STUDIO_HISTORY_RUNTIME_TEST], input=scripts[0],
+        text=True, capture_output=True, timeout=15, check=False)
+    assert result.returncode == 0, result.stderr
