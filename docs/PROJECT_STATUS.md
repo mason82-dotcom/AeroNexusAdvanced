@@ -1,10 +1,14 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 16. Oktober 2026  
-**Phase:** 10 (FlightHub-2-Flotte, live) erfolgreich getestet; Phase 9
-(DJI Cloud API MQTT-Feed) implementiert, noch nicht live getestet.  
+**Phase:** 13 (Desktop Mission Studio) implementiert und auf GitHub Actions
+Python 3.12 getestet; Live-FlightHub und Phase 11 auf Raspberry Pi verifiziert.
+Phase 9 (DJI Cloud API MQTT-Feed) implementiert, noch nicht live getestet.  
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
-**Letzter auf Raspberry Pi 5 bestätigter Entwicklungs-Commit:** `6322869`
+**Letzter auf Raspberry Pi 5 bestätigter Teststand:** 401 Tests (Phase 11
+inkl. Root-Weiterleitung), Live-Matrice 4T im Chrome/Android-Dashboard.
+**Aktueller GitHub-Actions-Teststand:** 459 Tests, Python 3.12,
+Commit `25d160c99c` (Pi-Test für Phase 12/13 noch ausstehend).
 
 ## Bestätigt auf Raspberry Pi 5
 
@@ -13,15 +17,14 @@
 - Installation: `aeronexusadvanced` 0.1.0, editierbar, zusätzlich
   `paho-mqtt` 2.1.0 (Extra `mqtt`)
 - `python -m pip check`: **No broken requirements found**
-- `env -u AERONEXUS_DJI_ORGANIZATION_ID .venv/bin/python -m pytest -q`:
-  **393 passed, 1 warning** (auf dem Pi für Commit `6322869` bestätigt).
-- Danach wurde `tests/conftest.py` ergänzt: Eine automatische Test-Fixture
-  blendet ausschließlich **während der Testläufe** die produktiven Variablen
-  `AERONEXUS_DJI_*`, `AERONEXUS_FH_*`, `AERONEXUS_CLOUD_MQTT_*` und
-  `AERONEXUS_STATUS_TOKEN` aus. Tests setzen bei Bedarf explizit künstliche
-  Werte. `tests/test_env_isolation.py` enthält zwei Regressionstests.
-  **Neuer Teststand (erwartet 395 Tests) muss noch auf dem Pi bestätigt werden.**
-  Die produktive Organisationsprüfung wurde nicht geändert.
+- **401 passed, 1 warning** auf dem Pi (Phase 11 inkl. Root-Weiterleitung)
+  ohne `env -u` bestätigt. Die Testisolierung ist damit behoben:
+  `tests/conftest.py` entfernt reale DJI- und Token-Umgebungsvariablen
+  ausschließlich in den Fixture-Läufen; die produktive Organisationsprüfung
+  bleibt erhalten.
+- Phase-12-/Phase-13-Code inklusive WPML und Medienverwaltung wurde in
+  **GitHub Actions/Python 3.12 mit 459 Tests** erfolgreich geprüft.
+  Vollständiger Pi-Test auf Python 3.13 und Chrome-Interaktion stehen aus.
 - Bekannte, derzeit nicht blockierende Warnung:
   `StarletteDeprecationWarning` in `fastapi/testclient.py`
   zu `httpx` / `httpx2`.
@@ -106,7 +109,7 @@
   Steuerungsübernahme, keine Schreiboperationen; DJI-Dock-Integration
   ausgeschlossen; nur Drohnen und Fernsteuerungen im Bestand.
 
-## Phase 11 – mobile Dashboard-Diagnose (noch nicht auf dem Pi getestet)
+## Phase 11 – mobile Dashboard-Diagnose (auf dem Pi getestet)
 
 - Smartphone-taugliche Gerätekarten mit Akkubalken, Telemetrie-, GPS-/RTK- und
   HMS-Status, getrennten Höhendaten, Empfangsalter und Frischekennzeichnung.
@@ -115,9 +118,40 @@
 - Geschützte Inhalte und verspätete asynchrone Antworten werden beim
   Trennen der Dashboard-Sitzung verworfen; die vollständige technische
   Gerätetabelle bleibt aufklappbar.
-- Code und fünf Regressionstests in GitHub ergänzt; **400 Tests erwartet,
-  vollständiger Pi-Test noch ausstehend**. Dokumentation:
-  `docs/phase-11-dashboard-diagnostics.md`.
+- Phase 11: **400 Tests auf dem Pi bestanden**; anschließend ein
+  zusätzlicher Root-Weiterleitungstest: **401 Tests auf dem Pi bestanden**.
+  Android-Screenshots bestätigen FlightHub-Live-Anzeige nach Anmeldung:
+  Matrice 4T online, Akku/RTK/Flugmodus/HMS, 5 Routen, 5 3D-Modelle.
+  Dokumentation: `docs/phase-11-dashboard-diagnostics.md`.
+
+## Phase 12 – mobile FlightHub-Bibliothek und HMS
+
+- Responsive Karten für Routen, 3D-Modelle und Flugaufträge,
+  klassische Tabellen aufklappbar. Bibliothek vor erfolgreicher
+  Authentifizierung ausgeblendet; HMS-Meldungen mit originalem DJI-Code
+  und nur verifiziertem Klartext. Separate Akkufarbheuristik.
+- 7 zusätzliche Regressionstests; GitHub-Actions-Test erfolgreich,
+  neuer Pi-/Android-Smoke-Test steht aus.
+
+## Phase 13 – Chrome Desktop Mission Studio
+
+- **`https://192.168.178.63:8000/studio`**: interaktive Leaflet-Karte
+  (OSM/Esri), eigene WPML-Wegpunktmissionen erstellen, bearbeiten,
+  speichern, löschen und als KMZ exportieren. M4T (99/1, Kamera 89)
+  und M4E (99/0, Kamera 88), DJI-WPML-Ordnerstruktur mit
+  `template.kml` und `waylines.wpml`; nur ein konservativer
+  `waypoint`-Teilumfang.
+- Private Medienbibliothek für lokale JPEG/PNG/WebP/MP4-Dateien auf dem Pi,
+  max. 25 MiB pro Datei, authentifizierte Vorschau und Löschung.
+- Read-only Flottenansicht und optional GPS-Marker auf Karte.
+- Alle Missions- und Medienänderungen bleiben lokal auf dem Pi,
+  unter `~/.local/share/aeronexusadvanced` (0700, Dateien 0600).
+- **Keine** DJI-Missionsübertragung oder -ausführung, keine
+  automatisierte DJI Flugsteuerung oder Dock-Integration.
+- GitHub CI/Python 3.12: **459 passed, 1 warning**. Raspberry Pi/
+  Chrome-Test und anschließender manueller DJI-Pilot-2-Importcheck
+  sind noch erforderlich. Details:
+  `docs/phase-13-desktop-mission-studio.md`.
 
 ## Nicht live verifiziert
 
