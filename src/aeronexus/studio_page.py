@@ -95,6 +95,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button class="active" data-tab="map-pane">Karte & Missionen</button>
 <button data-tab="media-pane">Medienbibliothek</button>
 <button data-tab="fleet-pane">Flottenstatus</button>
+<a href="/operations" style="color:#9edaff;padding:9px;text-decoration:none">Operations Center ↗</a>
 <a href="/status" style="color:#9edaff;padding:9px;text-decoration:none">Live-Dashboard ↗</a>
 </nav>
 <div class="auth"><span class="dot on" aria-hidden="true"></span>
