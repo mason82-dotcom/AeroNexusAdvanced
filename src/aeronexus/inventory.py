@@ -1,7 +1,6 @@
-"""Read-only, provider-scoped project and device inventory.
+"""Read-only, provider-scoped inventory for aircraft and controllers only.
 
-This module stores normalized data supplied by adapters; it does not claim
-any DJI endpoint, persist credentials, or issue flight commands.
+DJI Dock hardware is deliberately excluded from this project.
 """
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -9,7 +8,6 @@ from .providers import DeviceSnapshot, ProviderKind
 
 class DeviceType(StrEnum):
     AIRCRAFT = "aircraft"
-    DOCK = "dock"
     CONTROLLER = "controller"
 
 @dataclass(frozen=True)
@@ -33,6 +31,8 @@ class Device:
     def __post_init__(self):
         if not self.project_id.strip() or not self.device_id.strip() or not self.name.strip():
             raise ValueError("Device identity and name must not be blank")
+        if not isinstance(self.kind, DeviceType):
+            raise ValueError("Only aircraft and controllers are supported")
 
 @dataclass
 class Inventory:
