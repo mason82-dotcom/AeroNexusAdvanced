@@ -87,7 +87,18 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .geo-row{display:flex;align-items:center;gap:8px;padding:8px;background:#142b42;border:1px solid #395a78;border-radius:8px}
 .geo-row span{flex:1;min-width:0;overflow-wrap:anywhere}
 .geo-vertex{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;border:2px solid #ffffff;background:#ffad65;color:#142132;font-size:11px;font-weight:800;box-shadow:0 1px 6px #0007;cursor:move}
-#terrain-canvas{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c}
+#terrain-canvas,#terrain-canvas-large{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c;touch-action:none;cursor:grab}
+#terrain-canvas:active,#terrain-canvas-large:active{cursor:grabbing}
+.terrain-stage{padding:18px;max-width:1300px;margin:auto}
+.terrain-stage h1{margin-bottom:8px}
+.terrain-controls{display:grid;grid-template-columns:repeat(4,minmax(135px,1fr));gap:7px 15px;margin:16px 0;padding:12px;background:#13263c;border:1px solid #344f68;border-radius:12px}
+.terrain-controls label{margin:0}
+.terrain-controls input[type=range]{padding:0;cursor:pointer}
+.terrain-toggles{display:flex;flex-wrap:wrap;gap:15px;align-items:center;margin:8px 0 14px}
+.terrain-toggles label{display:flex;flex-direction:row;align-items:center;gap:6px;margin:0}
+.terrain-toggles input[type=checkbox]{width:auto}
+.terrain-help{color:#a8c7dd;font-size:12px;line-height:1.6;margin:12px 0}
+@media(max-width:700px){.terrain-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.terrain-stage{padding:12px}}
 .geo-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.geo-buttons button{flex:1}
 .editor-dirty{font-size:12px;padding:6px 9px;border-radius:7px;color:#a0efcf;background:#123e34;border:1px solid #316d56}
 .editor-dirty.unsaved{color:#ffdeaa;background:#3a2c1a;border-color:#7c5a2b}
@@ -113,6 +124,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <nav aria-label="Arbeitsbereiche">
 <button class="active" data-tab="map-pane">Karte & Missionen</button>
 <button data-tab="geo-pane">Geo &amp; Gelände</button>
+<button data-tab="terrain-pane">3D Gelände</button>
 <button data-tab="media-pane">Medienbibliothek</button>
 <button data-tab="fleet-pane">Flottenstatus</button>
 <a href="/operations" style="color:#9edaff;padding:9px;text-decoration:none">Operations Center ↗</a>
@@ -204,7 +216,8 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <hr><h2>Gelände aus GeoTIFF</h2>
 <label>DEM-GeoTIFF (max. 8 MiB)<input type="file" id="terrain-file" accept=".tif,.tiff,image/tiff"></label>
 <div class="geo-buttons"><button id="terrain-preview" class="primary">3D-Vorschau</button><button id="terrain-export" disabled>STL exportieren</button></div>
-<canvas id="terrain-canvas" width="320" height="210" role="img" aria-label="Lokale vereinfachte perspektivische Höhenraster-Vorschau"></canvas>
+<canvas id="terrain-canvas" width="320" height="210" role="img" aria-label="Drehbare schematische 3D-Höhenraster-Vorschau"></canvas>
+<div class="geo-buttons"><button id="terrain-open-large" disabled>Interaktive Großansicht öffnen</button></div>
 <div id="terrain-message" class="note" role="status">Lokales GDAL erforderlich. Höhenmodell nur Visualisierung und 3D-Modell – nicht zur Flugfreigabe.</div>
 </aside>
 <aside class="side" id="media-panel" hidden>
@@ -247,6 +260,26 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </div>
 <div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
 </section>
+<section class="pane" id="terrain-pane">
+<div class="terrain-stage">
+<h1>Interaktive 3D-Geländeansicht</h1>
+<p class="note">Lokales Höhenraster aus GeoTIFF, ausschließlich zur Veranschaulichung. Mit Maus oder Finger drehen/neigen; Mausrad zoomt. Die Ansicht ist orthografisch und kein georeferenziertes 3D-Kartenmodell.</p>
+<div class="terrain-controls">
+<label>Rotation <output id="terrain-azimuth-value">45°</output><input id="terrain-azimuth" type="range" min="-180" max="180" step="1" value="45"></label>
+<label>Neigung <output id="terrain-tilt-value">45°</output><input id="terrain-tilt" type="range" min="15" max="80" step="1" value="45"></label>
+<label>Zoom <output id="terrain-zoom-value">1,0×</output><input id="terrain-zoom" type="range" min="0.5" max="2.5" step="0.1" value="1"></label>
+<label>Höhenüberhöhung <output id="terrain-exaggeration-value">2,0×</output><input id="terrain-exaggeration" type="range" min="1" max="6" step="0.5" value="2"></label>
+</div>
+<div class="terrain-toggles">
+<label><input id="terrain-color" type="checkbox" checked> Höhenfarben</label>
+<label><input id="terrain-wire" type="checkbox" checked> Gitternetz</label>
+<button id="terrain-reset-view">Ansicht zurücksetzen</button>
+</div>
+<canvas id="terrain-canvas-large" width="1000" height="590" role="img" aria-label="Interaktive orthografische Geländedarstellung"></canvas>
+<div id="terrain-large-message" class="terrain-help" role="status">Noch kein Höhenraster geladen. Links unter „Gelände aus GeoTIFF“ eine Datei auswählen und „3D-Vorschau“ drücken.</div>
+<p class="terrain-help">Höhenwerte bleiben in Metern; die wählbare Überhöhung betrifft nur die Darstellung, niemals die STL-Geometrie. Kein Geo-Objekt-Overlay, keine Hindernisprüfung und keine DJI-Flugfreigabe.</p>
+</div>
+</section>
 <section class="pane" id="media-pane">
 <div class="pane-inner">
 <div class="page-head"><div><h1>Medienbibliothek</h1><p class="muted">Private Dateien auf deinem Raspberry Pi · Fotos & Videos</p></div>
@@ -281,7 +314,7 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
-let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,studioSocket=null,studioFleetLoading=false;
+let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainLoadSerial=0,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
   $("auth-message").textContent=text;
@@ -798,7 +831,10 @@ async function exportMission(){
 function switchTab(id){
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
-  ["mission-panel","geo-panel","media-panel","fleet-panel"].forEach((key,i)=>$(key).hidden=(["map-pane","geo-pane","media-pane","fleet-pane"][i]!==id));
+  ["mission-panel","geo-panel","media-panel","fleet-panel"].forEach((key,i)=>{
+    const current=["map-pane","geo-pane","media-pane","fleet-pane"][i];
+    $(key).hidden=(current!==id&&!(key==="geo-panel"&&id==="terrain-pane"));
+  });
   const mapVisible=(id==="map-pane"||id==="geo-pane");
   $("map-pane").classList.toggle("active",mapVisible);
   if(mapVisible&&map)setTimeout(()=>map.invalidateSize(),80);
@@ -1094,36 +1130,173 @@ function showGeoPhotos(){
   if(spots.length)map.fitBounds(L.latLngBounds(spots),{padding:[40,40],maxZoom:17});
   notice(spots.length+" gespeicherte Aufnahmeorte auf Karte; keine Bildabdeckung behauptet.");
 }
-function drawTerrainPreview(grid){
-  const cv=$("terrain-canvas"),ctx=cv.getContext("2d");
-  if(!ctx)return;
-  const heights=grid.heights_m,h=heights.length,w=heights[0].length;
-  ctx.clearRect(0,0,cv.width,cv.height);ctx.fillStyle="#0d2233";ctx.fillRect(0,0,cv.width,cv.height);
+// Phase 18: local 2D-canvas rasterizer of an orthographic 3D height field.
+// No WebGL, external 3D library, DJI flight path, map tiles or new backend API.
+// Never mutate the validated TerrainGrid: the STL uses original metre values.
+const TERRAIN_DEFAULT_VIEW=Object.freeze({
+  azimuth:45,tilt:45,zoom:1,exaggeration:2,color:true,wire:true
+});
+let terrainView={...TERRAIN_DEFAULT_VIEW},terrainDrag=null,terrainDrawQueued=false;
+function terrainClamp(value,min,max){
+  return Math.max(min,Math.min(max,value));
+}
+function terrainColor(value){
+  const colors=[[23,78,94],[38,112,112],[99,155,112],[194,177,105],[235,210,156]];
+  const index=terrainClamp(value,0,1)*(colors.length-1);
+  const start=Math.min(colors.length-2,Math.floor(index));
+  const t=index-start,from=colors[start],to=colors[start+1];
+  return "rgb("+from.map((channel,i)=>Math.round(channel+(to[i]-channel)*t)).join(",")+")";
+}
+function terrainProjection(grid,view,width,height){
+  const heights=grid.heights_m;
+  const rows=heights.length,cols=heights[0].length;
   const zmin=Math.min(...heights.flat()),zmax=Math.max(...heights.flat());
-  const coords=(r,c)=>{
-    const depth=(zmax===zmin?0:(heights[r][c]-zmin)/(zmax-zmin));
-    return [160+(c/(w-1)-r/(h-1))*105,
-      135+(c/(w-1)+r/(h-1)-1)*44-depth*62];
-  };
-  ctx.strokeStyle="#8ed7b8";ctx.lineWidth=1;
-  for(let r=0;r<h;r+=Math.max(1,Math.floor(h/16))){
-    ctx.beginPath();for(let c=0;c<w;c++){const p=coords(r,c);c?ctx.lineTo(...p):ctx.moveTo(...p);}ctx.stroke();
+  const xextent=(cols-1)*grid.x_step_m,yextent=(rows-1)*grid.y_step_m;
+  const extent=Math.max(xextent,yextent,1e-9);
+  const radians=Math.PI/180,yaw=view.azimuth*radians,tilt=view.tilt*radians;
+  const cy=Math.cos(yaw),sy=Math.sin(yaw),sp=Math.sin(tilt),cp=Math.cos(tilt);
+  const scale=Math.min(width,height)*0.66*view.zoom;
+  const originX=width/2,originY=height*0.58;
+  const vertices=heights.map((row,r)=>row.map((elevation,c)=>{
+    const x=(c*grid.x_step_m-xextent/2)/extent;
+    const y=(r*grid.y_step_m-yextent/2)/extent;
+    // Limit pathological vertical display only; never change source heights.
+    const z=terrainClamp((elevation-zmin)/extent,0,1.5)*view.exaggeration;
+    const rx=x*cy-y*sy,ry=x*sy+y*cy;
+    return {x:originX+rx*scale,y:originY+(ry*sp-z*cp)*scale,
+      depth:ry*cp+z*sp,elevation};
+  }));
+  const cells=[];
+  for(let r=0;r<rows-1;r++){
+    for(let c=0;c<cols-1;c++){
+      const points=[vertices[r][c],vertices[r][c+1],
+        vertices[r+1][c+1],vertices[r+1][c]];
+      cells.push({points,depth:points.reduce((sum,p)=>sum+p.depth,0)/4,
+        elevation:points.reduce((sum,p)=>sum+p.elevation,0)/4});
+    }
   }
-  for(let c=0;c<w;c+=Math.max(1,Math.floor(w/16))){
-    ctx.beginPath();for(let r=0;r<h;r++){const p=coords(r,c);r?ctx.lineTo(...p):ctx.moveTo(...p);}ctx.stroke();
+  cells.sort((a,b)=>a.depth-b.depth);
+  return {cells,zmin,zmax,rows,cols};
+}
+function terrainDrawCanvas(canvas,grid,view){
+  const ctx=canvas.getContext("2d");
+  if(!ctx)return;
+  const width=canvas.width,height=canvas.height;
+  ctx.clearRect(0,0,width,height);
+  ctx.fillStyle="#0d2233";
+  ctx.fillRect(0,0,width,height);
+  if(!grid)return;
+  const projected=terrainProjection(grid,view,width,height);
+  for(const cell of projected.cells){
+    ctx.beginPath();
+    cell.points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+    ctx.closePath();
+    const fraction=(cell.elevation-projected.zmin)/
+      Math.max(projected.zmax-projected.zmin,1e-9);
+    ctx.fillStyle=view.color?terrainColor(fraction):"#456677";
+    ctx.fill();
+    if(view.wire){
+      ctx.strokeStyle="rgba(210,239,250,0.42)";
+      ctx.lineWidth=width>500?0.8:0.5;
+      ctx.stroke();
+    }
   }
 }
+function drawTerrainPreview(grid){
+  terrainDrawCanvas($("terrain-canvas"),grid,terrainView);
+  terrainDrawCanvas($("terrain-canvas-large"),grid,terrainView);
+}
+function terrainSyncControls(){
+  for(const key of ["azimuth","tilt","zoom","exaggeration"]){
+    $("terrain-"+key).value=String(terrainView[key]);
+  }
+  $("terrain-color").checked=terrainView.color;
+  $("terrain-wire").checked=terrainView.wire;
+  $("terrain-azimuth-value").textContent=Math.round(terrainView.azimuth)+"°";
+  $("terrain-tilt-value").textContent=Math.round(terrainView.tilt)+"°";
+  $("terrain-zoom-value").textContent=terrainView.zoom.toFixed(1).replace(".",",")+"×";
+  $("terrain-exaggeration-value").textContent=
+    terrainView.exaggeration.toFixed(1).replace(".",",")+"×";
+}
+function terrainRedrawSoon(){
+  if(!terrainGrid||terrainDrawQueued)return;
+  terrainDrawQueued=true;
+  const request=window.requestAnimationFrame||((fn)=>fn());
+  request(()=>{
+    terrainDrawQueued=false;
+    if(terrainGrid)drawTerrainPreview(terrainGrid);
+  });
+}
+function terrainResetView(){
+  terrainView={...TERRAIN_DEFAULT_VIEW};
+  terrainSyncControls();
+  terrainRedrawSoon();
+}
+function terrainControlChanged(){
+  const numeric={azimuth:[-180,180],tilt:[15,80],zoom:[0.5,2.5],
+    exaggeration:[1,6]};
+  for(const [key,[min,max]] of Object.entries(numeric)){
+    const input=Number($("terrain-"+key).value);
+    if(Number.isFinite(input))terrainView[key]=terrainClamp(input,min,max);
+  }
+  terrainView.color=$("terrain-color").checked;
+  terrainView.wire=$("terrain-wire").checked;
+  terrainSyncControls();
+  terrainRedrawSoon();
+}
+function terrainBindPointer(canvas){
+  canvas.addEventListener("pointerdown",event=>{
+    if(!terrainGrid||event.button>0)return;
+    terrainDrag={canvas,pointerId:event.pointerId,x:event.clientX,y:event.clientY};
+    if(canvas.setPointerCapture)canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  canvas.addEventListener("pointermove",event=>{
+    const drag=terrainDrag;
+    if(!terrainGrid||!drag||drag.canvas!==canvas||drag.pointerId!==event.pointerId)return;
+    const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
+    drag.x=event.clientX;drag.y=event.clientY;
+    terrainView.azimuth=((terrainView.azimuth+dx*0.5+540)%360)-180;
+    terrainView.tilt=terrainClamp(terrainView.tilt+dy*0.3,15,80);
+    terrainSyncControls();
+    terrainRedrawSoon();
+    event.preventDefault();
+  });
+  const stop=event=>{
+    if(terrainDrag&&terrainDrag.canvas===canvas&&
+       terrainDrag.pointerId===event.pointerId)terrainDrag=null;
+  };
+  canvas.addEventListener("pointerup",stop);
+  canvas.addEventListener("pointercancel",stop);
+  canvas.addEventListener("lostpointercapture",stop);
+  canvas.addEventListener("wheel",event=>{
+    if(!terrainGrid)return;
+    terrainView.zoom=terrainClamp(terrainView.zoom*(event.deltaY>0?0.9:1.1),0.5,2.5);
+    terrainSyncControls();
+    terrainRedrawSoon();
+    event.preventDefault();
+  },{passive:false});
+}
 async function previewTerrain(){
+  const loadSerial=++terrainLoadSerial;
   const file=$("terrain-file").files?.[0];
   if(!file)throw new Error("Zuerst DEM-GeoTIFF auswählen");
   if(file.size>8*1024*1024)throw new Error("GeoTIFF maximal 8 MiB");
   const r=await api("/api/v1/studio/terrain/geotiff",{
     method:"POST",headers:{"Content-Type":"image/tiff"},body:file});
-  const data=await r.json();terrainGrid=data.grid;
-  drawTerrainPreview(terrainGrid);$("terrain-export").disabled=false;
+  const data=await r.json();
+  // An old upload must not overwrite a newly selected DEM in the viewer.
+  if(loadSerial!==terrainLoadSerial)return;
+  terrainGrid=data.grid;
+  drawTerrainPreview(terrainGrid);
+  $("terrain-export").disabled=false;
+  $("terrain-open-large").disabled=false;
+  $("terrain-large-message").textContent=data.overview.rows+" × "+data.overview.columns+
+    " Zellen · "+data.overview.min_elevation_m+"–"+data.overview.max_elevation_m+
+    " m (orthografische Visualisierung; keine Vermessungs-/Flugfreigabe).";
   $("terrain-message").textContent=data.overview.rows+" × "+data.overview.columns+
     " Zellen · Höhe "+data.overview.min_elevation_m+"–"+data.overview.max_elevation_m+
-    " m. Schematische lokale Höhenvorschau, kein tatsächliches 3D-Kartenmodell oder Flugfreigabe.";
+    " m. Interaktive schematische Höhenansicht, keine georeferenzierte 3D-Karte oder Flugfreigabe.";
 }
 async function exportTerrain(){
   if(!terrainGrid)throw new Error("Zuerst GeoTIFF auswerten");
@@ -1230,7 +1403,23 @@ function wire(){
   $("geophoto-show").addEventListener("click",showGeoPhotos);
   $("terrain-preview").addEventListener("click",()=>previewTerrain().catch(err=>$("terrain-message").textContent=err.message));
   $("terrain-export").addEventListener("click",()=>exportTerrain().catch(err=>$("terrain-message").textContent=err.message));
-  $("terrain-file").addEventListener("change",()=>{terrainGrid=null;$("terrain-export").disabled=true;});
+  $("terrain-file").addEventListener("change",()=>{
+    terrainLoadSerial++;
+    terrainGrid=null;
+    $("terrain-export").disabled=true;
+    $("terrain-open-large").disabled=true;
+    $("terrain-large-message").textContent="Noch kein Höhenraster geladen. Bitte 3D-Vorschau starten.";
+    drawTerrainPreview(null);
+  });
+  $("terrain-open-large").addEventListener("click",()=>switchTab("terrain-pane"));
+  $("terrain-reset-view").addEventListener("click",terrainResetView);
+  for(const key of ["azimuth","tilt","zoom","exaggeration","color","wire"]){
+    $("terrain-"+key).addEventListener("input",terrainControlChanged);
+    $("terrain-"+key).addEventListener("change",terrainControlChanged);
+  }
+  terrainBindPointer($("terrain-canvas"));
+  terrainBindPointer($("terrain-canvas-large"));
+  terrainSyncControls();
   $("connect-events").addEventListener("click",connectStudioEvents);
   $("upload-media").addEventListener("click",()=>uploadMedia().catch(err=>$("media-notice").textContent=err.message));
   $("refresh-media").addEventListener("click",()=>loadMedia().catch(err=>$("media-notice").textContent=err.message));
