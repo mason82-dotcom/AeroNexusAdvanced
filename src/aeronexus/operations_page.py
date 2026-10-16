@@ -227,7 +227,7 @@ function repaintDeviceLayer(){
     if(!loc)continue;
     available.push(loc);
     const dot=L.circleMarker(loc,{radius:8,color:"#75e3bd",fillColor:"#33a88c",fillOpacity:.9,weight:3});
-    dot.bindTooltip((d.name||"Fluggerät")+" · aktuell");
+    dot.bindTooltip(elem("span","",(d.name||"Fluggerät")+" · aktuell"));
     dot.on("click",()=>{currentDevice=d.device_id;renderCockpit();});
     dot.addTo(deviceLayer);
   }
