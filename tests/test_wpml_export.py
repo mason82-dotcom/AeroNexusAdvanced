@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import pytest
 from pydantic import ValidationError
 
-from aeronexus.wpml_export import Waypoint, WaypointMission, export_kmz, KML_NS, WPML_NS
+from aeronexus.wpml_export import Waypoint, WaypointMission, export_kmz, import_kmz, KML_NS, WPML_NS
 
 
 W = f"{{{WPML_NS}}}"
@@ -123,3 +123,45 @@ def test_export_requires_two_waypoints():
 def test_rejects_negative_timestamp():
     with pytest.raises(ValueError):
         export_kmz(draft(), timestamp_ms=-1)
+
+
+def test_own_kmz_import_round_trip():
+    original = draft(name="Prüfrunde", description="Testflug offline")
+    data = export_kmz(original, timestamp_ms=1760641200000)
+    restored = import_kmz(data)
+    assert restored.model_dump() == original.model_dump()
+
+
+def test_forged_author_is_rejected():
+    data = export_kmz(draft(), timestamp_ms=1760641200000)
+    with ZipFile(BytesIO(data)) as source:
+        template = source.read("wpmz/template.kml").replace(
+            b"AeroNexusAdvanced", b"SomeOtherSoftware")
+        waylines = source.read("wpmz/waylines.wpml")
+    buffer = BytesIO()
+    from zipfile import ZIP_DEFLATED
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as target:
+        target.writestr("wpmz/template.kml", template)
+        target.writestr("wpmz/waylines.wpml", waylines)
+    with pytest.raises(ValueError, match="Only AeroNexus"):
+        import_kmz(buffer.getvalue())
+
+
+@pytest.mark.parametrize("payload", [b"", b"NOT-A-ZIP", b"x" * (2 * 1024 * 1024 + 1)])
+def test_invalid_kmz_import_rejected(payload):
+    with pytest.raises(ValueError):
+        import_kmz(payload)
+
+
+def test_import_rejects_unsupported_action():
+    archive_bytes = export_kmz(draft(), timestamp_ms=1)
+    with ZipFile(BytesIO(archive_bytes)) as source:
+        template = source.read("wpmz/template.kml")
+        route = source.read("wpmz/waylines.wpml").replace(b"takePhoto", b"startRecord")
+    buffer = BytesIO()
+    from zipfile import ZIP_DEFLATED
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as output:
+        output.writestr("wpmz/template.kml", template)
+        output.writestr("wpmz/waylines.wpml", route)
+    with pytest.raises(ValueError, match="Unsupported waypoint action"):
+        import_kmz(buffer.getvalue())
