@@ -354,12 +354,19 @@ function renderCockpit(){
   metric(grid,"Absolute Höhe",formatNumber(t.height_m,1,"m"));
   metric(grid,"Geschwindigkeit horizontal",formatNumber(t.horizontal_speed_mps,1,"m/s"));
   metric(grid,"Geschwindigkeit vertikal",formatNumber(t.vertical_speed_mps,1,"m/s"));
+  metric(grid,"Distanz zum Homepoint",formatNumber(t.home_distance_m,0,"m"));
+  metric(grid,"Flugzeit gesamt",finite(t.total_flight_time_s)?
+    formatNumber(t.total_flight_time_s/3600,1,"h"):"–");
+  metric(grid,"Flugstarts gesamt",text(t.total_flight_sorties));
   metric(grid,"GPS-Satelliten",text(t.gps_satellites));
   metric(grid,"RTK-Satelliten",text(t.rtk_satellites));
   metric(grid,"RTK-Status",text(t.rtk_state));
   metric(grid,"Akkuspannung",finite(t.battery_voltage_mv)?formatNumber(t.battery_voltage_mv/1000,2,"V"):"–");
   metric(grid,"Akkutemperatur",formatNumber(t.battery_temperature_c,1,"°C"));
   const warnings=Array.isArray(d.health)?d.health:[];
+  if(d.freshness!=="fresh"){
+    add(body,"div","note","Achtung: angezeigte Telemetrie sind alte oder zeitlich nicht zuordenbare letzte Messwerte. Keine aktuellen Flugwerte.");
+  }
   if(warnings.length){
     add(body,"h3","","HMS (zuletzt übermittelt)");
     for(const a of warnings.slice(0,6)){
