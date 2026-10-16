@@ -80,3 +80,26 @@ def test_wpml_reimport_exposed_for_saved_aeronexus_routes():
     assert '/api/v1/studio/missions/import.kmz' in page
     assert 'async function importMission()' in page
     assert 'AeroNexus-KMZ als bearbeitbare Mission importiert' in page
+
+
+def test_fresh_mission_map_starts_in_76694_forst_at_town_zoom():
+    page = render_studio()
+    assert 'label:"76694 Forst (Baden)"' in page
+    assert 'latitude:49.1533,longitude:8.58417,zoom:15' in page
+    assert '[HOME_VIEW.latitude,HOME_VIEW.longitude],HOME_VIEW.zoom' in page
+    assert 'id="map-home"' in page
+    assert 'function centerOnForst()' in page
+    assert 'addEventListener("click",centerOnForst)' in page
+    assert 'setView([51.16,10.45],6)' not in page
+
+
+def test_map_uses_esri_satellite_by_default_and_handles_osm_block():
+    page = render_studio()
+    assert '<option value="satellite" selected>' in page
+    assert 'mapTile=mapTiles.satellite.addTo(map);' in page
+    assert 'referrerPolicy:"strict-origin-when-cross-origin"' in page
+    assert 'mapTiles.street.on("tileerror"' in page
+    assert 'setMapLayer("satellite")' in page
+    assert 'mapWarning(' in page
+    assert 'Straßenkarten-Kacheln nicht verfügbar' in page
+    assert "OpenStreetMap contributors" in page
