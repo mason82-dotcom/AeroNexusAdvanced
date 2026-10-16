@@ -262,6 +262,30 @@ der neu integrierten Funktionen sowie der RTK-Scroll-Korrektur steht aus.
   WSS und DJI Pilot 2 importgetestet**. Siehe
   `docs/phase-17-geo-photo-survey-terrain.md`.
 
+## Phase 18 – DJI Cloud API v1.18-Protokollabgleich (optional, read-only)
+
+- DJI-Veröffentlichungsstand vom **13.10.2026 (v1.18)** mit offiziellen
+  Release Notes verglichen: O4 Ground Station und Dock-2/3-Funktionen sind
+  nicht automatisch für die Matrice 4T/Pilot 2 relevant.
+- Vorhandenen Pi-MQTT-Empfänger erweitert: optional
+  `AERONEXUS_OSD_STATE_ENABLED=1` für `thing/product/+/state`.
+  Standard bleibt **OSD-only, aus**, solange der Pi-Broker nicht geprüft ist.
+- Bei State-Nachrichten werden ausschließlich bereits bekannte Geräte und
+  kanonisch freigegebene Telemetriefelder übernommen. Keine Speicherung von
+  `device_secret`, Nonces oder unbekannten DJI-Meldungsstrukturen.
+- RTK `is_fixed` akzeptiert jetzt auch begrenzte String-Enums neben
+  Integer-Codes. Vollständige MQTT-Subscribe-Autorisierung für OSD und State
+  erforderlich. Client bleibt gegen Publish gesperrt.
+- FlightHub-EU-Polling, Mission Studio (inkl. Phase 17) und DJI-Flugkommando-
+  Sperren unverändert. Kein automatischer Providerwechsel und **keine**
+  FlightHub-2-On-Premises- oder Pilot-2-Serverinstallation.
+- Tests mit Fake-MQTT/Fixture, noch **kein echter Pi-EMQX-/Pilot-2-End-to-End-Test**.
+  Vor der Aktivierung muss ein separater DJI-Cloud-API-Broker samt
+  Pilot-2-Workspace/Lizenz eingerichtet und die eigene Read-only-ACL
+  verifiziert werden. Die per-Gerät-Frischemarkierung enthält noch keine
+  getrennten Empfangsalter je `osd` und `state`-Eigenschaft.
+  Details: `docs/phase-9-cloud-api-live-feed.md`.
+
 ## Nicht live verifiziert
 
 - On-Premises-Topologie (`projects/{uuid}/topologies`): nur mit
