@@ -24,7 +24,7 @@ from .providers import ProviderKind
 from .status_page import render_page
 from .studio_page import render_studio
 from .studio_workspace import Workspace, WorkspaceError, MAX_MEDIA_BYTES, MEDIA_TYPES
-from .wpml_export import WaypointMission, export_kmz
+from .wpml_export import WaypointMission, export_kmz, import_kmz
 from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
 
@@ -269,6 +269,27 @@ def studio_create_mission(mission: WaypointMission, response: Response,
         return _studio_workspace(authorization).save_mission(mission)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
+
+
+@app.post("/api/v1/studio/missions/import.kmz", status_code=201)
+async def studio_import_mission(request: Request, response: Response,
+                                authorization: str | None = Header(default=None)) -> dict:
+    """Only re-import AeroNexus-generated waypoint KMZ into local drafts."""
+    store = _studio_workspace(authorization)
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > 2 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="KMZ import maximum 2 MiB")
+    try:
+        mission = import_kmz(bytes(content))
+        result = store.save_mission(mission)
+    except WorkspaceError as exc:
+        raise _studio_error(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Unsupported or invalid AeroNexus waypoint KMZ") from exc
+    _no_cache(response)
+    return result
 
 
 @app.get("/api/v1/studio/missions/{mission_id}")
