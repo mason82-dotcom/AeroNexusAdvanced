@@ -9,6 +9,7 @@ Python/FastAPI integration gateway for DJI enterprise data on Raspberry Pi 5.
 | FlightHub 2 Public Cloud OpenAPI V2 | Project listing, project fleet (aircraft + remote controllers), thing model state, opt-in polling |
 | FlightHub 2 On-Premises OpenAPI V2 | Project listing, project topology (aircraft + remote controllers) with embedded state, opt-in polling |
 | DJI Cloud API (AeroNexus EMQX, Pilot 2) | Opt-in read-only MQTT OSD live feed for aircraft and remote controllers |
+| DJI Cloud API 2 (official SDK BFF) | Optional read-only GET of aircraft OSD/HMS snapshots via a separately deployed authenticated x86_64 backend; disabled by default |
 
 The project has a validated local inventory for **aircraft and remote
 controllers only** (FlightHub `device_model.class` `drone` and `rc`).
@@ -134,6 +135,34 @@ Enable the Phase 14 HTTPS-LAN policy in `.env` before use.
   check every exported mission before flying.
 
 See [Phase 13 desktop studio and WPML scope](docs/phase-13-desktop-mission-studio.md).
+
+## Operations Center – DJI Cloud API 2 und FlightHub 2 (Phase 15)
+
+Auf dem Chrome-PC öffnet **`https://192.168.178.63:8000/operations`**
+die zusätzliche FlightHub-inspirierte Leitstandansicht. Sie verwendet
+ausschließlich unsere bestehenden lokal geschützten Lese-APIs und
+startet die Karte automatisch über **76694 Forst**.
+
+- Projekt-/Geräteübersicht, Matrice-4T-Cockpit, Akku/OSD/HMS/GPS und
+  Flugaufträge nach Status, mit vorhandenen GeoJSON-Flugspuren.
+- FlightHub-Bibliothek, lokale Missionsvorschau einschließlich
+  **„Route schließen“** und **Flugauftrags-Medienliste**.
+  Der Medienendpunkt zeigt nur Dateinamen, Typ, Größe und Zeitpunkte,
+  **keine signierten DJI-Download-URLs**.
+- Optionaler **DJI Cloud API 2**-Datenkanal mit eindeutiger Quellanzeige,
+  rein lesend. Dazu wird **eine bereits laufende, unabhängig
+  authentifizierte SDK-BFF-Instanz auf einem privaten x86_64-Server**
+  benötigt; ein DJI-Entwicklerkonto oder eine Lizenz allein genügt nicht.
+  Diese Anbindung ist standardmäßig **deaktiviert**.
+- Keine Dock-Integration, Flugbefehle, DJI-Missionsausführung oder
+  ungeprüfte Cloud-Uploads. Das FlightHub-2-Live-Polling läuft wie bisher.
+
+Weitere Details und Quellenvergleich:
+[Phase 15: DJI-Integrationen](docs/phase-15-dji-sources-operations.md).
+Als zusätzliche technische Referenz wurde das
+[flighthub2-cli-Paket](https://pypi.org/project/flighthub2-cli/)
+geprüft. Sein Kommandozeilenprogramm/MCP-Server wird **nicht**
+automatisch installiert oder mit DJI-Schreibberechtigungen gestartet.
 
 ## Running on the Pi (systemd + HTTPS)
 
