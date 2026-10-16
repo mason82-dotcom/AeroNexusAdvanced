@@ -15,7 +15,6 @@ from .providers import ProviderConfig, ProviderKind
 from .read_only_transport import ReadOnlyTransport
 from .sync_pipeline import ingest_project_batch
 from .inventory import Inventory
-from .device_sync import parse_devices
 from .telemetry_sync import parse_snapshot
 
 
