@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, File
 from pydantic import BaseModel
 
 from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
+from .cloud_api2_bridge import CloudApi2Bridge, CloudApi2Settings
 from .flighthub_catalog import read_task_track
 from .flighthub_poller import FlightHubFleetRefresher, FlightHubPollSettings
 from .providers import ProviderKind
@@ -36,6 +37,8 @@ async def lifespan(app: FastAPI):
     """Start read-only data sources only when explicitly enabled."""
     settings = MqttSettings.from_env()
     poll_settings = FlightHubPollSettings.from_env()
+    api2_settings = CloudApi2Settings.from_env()
+    app.state.cloud_api2_bridge = CloudApi2Bridge(api2_settings) if api2_settings else None
     feed = None
     poll_task = None
     app.state.flighthub = None
@@ -66,6 +69,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AeroNexusAdvanced", version="0.1.0", lifespan=lifespan)
+app.state.cloud_api2_bridge = None
 app.state.status_runtime = StatusRuntime(
     settings=StatusSettings(
         stale_after_seconds=int(os.environ.get("AERONEXUS_STATUS_STALE_AFTER_SECONDS", "90")),
@@ -267,6 +271,23 @@ def operations_page(request: Request, response: Response) -> str:
         "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
     )
     return render_operations()
+
+
+@app.get("/api/v1/cloudapi2/devices")
+async def cloud_api2_devices(request: Request, response: Response,
+                             authorization: str | None = Header(default=None)) -> dict:
+    """Optional read-only DJI Cloud API 2 BFF source (server-to-server only).
+
+    Browser never receives backend credentials. Only the exact SDK skeleton
+    device-list GET is permitted; aircraft only, no dock or flight commands.
+    """
+    _no_cache(response)
+    _require_viewer_access(request, authorization)
+    bridge = app.state.cloud_api2_bridge
+    if bridge is None:
+        return {"source": "dji-cloud-api-2", "state": "disabled",
+                "devices": [], "total": 0}
+    return await bridge.read()
 
 
 @app.get("/studio", response_class=HTMLResponse, include_in_schema=False)
