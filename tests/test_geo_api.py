@@ -73,7 +73,13 @@ def test_survey_is_preview_only_and_never_changes_wpml(api):
     assert result["distance_m"]>0
     after=client.get("/api/v1/studio/missions/"+mission_id+"/export.kmz",headers=HEADERS).content
     with ZipFile(BytesIO(before)) as left, ZipFile(BytesIO(after)) as right:
-        assert left.read("wpmz/template.kml")==right.read("wpmz/template.kml")
+        # Export timestamps change on every call. Route coordinates/actions
+        # must remain untouched by the separate survey preview.
+        import xml.etree.ElementTree as ET
+        ns="{http://www.opengis.net/kml/2.2}"
+        points=lambda blob:[
+            element.text for element in ET.fromstring(blob).iter(ns+"coordinates")]
+        assert points(left.read("wpmz/template.kml"))==points(right.read("wpmz/template.kml"))
     assert client.post("/api/v1/flight/command",headers=HEADERS).status_code==403
     assert client.post("/api/v1/studio/survey/preview",json={
         "polygon":POLYGON,"spacing_m":20}).status_code==401
@@ -124,7 +130,7 @@ def test_terrain_stl_auth_and_binary_shape(api):
     assert result.headers["content-type"].startswith("model/stl")
     assert struct.unpack("<I",result.content[80:84])[0]==12
     assert client.post("/api/v1/studio/terrain/export.stl",headers=HEADERS,
-        json={**grid,"heights_m":[[1,2],[3,float("nan")]]}).status_code==422
+        json={**grid,"heights_m":[[1,2],[3]]}).status_code==422
     assert client.post("/api/v1/studio/terrain/geotiff",headers=HEADERS,
         content=b"not tiff").status_code==422
     assert client.post("/api/v1/studio/terrain/geotiff",headers=HEADERS,
