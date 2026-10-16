@@ -91,7 +91,7 @@ def test_normalize_only_drone_not_dock_and_fresh_values():
     assert drone["age_seconds"] == 3
     assert drone["telemetry"]["latitude"] == 49.1533
     assert drone["telemetry"]["flight_mode_label"] == "Waypoint"
-    assert drone["telemetry"]["flight_mode_code"] if False else True
+    assert "flight_mode_code" not in drone["telemetry"]
     assert drone["health"][0]["code"] == "HMS0001"
     assert drone["health"][0]["level"] == "warning"
     assert "DOCKFAKE01" not in str(records)
