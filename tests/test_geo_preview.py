@@ -111,3 +111,48 @@ def test_gdal_input_rejects_non_tiff_before_dependency_check():
 def test_preview_functions_do_not_import_dji_sdk():
     assert "read-only" not in terrain_overview(TerrainGrid(
         heights_m=[[1,1],[2,2]],x_step_m=1,y_step_m=1))["warning"].lower()
+
+
+
+def test_geotiff_gdal_sampling_is_bounded_and_mem_paths_unique(monkeypatch):
+    """Mock optional GDAL to verify geotransform and independent /vsimem paths."""
+    import sys
+    from types import SimpleNamespace
+
+    seen=[]
+    freed=[]
+    class SRS:
+        def IsGeographic(self): return False
+        def IsProjected(self): return True
+        def GetLinearUnits(self): return 1.0
+    class Band:
+        def ReadAsArray(self,*,buf_xsize,buf_ysize):
+            assert (buf_xsize,buf_ysize)==(2,2)
+            return [[120.,121.],[123.,124.]]
+        def GetNoDataValue(self): return None
+    class Dataset:
+        RasterCount=1
+        RasterXSize=2
+        RasterYSize=2
+        def GetSpatialRef(self): return SRS()
+        def GetGeoTransform(self): return (100.,2.,0.,200.,0.,-3.)
+        def GetRasterBand(self,n):
+            assert n==1
+            return Band()
+    class GDAL:
+        OF_RASTER=1
+        OF_READONLY=2
+        def FileFromMemBuffer(self,path,content): seen.append(path)
+        def OpenEx(self,path,flags,allowed_drivers):
+            assert path in seen and allowed_drivers==["GTiff"]
+            return Dataset()
+        def Unlink(self,path): freed.append(path)
+    monkeypatch.setitem(sys.modules,"osgeo",SimpleNamespace(gdal=GDAL()))
+    first=geotiff_preview(b"II*\x00"+"mock".encode())
+    second=geotiff_preview(b"II*\x00"+"mock".encode())
+    assert first.heights_m==[[120,121],[123,124]]
+    assert first.x_step_m==2
+    assert first.y_step_m==3
+    assert first.model_dump()==second.model_dump()
+    assert len(set(seen))==2
+    assert freed==seen
