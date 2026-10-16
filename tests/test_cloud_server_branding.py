@@ -106,9 +106,9 @@ def test_compose_brand_image_is_separate_from_rollback_and_build_is_explicit():
     core = (ROOT / "deploy/cloud-server/compose.core.yaml").read_text()
     assert "image: aeronexusadvanced/control:branded" in overlay
     assert "image: aeronexus/control:local" in core
-    assert "VITE_DJI_APP_LICENSE: \${DJI_APP_LICENSE:?required}" in overlay
-    assert "VITE_BASE_URL: http://\${SERVER_HOST:?required}:6789/" in overlay
-    assert "VITE_WS_URL: ws://\${SERVER_HOST:?required}:6789/api/v1/ws" in overlay
+    assert "VITE_DJI_APP_LICENSE: ${DJI_APP_LICENSE:?required}" in overlay
+    assert "VITE_BASE_URL: http://${SERVER_HOST:?required}:6789/" in overlay
+    assert "VITE_WS_URL: ws://${SERVER_HOST:?required}:6789/api/v1/ws" in overlay
     assert "  control:" in overlay
     for service in ("mysql", "redis", "emqx", "api", "minio", "minio-init"):
         assert f"  {service}:" not in overlay
