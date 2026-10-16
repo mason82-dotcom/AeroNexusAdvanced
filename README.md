@@ -6,14 +6,15 @@ Python/FastAPI integration gateway for DJI enterprise data on Raspberry Pi 5.
 
 | Provider | Current read-only capabilities |
 |---|---|
-| FlightHub 2 Public Cloud OpenAPI V2 | Project listing, aircraft topology, aircraft detailed state |
-| FlightHub 2 On-Premises OpenAPI V2 | Project listing, paginated aircraft observations, embedded state |
-| DJI Cloud API | Provider placeholder only; no MQTT live adapter |
+| FlightHub 2 Public Cloud OpenAPI V2 | Project listing, project fleet (aircraft + remote controllers), thing model state, opt-in polling |
+| FlightHub 2 On-Premises OpenAPI V2 | Project listing, project topology (aircraft + remote controllers) with embedded state, opt-in polling |
+| DJI Cloud API (AeroNexus EMQX, Pilot 2) | Opt-in read-only MQTT OSD live feed for aircraft and remote controllers |
 
 The project has a validated local inventory for **aircraft and remote
-controllers only**. The currently verified FlightHub OpenAPI device-list
-endpoints discover *aircraft*; they do not establish a standalone
-remote-controller mapping. Other infrastructure devices are not imported.
+controllers only** (FlightHub `device_model.class` `drone` and `rc`).
+Docks, relays, base stations and payloads are not imported.
+Endpoints follow the official OpenAPI V2.0 specifications:
+[Phase 10 FlightHub fleet](docs/phase-10-flighthub-fleet.md).
 
 Canonical telemetry includes online status, GPS coordinates, battery,
 height, horizontal/vertical speed, flight times and satellite counts.
@@ -23,6 +24,10 @@ uses allowlisted HTTPS GET operations against the documented endpoints.
 **Important:** unit tests use mock DJI responses. A real FlightHub session
 has not yet been verified in this project.
 
+The DJI Cloud API live feed (phase 9) subscribes read-only to the OSD
+telemetry that DJI Pilot 2 pushes to the AeroNexus MQTT broker:
+[Phase 9 live feed](docs/phase-9-cloud-api-live-feed.md).
+
 ## Development
 
 Requires Python 3.11+.
@@ -30,7 +35,7 @@ Requires Python 3.11+.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[test]'
+python -m pip install -e '.[test,mqtt]'
 python -m pip check
 python -m pytest -q
 ```
@@ -48,9 +53,12 @@ export AERONEXUS_STATUS_TOKEN
 python -m uvicorn aeronexus.app:app --host 127.0.0.1 --port 8000
 ```
 
+Alternatively keep all settings in a gitignored `.env` (template:
+`.env.example`) and start with `--env-file .env`.
+
 Visit `http://127.0.0.1:8000/status` on the Pi or through an SSH tunnel.
 The responsive page refreshes its view of **local** in-memory telemetry
-automatically. No DJI background polling or remote changes are enabled by
+automatically. No DJI background polling (opt-in, phase 10) or remote changes are enabled by
 default. Initially, a newly started app correctly has zero registered
 devices; running the separate `probe_state` command does not populate
 the web server's memory.
@@ -80,6 +88,8 @@ OpenAPI permissions are documented in:
 
 - [Phase 8.5 aircraft discovery](docs/phase-8-5-device-discovery.md)
 - [Phase 8.6 detailed aircraft state](docs/phase-8-6-aircraft-state.md)
+- [Phase 10 fleet probe and polling](docs/phase-10-flighthub-fleet.md):
+  `python -m aeronexus.probe_fleet`
 
 Never commit DJI tokens, serial numbers or location data. Do not disable TLS
 certificate verification.
@@ -100,7 +110,8 @@ docker run --rm -p 127.0.0.1:8000:8000 aeronexusadvanced:dev
   is configured; bind the service to localhost and use SSH tunnel or
   authenticated TLS reverse proxy for remote viewing.
 - In-memory device inventory; no persistence, access-control roles,
-  production-grade rate limiting, or automatic DJI polling yet.
+  production-grade rate limiting; FlightHub polling is opt-in.
+- The Cloud API MQTT feed is subscribe-only (OSD); it never publishes.
 - Starlette may emit a non-fatal `httpx2` migration warning in tests.
 
 ## References
@@ -108,3 +119,5 @@ docker run --rm -p 127.0.0.1:8000:8000 aeronexusadvanced:dev
 - https://fh.dji.com/user-manual/en/custom-development/open-api/public-cloud-v2.html
 - https://fh.dji.com/user-manual/en/custom-development/open-api/private-cloud-v2.html
 - https://github.com/dji-sdk/FlightHub-2-OpenAPI-V2-Demo
+- https://github.com/alecad/dji-flighthub2-cli (Apache-2.0; EU gateway,
+  error handling and live-validated API behaviour, see NOTICE)

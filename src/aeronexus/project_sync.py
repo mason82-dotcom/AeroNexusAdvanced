@@ -29,6 +29,8 @@ def parse_projects(kind: ProviderKind, payload: dict) -> tuple[Project, ...]:
     if not isinstance(payload, dict) or payload.get("code") != 0:
         raise ProjectSyncError("Unsuccessful FlightHub response")
     data = payload.get("data")
+    if isinstance(data, dict) and data.get("list", ...) is None:
+        data = {**data, "list": []}  # empty collections arrive as null
     if not isinstance(data, dict) or not isinstance(data.get("list"), list):
         raise ProjectSyncError("Invalid FlightHub project list")
     projects = []

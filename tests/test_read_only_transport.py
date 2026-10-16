@@ -106,3 +106,87 @@ def test_project_uuid_header_for_approved_get(monkeypatch):
     assert result["code"] == 0
     assert captured["X-Project-Uuid"] == project
     assert captured["X-User-Token"] == "secret"
+
+
+def _client_with(responses, captured=None):
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return False
+        async def get(self, path, **kwargs):
+            if captured is not None:
+                captured.append(kwargs["headers"]["X-Request-Id"])
+            status, body, headers = responses.pop(0)
+            return httpx.Response(status, json=body, headers=headers,
+                                  request=httpx.Request("GET", "https://dji.example" + path))
+    return Client
+
+
+@pytest.mark.parametrize("status,cls", [
+    (401, "AuthenticationError"), (403, "PermissionDeniedError"), (404, "NotFoundError"),
+])
+def test_status_errors_are_classified_without_body(monkeypatch, status, cls):
+    import asyncio
+    from aeronexus import read_only_transport as rot
+    monkeypatch.setattr(httpx, "AsyncClient", _client_with(
+        [(status, {"message": "secret detail"}, {})]))
+    with pytest.raises(getattr(rot, cls)) as info:
+        asyncio.run(transport().get(PATH))
+    assert info.value.status_code == status and info.value.request_id
+    assert "secret detail" not in str(info.value)
+    assert isinstance(info.value, ReadOnlyTransportError)
+
+
+def test_business_code_error(monkeypatch):
+    import asyncio
+    from aeronexus.read_only_transport import BusinessError
+    monkeypatch.setattr(httpx, "AsyncClient", _client_with([(200, {"code": 210060}, {})]))
+    with pytest.raises(BusinessError) as info:
+        asyncio.run(transport().get(PATH))
+    assert info.value.business_code == 210060
+
+
+def test_transient_status_retried_with_retry_after(monkeypatch):
+    import asyncio
+    from aeronexus import read_only_transport as rot
+    sleeps, ids = [], []
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+    monkeypatch.setattr(rot.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(httpx, "AsyncClient", _client_with([
+        (429, {}, {"Retry-After": "2"}), (503, {}, {}), (200, {"code": 0, "data": {}}, {})], ids))
+    assert asyncio.run(transport().get(PATH))["code"] == 0
+    assert sleeps[0] == 2.0 and len(sleeps) == 2
+    assert len(set(ids)) == 1  # one logical request, one request id
+
+
+def test_retries_are_bounded(monkeypatch):
+    import asyncio
+    from aeronexus import read_only_transport as rot
+    async def fake_sleep(seconds):
+        assert seconds <= 30
+    monkeypatch.setattr(rot.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(httpx, "AsyncClient", _client_with(
+        [(502, {}, {"Retry-After": "999"})] * 3))
+    with pytest.raises(rot.ServerError):
+        asyncio.run(transport().get(PATH))
+
+
+def test_v01_paths_allowed_other_versions_not():
+    ReadOnlyTransport(CONFIG, frozenset({"/openapi/v0.1/project"}))
+    with pytest.raises(ValueError):
+        ReadOnlyTransport(CONFIG, frozenset({"/openapi/v1.0/project"}))
+
+
+def test_business_200401_is_authentication_error(monkeypatch):
+    import asyncio
+    from aeronexus.read_only_transport import AuthenticationError
+    monkeypatch.setattr(httpx, "AsyncClient", _client_with(
+        [(200, {"code": 200401, "message": "X-User-Token not found or empty"}, {})]))
+    with pytest.raises(AuthenticationError) as info:
+        asyncio.run(transport().get(PATH))
+    assert info.value.business_code == 200401
+    assert "X-User-Token not found" not in str(info.value)

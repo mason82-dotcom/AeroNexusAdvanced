@@ -3,6 +3,8 @@
 DJI flight operations are not exposed. Detailed telemetry is inaccessible
 unless an independent dashboard bearer token is configured.
 """
+import asyncio
+from contextlib import asynccontextmanager
 import os
 from enum import Enum
 from secrets import compare_digest
@@ -11,12 +13,46 @@ from fastapi import FastAPI, Header, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
+from .flighthub_poller import FlightHubFleetRefresher, FlightHubPollSettings
 from .providers import ProviderKind
 from .status_page import render_page
+from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
 
 
-app = FastAPI(title="AeroNexusAdvanced", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start read-only data sources only when explicitly enabled."""
+    settings = MqttSettings.from_env()
+    poll_settings = FlightHubPollSettings.from_env()
+    feed = None
+    poll_task = None
+    stop_polling = asyncio.Event()
+    if settings is not None:
+        runtime = app.state.status_runtime
+        ingest = CloudOsdIngest(runtime, settings.project_id, settings.max_devices)
+        feed = CloudMqttFeed(settings, ingest)
+        runtime.live_feed = feed.status
+        feed.start(asyncio.get_running_loop())
+    if poll_settings is not None:
+        runtime = app.state.status_runtime
+        poller = ReadOnlyStatusPoller(
+            runtime, FlightHubFleetRefresher(runtime, poll_settings),
+            interval_seconds=poll_settings.interval_seconds)
+        poll_task = asyncio.create_task(poller.run(stop_polling))
+    app.state.cloud_feed = feed
+    try:
+        yield
+    finally:
+        if feed is not None:
+            feed.stop()
+        if poll_task is not None:
+            stop_polling.set()
+            await poll_task
+
+
+app = FastAPI(title="AeroNexusAdvanced", version="0.1.0", lifespan=lifespan)
 app.state.status_runtime = StatusRuntime(
     settings=StatusSettings(
         stale_after_seconds=int(os.environ.get("AERONEXUS_STATUS_STALE_AFTER_SECONDS", "90")),

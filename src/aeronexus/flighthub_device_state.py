@@ -32,6 +32,30 @@ _ONLINE = {
 }
 
 
+# Aircraft mode_code: FlightHub V2 thing models report the documented string
+# enum, DJI Cloud API reports the integer. Same order, index = DJI code.
+_MODE_CODES = (
+    "standby", "takeoff_preparation", "takeoff_preparation_completed",
+    "manual_flight", "automatic_takeoff", "wayline_flight",
+    "panoramic_photography", "intelligent_tracking", "adsb_avoidance",
+    "auto_returning_to_home", "automatic_landing", "forced_landing",
+    "three_blade_landing", "upgrading", "not_connected", "apas",
+    "virtual_stick_state", "live_flight_controls", "airborne_rtk_fixing_mode",
+    "dock_address_selecting",
+)
+
+
+def _mode_code(value) -> int | None:
+    """Unknown future enum strings become None instead of discarding the sample."""
+    if value is None:
+        return None
+    if type(value) is int and value >= 0:
+        return value
+    if isinstance(value, str):
+        return _MODE_CODES.index(value) if value in _MODE_CODES else None
+    raise DeviceStateError("Invalid mode code")
+
+
 def _serial(value: str) -> str:
     if not isinstance(value, str) or _SERIAL.fullmatch(value) is None:
         raise DeviceStateError("Invalid aircraft serial number")
@@ -116,11 +140,12 @@ def normalize_aircraft_state(
     position = _branch(state, "position_state")
     voltage, temperature = _battery_info(state)
     raw_online = state.get("device_online_status", online_override)
+    latitude, longitude = _position(state)
     return parse_snapshot(provider, {
         "device_id": device_id,
         "online": _online(raw_online),
-        "latitude": state.get("latitude"),
-        "longitude": state.get("longitude"),
+        "latitude": latitude,
+        "longitude": longitude,
         "battery_percent": _battery(state),
         "rtk_state": _rtk_raw(position, state),
         "height_m": state.get("height"),
@@ -132,6 +157,36 @@ def normalize_aircraft_state(
         "gps_satellites": position.get("gps_number"),
         "battery_voltage_mv": voltage,
         "battery_temperature_c": temperature,
+        "elevation_m": state.get("elevation"),
+        "home_distance_m": state.get("home_distance"),
+        "flight_mode_code": _mode_code(state.get("mode_code")),
+    })
+
+
+def _position(state: Mapping) -> tuple[object, object]:
+    """DJI reports 0/0 when no position is known; that is not a location."""
+    latitude, longitude = state.get("latitude"), state.get("longitude")
+    if latitude == 0 and longitude == 0 and type(latitude) is not bool and type(longitude) is not bool:
+        return None, None
+    return latitude, longitude
+
+
+def normalize_controller_state(
+    provider: ProviderKind, device_id: str, state: Mapping, *, online=None,
+) -> DeviceSnapshot:
+    """Remote controller thing model (e.g. DeviceState_rc701, RC Plus 2)."""
+    if provider not in (ProviderKind.PUBLIC_V2, ProviderKind.ONPREM_V2):
+        raise DeviceStateError("FlightHub V2 provider required")
+    _serial(device_id)
+    if not isinstance(state, Mapping):
+        raise DeviceStateError("Device state must be an object")
+    latitude, longitude = _position(state)
+    return parse_snapshot(provider, {
+        "device_id": device_id,
+        "online": _online(online),
+        "latitude": latitude,
+        "longitude": longitude,
+        "battery_percent": state.get("capacity_percent"),
     })
 
 
@@ -176,7 +231,9 @@ def normalize_onprem_state_page(payload: Mapping) -> tuple[DeviceSnapshot, ...]:
     if not isinstance(payload, Mapping) or type(payload.get("code")) is not int or payload["code"] != 0:
         raise DeviceStateError("Unsuccessful DJI device list response")
     data = payload.get("data")
-    items = data.get("list") if isinstance(data, Mapping) else None
+    items = data.get("list", ...) if isinstance(data, Mapping) else ...
+    if items is None:
+        items = []  # empty collections arrive as {"list": null}
     if not isinstance(items, list):
         raise DeviceStateError("Missing device list")
     seen = set()

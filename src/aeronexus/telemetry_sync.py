@@ -25,8 +25,11 @@ _NUMERIC_FIELDS = {
     "total_flight_time_s": (0, None),
     "battery_voltage_mv": (0, None),
     "battery_temperature_c": (None, None),
+    "elevation_m": (None, None),
+    "home_distance_m": (0, None),
 }
-_COUNT_FIELDS = frozenset({"total_flight_sorties", "rtk_satellites", "gps_satellites"})
+_COUNT_FIELDS = frozenset({"total_flight_sorties", "rtk_satellites", "gps_satellites",
+                           "flight_mode_code"})
 _ALLOWED = frozenset({"device_id", "online", "rtk_state"}) | frozenset(_NUMERIC_FIELDS) | _COUNT_FIELDS
 
 

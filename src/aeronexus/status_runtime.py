@@ -3,6 +3,7 @@
 Time stamps are local receive times in UTC, NOT source/event times at DJI.
 No background network activity or flight controls in this module.
 """
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
@@ -42,6 +43,10 @@ class StatusRuntime:
     polling: str = "disabled"
     last_refresh_at: datetime | None = None
     last_refresh_success_at: datetime | None = None
+    # Anonymous counters of an opt-in push feed (DJI Cloud API MQTT), if any.
+    live_feed: Callable[[], dict] | None = None
+    # Live FlightHub HMS alerts per (provider, project, device); None = not read.
+    health: dict[tuple[ProviderKind, str, str], tuple[dict, ...]] = field(default_factory=dict)
 
     def device_views(
         self, provider: ProviderKind | None = None,
@@ -83,6 +88,8 @@ class StatusRuntime:
                 "online": snapshot.online if snapshot is not None and freshness == "fresh" else None,
                 "reported_online": None if snapshot is None else snapshot.online,
                 "telemetry": sample,
+                "health": list(self.health.get(
+                    (device.provider, device.project_id, device.device_id), ())),
             })
         return tuple(views)
 
@@ -103,4 +110,7 @@ class StatusRuntime:
             "polling": self.polling,
             "last_refresh_at": utc_iso(self.last_refresh_at),
             "last_refresh_success_at": utc_iso(self.last_refresh_success_at),
+            "live_feed": {"state": "disabled"} if self.live_feed is None else self.live_feed(),
+            "health_warnings": sum(any(a.get("level") == "warning" for a in v["health"])
+                                   for v in views),
         }

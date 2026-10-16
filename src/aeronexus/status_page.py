@@ -25,7 +25,7 @@ h1{font-size:clamp(25px,4vw,36px);margin:4px 0}h2{font-size:18px;margin:0 0 14px
 .controls{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.controls input{background:#0d1b2a;border:1px solid #486078;border-radius:7px;padding:11px;color:white;min-width:min(100%,300px)}
 button{background:#3573b5;color:white;border:0;border-radius:7px;padding:11px 18px;cursor:pointer;font-weight:650}
 button:hover{background:#438acd}button:focus-visible,input:focus-visible{outline:2px solid #8ac5ff}
-table{border-collapse:collapse;width:100%;min-width:930px;font-size:13px}th{text-align:left;color:#b8cae0;font-weight:600}
+table{border-collapse:collapse;width:100%;min-width:1240px;font-size:13px}th{text-align:left;color:#b8cae0;font-weight:600}
 td,th{padding:13px 11px;border-bottom:1px solid #30435a;vertical-align:top}
 .scroller{overflow-x:auto}.good{color:#8bdfbb}.warn{color:#ffcd7b}.bad{color:#ffadac}
 code,pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#c9d8e8}
@@ -39,7 +39,8 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <div><div class="eyebrow">DJI Monitoring · Nur Lesen</div><h1>AeroNexusAdvanced</h1>
 <div class="subtle">Flottenstatus · Flugbefehle deaktiviert</div></div>
 <div class="meta">Automatische Anzeigeaktualisierung: __INTERVAL_SECONDS__ s<br>
-<span id="timestamp">Noch keine Daten</span></div>
+<span id="timestamp">Noch keine Daten</span><br>
+<span id="feed">Live-Feed: –</span></div>
 </header>
 <section class="grid" aria-label="Flottenkennzahlen">
 <div class="metric"><span>Geräte gesamt</span><b id="total">–</b></div>
@@ -48,6 +49,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <div class="metric"><span>Aktuell online</span><b id="online">–</b></div>
 <div class="metric"><span>Veraltete Telemetrie</span><b id="stale">–</b></div>
 <div class="metric"><span>Fehlende/unklare Daten</span><b id="unknown">–</b></div>
+<div class="metric"><span>HMS-Warnungen</span><b id="health">–</b></div>
 </section>
 <section class="panel">
 <h2>Geschützte Gerätedetails</h2>
@@ -64,7 +66,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <div class="subtle" id="device-info">Es werden ausschließlich freigegebene, authentifizierte Gerätedaten angezeigt.</div>
 <div class="scroller">
 <table>
-<thead><tr><th>Provider / Projekt</th><th>Gerät</th><th>Typ</th><th>Frische</th><th>Empfangen (UTC)</th><th>Online</th><th>Messwerte</th></tr></thead>
+<thead><tr><th>Provider / Projekt</th><th>Gerät</th><th>Typ</th><th>Frische</th><th>Empfangen (UTC)</th><th>Online</th><th>Kurzwerte</th><th>Zustand (HMS)</th><th>Messwerte</th></tr></thead>
 <tbody id="devices"></tbody>
 </table>
 </div>
@@ -78,6 +80,28 @@ let accessToken = "";
 const byId = id => document.getElementById(id);
 const asText = value => value === null || value === undefined ? "–" : String(value);
 function cell(row, value) { const el=document.createElement("td");el.textContent=asText(value);row.appendChild(el);return el; }
+const flightModes={0:"Standby",1:"Startvorbereitung",2:"Startbereit",3:"Manueller Flug",
+  4:"Automatischer Start",5:"Routenflug",6:"Panorama",7:"Intelligentes Tracking",8:"ADS-B-Ausweichen",
+  9:"R\u00fcckkehr (RTH)",10:"Automatische Landung",11:"Erzwungene Landung",12:"Dreiblatt-Landung",
+  13:"Update",14:"Nicht verbunden",15:"APAS",16:"Virtueller Stick",17:"Live-Flugsteuerung",
+  18:"RTK-Fixierung in der Luft",19:"Dock-Standortwahl",20:"POI"};
+const feedStates={disabled:"aus",stopped:"gestoppt",connecting:"verbinde",connected:"verbunden",
+  subscribed:"empfange",subscription_denied:"Abo verweigert (ACL)",auth_failed:"Anmeldung abgelehnt",
+  disconnected:"getrennt",unreachable:"Broker nicht erreichbar"};
+function num(v,digits,unit){return v===null||v===undefined?null:Number(v).toFixed(digits)+" "+unit;}
+function keyValues(t) {
+  const parts=[];
+  const add=(label,value)=>{if(value!==null)parts.push(label+": "+value);};
+  add("Akku",num(t.battery_percent,0,"%"));
+  add("H\u00f6he",num(t.elevation_m,1,"m"));
+  add("Geschw.",num(t.horizontal_speed_mps,1,"m/s"));
+  add("Distanz",num(t.home_distance_m,0,"m"));
+  if(t.flight_mode_code!==null&&t.flight_mode_code!==undefined)
+    add("Modus",flightModes[t.flight_mode_code]||("Code "+t.flight_mode_code));
+  if(t.gps_satellites!==null&&t.gps_satellites!==undefined)
+    add("Sat.",t.gps_satellites+" GPS / "+asText(t.rtk_satellites)+" RTK");
+  return parts.length?parts.join(" \u00b7 "):"\u2013";
+}
 function statusLabel(v) {
   return ({fresh:"Aktuell",stale:"Veraltet",missing:"Keine Daten",
            unknown_age:"Zeit unbekannt",clock_skew:"Uhrzeitfehler"})[v] || "Unbekannt";
@@ -93,7 +117,11 @@ async function updateSummary() {
     byId("online").textContent=data.online_fresh;
     byId("stale").textContent=data.stale;
     byId("unknown").textContent=data.missing+data.unknown_age+data.clock_skew;
+    byId("health").textContent=data.health_warnings;
     byId("timestamp").textContent="Letzter Aufruf: "+data.server_time+" · Polling: "+data.polling;
+    const feed=data.live_feed||{state:"disabled"};
+    byId("feed").textContent="Live-Feed (DJI Cloud API): "+(feedStates[feed.state]||"unbekannt")+
+      (feed.state==="disabled"?"":" · "+feed.accepted+" ok / "+feed.rejected+" verworfen");
   } catch (_) {byId("timestamp").textContent="Status-API nicht erreichbar";}
 }
 async function updateDevices() {
@@ -114,6 +142,12 @@ async function updateDevices() {
       freshness.className=device.freshness==="fresh"?"good":"warn";
       cell(row,device.received_at);
       cell(row,device.online===null?"Unbekannt":device.online?"Online":"Offline");
+      cell(row,keyValues(device.telemetry||{}));
+      const alerts=device.health||[];
+      const hms=cell(row,alerts.length?alerts.slice(0,3).map(a=>
+        ({warning:"Warnung",reminder:"Hinweis",notification:"Info"}[a.level]||a.level)+": "+
+        (a.message||a.code||"\u2013")).join(" \u00b7 ")+(alerts.length>3?" (+"+(alerts.length-3)+")":""):"\u2013");
+      hms.className=alerts.some(a=>a.level==="warning")?"bad":(alerts.length?"warn":"");
       const td=document.createElement("td");
       const details=document.createElement("details");
       const summary=document.createElement("summary");summary.textContent="Werte anzeigen";

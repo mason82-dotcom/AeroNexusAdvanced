@@ -23,7 +23,8 @@ async def read_project_page(config: ProviderConfig, *, organization_uuid: str | 
     """Read one documented project page; never modifies remote state."""
     if type(page) is not int or type(page_size) is not int or not (1 <= page <= 100000 and 1 <= page_size <= 100):
         raise ValueError("Invalid pagination")
-    path = project_list_path(config.kind, organization_uuid)
+    path = (config.path("/project") if config.kind == ProviderKind.PUBLIC_V2
+            else project_list_path(config.kind, organization_uuid))
     transport = ReadOnlyTransport(config, frozenset({path}))
     payload = await transport.get(path, {
         "usage": "complete", "sort_column": "create_time",

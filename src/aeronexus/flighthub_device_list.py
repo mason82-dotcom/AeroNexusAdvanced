@@ -58,7 +58,9 @@ def _uuid(value: str) -> str:
 
 def _list(payload: Mapping) -> list:
     data = payload.get("data") if isinstance(payload, Mapping) else None
-    records = data.get("list") if isinstance(data, Mapping) else None
+    records = data.get("list", ...) if isinstance(data, Mapping) else ...
+    if records is None:
+        return []  # empty collections arrive as {"list": null}
     if not isinstance(records, list):
         raise DeviceListError("Invalid DJI device list payload")
     return records

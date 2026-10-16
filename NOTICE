@@ -1,0 +1,16 @@
+AeroNexusAdvanced
+
+Portions of the FlightHub 2 integration are adapted from, or based on findings of,
+dji-flighthub2-cli (flighthub2-cli)
+Copyright 2026 Alessio Caddeo
+https://github.com/alecad/dji-flighthub2-cli
+Licensed under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0).
+
+Adapted items (src/aeronexus):
+- providers.py: regional Public Cloud gateways incl. the EU gateway, OpenAPI v0.1 paths
+- read_only_transport.py: HTTP/business error classes, request-id reporting,
+  GET retry/backoff policy honouring Retry-After
+- flight hub list parsers: tolerance for {"list": null} empty collections
+- flighthub_hms.py: HMS endpoint usage
+Only read-only functionality was adopted; no write or flight-control operations.

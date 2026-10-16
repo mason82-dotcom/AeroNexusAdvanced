@@ -11,11 +11,17 @@ from .status_runtime import StatusRuntime, utc_now
 
 class ReadOnlyStatusPoller:
     def __init__(self, runtime: StatusRuntime,
-                 refresh: Callable[[], Awaitable[object]]):
+                 refresh: Callable[[], Awaitable[object]],
+                 interval_seconds: int | None = None):
         if not isinstance(runtime, StatusRuntime) or not callable(refresh):
             raise TypeError("StatusRuntime and async refresh callback required")
+        if interval_seconds is not None and (
+                type(interval_seconds) is not int or not 5 <= interval_seconds <= 3600):
+            raise ValueError("interval_seconds must be 5..3600")
         self.runtime = runtime
         self.refresh = refresh
+        # Provider poll interval; defaults to the browser refresh interval.
+        self.interval_seconds = interval_seconds
         self._lock = asyncio.Lock()
 
     async def refresh_once(self) -> bool:
@@ -48,7 +54,7 @@ class ReadOnlyStatusPoller:
                 try:
                     await asyncio.wait_for(
                         stop_event.wait(),
-                        timeout=self.runtime.settings.refresh_every_seconds,
+                        timeout=self.interval_seconds or self.runtime.settings.refresh_every_seconds,
                     )
                 except TimeoutError:
                     pass
