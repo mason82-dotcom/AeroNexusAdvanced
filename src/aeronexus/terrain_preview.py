@@ -6,6 +6,7 @@ GeoTIFF loading is optional and requires a working local osgeo/GDAL binding.
 from __future__ import annotations
 
 from io import BytesIO
+from secrets import token_hex
 from math import cos, hypot, isfinite, radians, sqrt
 import struct
 
@@ -111,7 +112,8 @@ def geotiff_preview(content: bytes, *, max_bytes: int=8*1024*1024) -> TerrainGri
         from osgeo import gdal  # type: ignore
     except ImportError as exc:
         raise TerrainUnavailable("GDAL Python bindings are not installed") from exc
-    path="/vsimem/aeronexus-terrain.tif"
+    # Concurrent requests must never share a GDAL /vsimem path.
+    path="/vsimem/aeronexus-"+token_hex(16)+".tif"
     # All calls are local to the current process; a bounded read-only sampler.
     gdal.FileFromMemBuffer(path,content)
     try:
