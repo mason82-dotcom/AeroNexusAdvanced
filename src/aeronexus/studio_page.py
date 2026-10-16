@@ -87,7 +87,18 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .geo-row{display:flex;align-items:center;gap:8px;padding:8px;background:#142b42;border:1px solid #395a78;border-radius:8px}
 .geo-row span{flex:1;min-width:0;overflow-wrap:anywhere}
 .geo-vertex{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;border:2px solid #ffffff;background:#ffad65;color:#142132;font-size:11px;font-weight:800;box-shadow:0 1px 6px #0007;cursor:move}
-#terrain-canvas{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c}
+#terrain-canvas,#terrain-canvas-large{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c;touch-action:none;cursor:grab}
+#terrain-canvas:active,#terrain-canvas-large:active{cursor:grabbing}
+.terrain-stage{padding:18px;max-width:1300px;margin:auto}
+.terrain-stage h1{margin-bottom:8px}
+.terrain-controls{display:grid;grid-template-columns:repeat(4,minmax(135px,1fr));gap:7px 15px;margin:16px 0;padding:12px;background:#13263c;border:1px solid #344f68;border-radius:12px}
+.terrain-controls label{margin:0}
+.terrain-controls input[type=range]{padding:0;cursor:pointer}
+.terrain-toggles{display:flex;flex-wrap:wrap;gap:15px;align-items:center;margin:8px 0 14px}
+.terrain-toggles label{display:flex;flex-direction:row;align-items:center;gap:6px;margin:0}
+.terrain-toggles input[type=checkbox]{width:auto}
+.terrain-help{color:#a8c7dd;font-size:12px;line-height:1.6;margin:12px 0}
+@media(max-width:700px){.terrain-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.terrain-stage{padding:12px}}
 .geo-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.geo-buttons button{flex:1}
 .editor-dirty{font-size:12px;padding:6px 9px;border-radius:7px;color:#a0efcf;background:#123e34;border:1px solid #316d56}
 .editor-dirty.unsaved{color:#ffdeaa;background:#3a2c1a;border-color:#7c5a2b}
@@ -113,6 +124,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <nav aria-label="Arbeitsbereiche">
 <button class="active" data-tab="map-pane">Karte & Missionen</button>
 <button data-tab="geo-pane">Geo &amp; Gelände</button>
+<button data-tab="terrain-pane">3D Gelände</button>
 <button data-tab="media-pane">Medienbibliothek</button>
 <button data-tab="fleet-pane">Flottenstatus</button>
 <a href="/operations" style="color:#9edaff;padding:9px;text-decoration:none">Operations Center ↗</a>
@@ -204,7 +216,8 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <hr><h2>Gelände aus GeoTIFF</h2>
 <label>DEM-GeoTIFF (max. 8 MiB)<input type="file" id="terrain-file" accept=".tif,.tiff,image/tiff"></label>
 <div class="geo-buttons"><button id="terrain-preview" class="primary">3D-Vorschau</button><button id="terrain-export" disabled>STL exportieren</button></div>
-<canvas id="terrain-canvas" width="320" height="210" role="img" aria-label="Lokale vereinfachte perspektivische Höhenraster-Vorschau"></canvas>
+<canvas id="terrain-canvas" width="320" height="210" role="img" aria-label="Drehbare schematische 3D-Höhenraster-Vorschau"></canvas>
+<div class="geo-buttons"><button id="terrain-open-large" disabled>Interaktive Großansicht öffnen</button></div>
 <div id="terrain-message" class="note" role="status">Lokales GDAL erforderlich. Höhenmodell nur Visualisierung und 3D-Modell – nicht zur Flugfreigabe.</div>
 </aside>
 <aside class="side" id="media-panel" hidden>
@@ -246,6 +259,26 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
 </div>
 <div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
+</section>
+<section class="pane" id="terrain-pane">
+<div class="terrain-stage">
+<h1>Interaktive 3D-Geländeansicht</h1>
+<p class="note">Lokales Höhenraster aus GeoTIFF, ausschließlich zur Veranschaulichung. Mit Maus oder Finger drehen/neigen; Mausrad zoomt. Die Ansicht ist orthografisch und kein georeferenziertes 3D-Kartenmodell.</p>
+<div class="terrain-controls">
+<label>Rotation <output id="terrain-azimuth-value">45°</output><input id="terrain-azimuth" type="range" min="-180" max="180" step="1" value="45"></label>
+<label>Neigung <output id="terrain-tilt-value">45°</output><input id="terrain-tilt" type="range" min="15" max="80" step="1" value="45"></label>
+<label>Zoom <output id="terrain-zoom-value">1,0×</output><input id="terrain-zoom" type="range" min="0.5" max="2.5" step="0.1" value="1"></label>
+<label>Höhenüberhöhung <output id="terrain-exaggeration-value">2,0×</output><input id="terrain-exaggeration" type="range" min="1" max="6" step="0.5" value="2"></label>
+</div>
+<div class="terrain-toggles">
+<label><input id="terrain-color" type="checkbox" checked> Höhenfarben</label>
+<label><input id="terrain-wire" type="checkbox" checked> Gitternetz</label>
+<button id="terrain-reset-view">Ansicht zurücksetzen</button>
+</div>
+<canvas id="terrain-canvas-large" width="1000" height="590" role="img" aria-label="Interaktive orthografische Geländedarstellung"></canvas>
+<div id="terrain-large-message" class="terrain-help" role="status">Noch kein Höhenraster geladen. Links unter „Gelände aus GeoTIFF“ eine Datei auswählen und „3D-Vorschau“ drücken.</div>
+<p class="terrain-help">Höhenwerte bleiben in Metern; die wählbare Überhöhung betrifft nur die Darstellung, niemals die STL-Geometrie. Kein Geo-Objekt-Overlay, keine Hindernisprüfung und keine DJI-Flugfreigabe.</p>
+</div>
 </section>
 <section class="pane" id="media-pane">
 <div class="pane-inner">
@@ -798,7 +831,10 @@ async function exportMission(){
 function switchTab(id){
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
-  ["mission-panel","geo-panel","media-panel","fleet-panel"].forEach((key,i)=>$(key).hidden=(["map-pane","geo-pane","media-pane","fleet-pane"][i]!==id));
+  ["mission-panel","geo-panel","media-panel","fleet-panel"].forEach((key,i)=>{
+    const current=["map-pane","geo-pane","media-pane","fleet-pane"][i];
+    $(key).hidden=(current!==id&&!(key==="geo-panel"&&id==="terrain-pane"));
+  });
   const mapVisible=(id==="map-pane"||id==="geo-pane");
   $("map-pane").classList.toggle("active",mapVisible);
   if(mapVisible&&map)setTimeout(()=>map.invalidateSize(),80);
