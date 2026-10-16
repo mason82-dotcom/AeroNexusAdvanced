@@ -8,13 +8,15 @@ browser validation on the Raspberry Pi still pending.
 - Desktop UI: **`https://192.168.178.63:8000/studio`**
 - Existing read-only DJI monitor: `https://192.168.178.63:8000/status`
 - Chrome or another recent standards-compliant desktop browser.
-- The separate **AeroNexus status token** (`AERONEXUS_STATUS_TOKEN` in the
-  private server `.env`). It is **not** the DJI organization key.
+- **Keine Browser-Anmeldung mehr:** `AERONEXUS_LAN_NO_TOKEN=1` und
+  `AERONEXUS_LAN_HOST=192.168.178.63` in der privaten Pi-`.env` aktivieren.
+  Nur direkte HTTPS-Heimnetzverbindungen. Details in
+  [Phase 14](phase-14-token-free-lan.md).
 - Trusted local Pi CA certificate: `config/pki/ca.crt` (see
   `docs/deploy-pi.md`). Never disable TLS certificate checks.
 - **Browser internet access** for the pinned Leaflet 1.9.4 library and base
   map tiles; the Raspberry Pi API remains local. Basemap services see
-  requested map tile coordinates, not the bearer token.
+  requested map tile coordinates, never AeroNexus credentials.
   Leaflet JS/CSS are loaded from jsDelivr with subresource integrity (SRI).
   Maps: OpenStreetMap contributors / Esri World Imagery, attribution embedded.
 
@@ -81,9 +83,8 @@ Implemented subset:
 - Persistent private storage outside Git:
   `~/.local/share/aeronexusadvanced/media`.
 - Browse/search the local library with previews and delete items.
-  Thumbnail/full file previews are requested using the **same bearer
-  token**, loaded as temporary in-memory browser object URLs and
-  revoked when disconnecting.
+  Preview files are requested directly through the HTTPS-LAN-protected API,
+  loaded as temporary in-memory browser object URLs and discarded on reload.
 - Each media file capped at **25 MiB** and its signature checked.
   Maximum 500 media items; do not use the Pi as an unlimited video NAS.
 - No FlightHub media downloads, DJI media browser, Exif georeferencing
@@ -92,7 +93,7 @@ Implemented subset:
 
 ### Live fleet panel
 
-- Uses the existing authenticated `GET /api/v1/status/devices`.
+- Uses the existing `GET /api/v1/status/devices` with the HTTPS-LAN policy.
 - Displays current device cards and allows plotting valid **fresh**
   GPS positions on the map. The external tile provider sees the
   requested map viewport; mission/telemetry JSON and credentials are
@@ -100,7 +101,7 @@ Implemented subset:
 - Current FlightHub 2 integration shows the Matrice 4T; the RC Plus 2
   does not yet appear independently in that live project.
 
-## HTTP API (all private endpoints need status Bearer token)
+## HTTP API (Phase 14: Zugriff direkt aus HTTPS-Heimnetz ohne Token)
 
 | Method | Path | Result |
 |---|---|---|
@@ -131,7 +132,9 @@ Back it up if the missions are important; no automatic backup is provided.
   remote media deletion; all POST/PUT/DELETE methods affect only private
   files on this Pi.
 - **No DJI Dock support.**
-- Browser token lives only in memory of the tab. Re-enter after reload.
+- No token or login controls in the browser. The explicitly enabled LAN
+  access policy checks client IP, Host, HTTPS and origin. Every device on
+  the trusted LAN can read telemetry and edit **local** missions/media.
 - All content from DJI and media filenames is inserted via
   `textContent`, not `innerHTML`.
 - The `/status` dashboard and `/studio` are both served via HTTPS
