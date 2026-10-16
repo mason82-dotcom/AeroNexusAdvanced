@@ -57,7 +57,7 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .point-row small{color:#adc2da;display:block;margin-top:4px}.point-row button{padding:5px 8px}
 #point-list{max-height:380px;overflow-y:auto}
 #point-editor{border:1px solid #385270;border-radius:11px;padding:12px;margin-top:10px}
-#point-editor[hidden],#mission-panel[hidden],#media-panel[hidden],#fleet-panel[hidden]{display:none}
+#point-editor[hidden],#mission-panel[hidden],#media-panel[hidden],#fleet-panel[hidden],#geo-panel[hidden]{display:none}
 .pane-inner{padding:25px;max-width:1500px;margin:0 auto}
 .page-head{display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .page-head h1{font-size:28px}.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -83,6 +83,11 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .route-option span{color:#eaf3ff;font-weight:600;font-size:14px}
 .route-explain{margin:7px 0 12px;color:#a6c4de;font-size:12px;line-height:1.5}
 .route-status{padding:9px 11px;border-left:3px solid #5088b5;background:#10263d;border-radius:6px;color:#b7d9f4;font-size:12px;line-height:1.5;margin-bottom:10px}
+.geo-list{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.geo-row{display:flex;align-items:center;gap:8px;padding:8px;background:#142b42;border:1px solid #395a78;border-radius:8px}
+.geo-row span{flex:1;min-width:0;overflow-wrap:anywhere}
+#terrain-canvas{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c}
+.geo-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.geo-buttons button{flex:1}
 .editor-dirty{font-size:12px;padding:6px 9px;border-radius:7px;color:#a0efcf;background:#123e34;border:1px solid #316d56}
 .editor-dirty.unsaved{color:#ffdeaa;background:#3a2c1a;border-color:#7c5a2b}
 .editor-tools{display:flex;gap:7px;margin:9px 0;flex-wrap:wrap}
@@ -106,6 +111,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="brand"><small>AERONEXUS ADVANCED</small>Mission Studio</div>
 <nav aria-label="Arbeitsbereiche">
 <button class="active" data-tab="map-pane">Karte & Missionen</button>
+<button data-tab="geo-pane">Geo &amp; Gelände</button>
 <button data-tab="media-pane">Medienbibliothek</button>
 <button data-tab="fleet-pane">Flottenstatus</button>
 <a href="/operations" style="color:#9edaff;padding:9px;text-decoration:none">Operations Center ↗</a>
@@ -173,17 +179,59 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="button-row"><button class="primary" id="export-mission">KMZ / DJI WPML exportieren</button></div>
 <p class="note">Exportiert eine Datei mit <code>wpmz/template.kml</code> und <code>wpmz/waylines.wpml</code>. Flugmissionen müssen vor einem Einsatz in DJI Pilot 2 auf Kompatibilität, Höhen, Luftraum, RTH und Sicherheit geprüft werden. Kein automatischer Import zur Drohne.</p>
 </aside>
+<aside class="side" id="geo-panel" hidden>
+<h1>Geo-Objekte &amp; Flächenplanung</h1><p class="note">Eigenständige lokale Planungsdaten. Keine DJI-Missionsausführung oder Änderung am WPML-Export.</p>
+<label>Objektname<input id="geo-name" maxlength="100" value="Einsatzfläche"></label>
+<div class="field-row">
+<label>Geometrietyp<select id="geo-kind"><option value="polygon">Polygon / Fläche</option><option value="line">Linie</option><option value="point">Punkt</option><option value="circle">Kreis</option></select></label>
+<label>Kreisradius (m)<input id="geo-radius" type="number" min="1" max="5000" value="50"></label>
+</div>
+<div class="geo-buttons"><button id="geo-draw">Punkte auf Karte setzen</button><button id="geo-reset">Punkte verwerfen</button></div>
+<div id="geo-draft-status" class="note" role="status">Noch keine Geo-Punkte gesetzt.</div>
+<button id="geo-save" class="primary" style="width:100%">Geo-Objekt speichern</button>
+<h2>Lokale Geo-Objekte</h2><div id="geo-list" class="geo-list"></div>
+<hr><h2>Parallele Flugstreifen · Vorschau</h2>
+<div class="field-row">
+<label>Spurabstand (m)<input id="survey-spacing" type="number" min="2" max="200" value="20"></label>
+<label>Flugrichtung (°)<input id="survey-bearing" type="number" min="0" max="359" value="0"></label>
+</div>
+<label>Fläche auswählen<select id="survey-object"><option value="">Polygon auswählen…</option></select></label>
+<button id="survey-generate" class="primary" style="width:100%">Flugstreifen berechnen</button>
+<div id="survey-message" class="note" role="status">Nur unabhängige parallele Flugstreifen, keine verbundenen Flugwege. Keine Hindernis- oder Geländefreigabe.</div>
+<hr><h2>Gelände aus GeoTIFF</h2>
+<label>DEM-GeoTIFF (max. 8 MiB)<input type="file" id="terrain-file" accept=".tif,.tiff,image/tiff"></label>
+<div class="geo-buttons"><button id="terrain-preview" class="primary">3D-Vorschau</button><button id="terrain-export" disabled>STL exportieren</button></div>
+<canvas id="terrain-canvas" width="320" height="210" role="img" aria-label="Lokale vereinfachte perspektivische Höhenraster-Vorschau"></canvas>
+<div id="terrain-message" class="note" role="status">Lokales GDAL erforderlich. Höhenmodell nur Visualisierung und 3D-Modell – nicht zur Flugfreigabe.</div>
+</aside>
 <aside class="side" id="media-panel" hidden>
 <h1>Medienimport</h1><p class="note">Bilder und Videos werden ausschließlich im privaten Pi-Arbeitsbereich gespeichert. Maximal 25 MiB je Datei.</p>
 <label>Bild-/Videodateien<input type="file" id="media-file" accept=".jpg,.jpeg,.png,.webp,.mp4,image/jpeg,image/png,image/webp,video/mp4" multiple></label>
 <button id="upload-media" class="primary">Ausgewählte Medien hochladen</button>
 <div class="status" id="media-notice">Medienbibliothek wird geladen…</div>
+<hr><h2>GeoPhoto · Kameradaten</h2>
+<p class="note">Aufnahmeort und Kameraausrichtung manuell eintragen. Metadaten werden nicht aus einer DJI-Aufnahme erfunden.</p>
+<label>Foto auswählen<select id="geophoto-media"><option value="">Bild auswählen</option></select></label>
+<div class="field-row">
+<label>Breitengrad<input id="geophoto-lat" type="number" step="0.0000001" min="-90" max="90"></label>
+<label>Längengrad<input id="geophoto-lon" type="number" step="0.0000001" min="-180" max="180"></label>
+<label>Höhe (m, optional)<input id="geophoto-alt" type="number" step="0.1" min="-500" max="12000"></label>
+<label>Blickrichtung (°, optional)<input id="geophoto-heading" type="number" step="0.1" min="0" max="359.9"></label>
+<label>Kameraneigung (°, optional)<input id="geophoto-pitch" type="number" step="0.1" min="-90" max="90"></label>
+<label>Roll (°, optional)<input id="geophoto-roll" type="number" step="0.1" min="-180" max="180"></label>
+</div>
+<label>Aufnahmezeit mit Zeitzone (ISO 8601)<input id="geophoto-captured" placeholder="2026-10-16T15:30:00+02:00"></label>
+<label>Notizen<textarea id="geophoto-notes" maxlength="512" rows="2"></textarea></label>
+<div class="geo-buttons"><button id="geophoto-save" class="primary">GeoPhoto speichern</button><button id="geophoto-show">Fotos auf Karte</button></div>
+<div id="geophoto-status" class="note" role="status">Aufnahmeorte sind getrennt von geplanten Flugwegen.</div>
 <hr><h3>Speicherort</h3><p class="note"><code>~/.local/share/aeronexusadvanced/media</code> auf dem Raspberry Pi. Unterstützt JPEG, PNG, WebP und MP4. Keine öffentliche Medienfreigabe.</p>
 </aside>
 <aside class="side" id="fleet-panel" hidden>
 <h1>Live-Flotte</h1><p class="note">Liest ausschließlich die vorhandene AeroNexus-Status-API. DJI-Flugsteuerung bleibt gesperrt.</p>
 <button id="refresh-fleet" class="primary">Flotte aktualisieren</button>
 <div class="status" id="fleet-notice">Flottendaten werden geladen…</div>
+<div class="geo-buttons"><button id="connect-events">Live-Ereignisse verbinden</button></div>
+<div class="note" id="event-status" role="status">Lokale WebSocket-Ereignisse optional; auf dem Pi standardmäßig deaktiviert.</div>
 <div class="button-row"><button id="show-fleet-map">Gerätepositionen auf Karte</button></div>
 <p class="note">Die Kartenkacheln stammen von einem externen Kartenanbieter. Bei Darstellung des Einsatzgebiets kann der Anbieter den angeforderten Kartenausschnitt erkennen. Keine Telemetrie wird direkt an DJI gesendet.</p>
 </aside>
@@ -229,7 +277,8 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Fixed initial view of Forst (Baden), postal code 76694, approximate town centre.
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
-let map=null,lines=null,waypointsLayer=null,deviceLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
+let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
+let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
   $("auth-message").textContent=text;
@@ -440,7 +489,15 @@ function getMap(){
       mapWarning("Satellitenbilder derzeit nicht abrufbar. Kartenanbieter/Internetverbindung prüfen; geplante Wegpunkte bleiben erhalten.");
   });
   waypointsLayer=L.layerGroup().addTo(map);deviceLayer=L.layerGroup().addTo(map);
+  geoLayer=L.layerGroup().addTo(map);surveyLayer=L.layerGroup().addTo(map);photoLayer=L.layerGroup().addTo(map);
   map.on("click",event=>{
+    if(geoDraw){
+      const lat=+event.latlng.lat.toFixed(7),lon=+(((((event.latlng.lng+540)%360)+360)%360)-180).toFixed(7);
+      if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon))return;
+      if(geoDraft.length>=128)return;
+      geoDraft.push({latitude:lat,longitude:lon});
+      redrawGeo();return;
+    }
     if(!addMode)return;
     const lat=+event.latlng.lat.toFixed(7);
     const lon=Number(((((event.latlng.lng+540)%360)-180)).toFixed(7));
@@ -738,8 +795,10 @@ async function exportMission(){
 function switchTab(id){
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
-  ["mission-panel","media-panel","fleet-panel"].forEach((key,i)=>$(key).hidden=(["map-pane","media-pane","fleet-pane"][i]!==id));
-  if(id==="map-pane"&&map)setTimeout(()=>map.invalidateSize(),80);
+  ["mission-panel","geo-panel","media-panel","fleet-panel"].forEach((key,i)=>$(key).hidden=(["map-pane","geo-pane","media-pane","fleet-pane"][i]!==id));
+  const mapVisible=(id==="map-pane"||id==="geo-pane");
+  $("map-pane").classList.toggle("active",mapVisible);
+  if(mapVisible&&map)setTimeout(()=>map.invalidateSize(),80);
 }
 async function loadWorkspace(){
   statusMessage("LAN-Verbindung wird geprüft…");
@@ -752,7 +811,7 @@ async function loadWorkspace(){
     notice("Missionsspeicher nicht verfügbar: "+msg,true);
     statusMessage("Missionsspeicherfehler: "+msg,true);
   }
-  await Promise.allSettled([loadMedia(),loadFleet()]);
+  await Promise.allSettled([loadMedia(),loadFleet(),loadGeoObjects()]);
 }
 function revokeMedia(){mediaUrls.forEach(url=>URL.revokeObjectURL(url));mediaUrls=[];}
 function closePreview(){const dlg=$("media-dialog");if(dlg.open)dlg.close();$("preview-content").replaceChildren();if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}}
@@ -778,6 +837,7 @@ async function renderMedia(){
   revokeMedia();
   const grid=$("gallery");grid.replaceChildren();
   const needle=$("media-search").value.trim().toLowerCase();
+  updateGeoPhotoSelect();
   const found=knownMedia.filter(m=>m.name.toLowerCase().includes(needle));
   const visible=found.slice(0,displayMedia);
   $("more-media").hidden=found.length<=displayMedia;
@@ -797,6 +857,10 @@ async function renderMedia(){
     cardText(card,"div","media-name",meta.name);
     cardText(card,"div","note",new Date(meta.created_at).toLocaleString("de-DE")+" · "+(meta.size_bytes/1024/1024).toFixed(1)+" MB");
     const tools=cardText(card,"div","button-row");
+    if(meta.mime.startsWith("image/")){
+      const locate=cardText(tools,"button","","GeoPhoto");
+      locate.addEventListener("click",()=>{switchTab("media-pane");$("geophoto-media").value=meta.id;showGeoPhotoFields();});
+    }
     const view=cardText(tools,"button","","Ansehen");view.addEventListener("click",()=>previewMedia(meta).catch(err=>$("media-notice").textContent=err.message));
     const remove=cardText(tools,"button","danger","Löschen");remove.addEventListener("click",async()=>{
       if(!confirm("Datei auf dem Pi dauerhaft löschen?"))return;
@@ -847,6 +911,210 @@ async function showFleetOnMap(){
   if(locs.length)map.fitBounds(L.latLngBounds(locs).pad(.3),{maxZoom:16});
   notice(locs.length?locs.length+" aktuelle Geräteposition(en) angezeigt.":"Keine aktuelle GPS-Position verfügbar.");
 }
+
+// Geo-objects are separate from waypoint missions and never enter WPML.
+function setGeoMode(enabled){
+  geoDraw=enabled;
+  if(enabled){addMode=false;$("add-mode").textContent="+ Auf Karte setzen";$("add-mode").classList.remove("primary");}
+  $("geo-draw").textContent=enabled?"Kartenmodus beenden":"Punkte auf Karte setzen";
+  $("geo-draw").classList.toggle("primary",enabled);
+  if(enabled)switchTab("geo-pane");
+}
+function redrawGeo(){
+  $("geo-draft-status").textContent=geoDraft.length+" Koordinaten im Entwurf · "+$("geo-kind").value+
+    ". Zum Speichern Kartenmodus beenden.";
+  if(!geoLayer||!map)return;
+  geoLayer.clearLayers();
+  const draw=(points,kind,label,draft=false,radius=0)=>{
+    const coords=points.map(p=>[p.latitude,p.longitude]);
+    const style={color:draft?"#ffc878":"#74debb",weight:3,fillOpacity:.14};
+    let shape=null;
+    if(kind==="polygon"&&coords.length>=3)shape=L.polygon(coords,style);
+    else if(kind==="line"&&coords.length>=2)shape=L.polyline(coords,style);
+    else if(kind==="circle"&&coords.length===1)shape=L.circle(coords[0],{...style,radius});
+    else if(coords.length===1)shape=L.circleMarker(coords[0],{...style,radius:6});
+    if(shape)shape.bindTooltip(label).addTo(geoLayer);
+    if(draft)coords.forEach(p=>L.circleMarker(p,{color:"#ffc878",radius:4}).addTo(geoLayer));
+  };
+  for(const row of geoObjects){
+    if(row.id===geoEditingId)continue;
+    const obj=row.object;
+    draw(obj.vertices,obj.kind,obj.name,false,obj.radius_m||0);
+  }
+  const kind=$("geo-kind").value;
+  const radius=Number($("geo-radius").value)||50;
+  draw(geoDraft,kind,"Geo-Entwurf",true,radius);
+}
+async function loadGeoObjects(){
+  const r=await api("/api/v1/studio/geo-objects");
+  geoObjects=(await r.json()).objects;
+  const list=$("geo-list");list.replaceChildren();
+  const pick=$("survey-object");const chosen=pick.value;pick.replaceChildren();
+  const empty=els("option","","Polygon auswählen…");empty.value="";pick.appendChild(empty);
+  for(const item of geoObjects){
+    const obj=item.object;
+    const row=cardText(list,"div","geo-row");
+    cardText(row,"span","",obj.name+" · "+obj.kind+" · "+obj.vertices.length+" Punkte");
+    const edit=cardText(row,"button","","Bearbeiten");
+    edit.addEventListener("click",()=>{
+      geoEditingId=item.id;
+      $("geo-name").value=obj.name;
+      $("geo-kind").value=obj.kind;
+      $("geo-radius").value=obj.radius_m??50;
+      geoDraft=obj.vertices.map(p=>({...p}));
+      setGeoMode(false);redrawGeo();
+      $("geo-draft-status").textContent="Geo-Objekt bearbeiten: "+obj.name;
+    });
+    const del=cardText(row,"button","danger","×");
+    del.title="Geo-Objekt löschen";
+    del.addEventListener("click",async()=>{
+      if(!confirm("Lokales Geo-Objekt löschen?"))return;
+      await api("/api/v1/studio/geo-objects/"+encodeURIComponent(item.id),{method:"DELETE"});
+      if(geoEditingId===item.id){geoEditingId=null;geoDraft=[];}
+      await loadGeoObjects();
+    });
+    if(obj.kind==="polygon"){
+      const opt=els("option","",obj.name);opt.value=item.id;pick.appendChild(opt);
+    }
+  }
+  pick.value=geoObjects.some(x=>x.id===chosen&&x.object.kind==="polygon")?chosen:"";
+  redrawGeo();
+}
+async function saveGeoObject(){
+  const kind=$("geo-kind").value;
+  const obj={name:$("geo-name").value.trim(),kind,vertices:geoDraft.slice(),
+    radius_m:kind==="circle"?Number($("geo-radius").value):null};
+  const path="/api/v1/studio/geo-objects"+(geoEditingId?"/"+encodeURIComponent(geoEditingId):"");
+  const r=await api(path,{
+    method:geoEditingId?"PUT":"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
+  const saved=await r.json();
+  geoDraft=[];geoEditingId=null;setGeoMode(false);await loadGeoObjects();
+  if(kind==="polygon")$("survey-object").value=saved.id;
+  $("geo-draft-status").textContent="Geo-Objekt gespeichert (nur lokal).";
+}
+async function surveyPreview(){
+  const row=geoObjects.find(x=>x.id===$("survey-object").value);
+  if(!row||row.object.kind!=="polygon")throw new Error("Polygon auswählen");
+  const r=await api("/api/v1/studio/survey/preview",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({polygon:row.object,spacing_m:Number($("survey-spacing").value),
+      bearing_deg:Number($("survey-bearing").value)})});
+  const data=await r.json();
+  if(map&&surveyLayer){
+    surveyLayer.clearLayers();
+    data.legs.forEach(segment=>L.polyline(segment.map(p=>[p.latitude,p.longitude]),{
+      color:"#ffab70",weight:3,dashArray:"5 5"}).addTo(surveyLayer));
+    if(data.legs.length)map.fitBounds(L.latLngBounds(data.legs.flat().map(p=>[p.latitude,p.longitude])),{
+      padding:[50,50],maxZoom:17});
+  }
+  $("survey-message").textContent=data.leg_count+" getrennte Flugstreifen · "+
+    formatRouteDistance(data.distance_m)+
+    ". Nur geometrische Vorschau ohne Wendemanöver, Gelände-/Hindernisprüfung oder WPML-Export.";
+}
+function updateGeoPhotoSelect(){
+  const el=$("geophoto-media"),old=el.value;
+  el.replaceChildren();
+  const empty=els("option","","Bild auswählen");empty.value="";el.appendChild(empty);
+  for(const m of knownMedia.filter(m=>m.mime.startsWith("image/"))){
+    const opt=els("option","",m.name);opt.value=m.id;el.appendChild(opt);
+  }
+  el.value=knownMedia.some(m=>m.id===old)?old:"";
+}
+function showGeoPhotoFields(){
+  const m=knownMedia.find(row=>row.id===$("geophoto-media").value);
+  const fields=[["lat","latitude"],["lon","longitude"],["alt","altitude_m"],
+    ["heading","heading_deg"],["pitch","pitch_deg"],["roll","roll_deg"],
+    ["captured","captured_at"],["notes","notes"]];
+  for(const [id,key] of fields)$("geophoto-"+id).value=m?.[key]??"";
+}
+async function saveGeoPhoto(){
+  const id=$("geophoto-media").value;
+  if(!id)throw new Error("Zuerst ein Foto auswählen");
+  const number=id=>{const val=$("geophoto-"+id).value.trim();return val===""?null:Number(val);};
+  const body={latitude:number("lat"),longitude:number("lon"),
+    altitude_m:number("alt"),heading_deg:number("heading"),
+    pitch_deg:number("pitch"),roll_deg:number("roll"),
+    captured_at:$("geophoto-captured").value.trim()||null,
+    notes:$("geophoto-notes").value};
+  if((body.latitude===null)!==(body.longitude===null))throw new Error("Breite und Länge zusammen eingeben.");
+  await api("/api/v1/studio/media/"+encodeURIComponent(id)+"/geo",{
+    method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  await loadMedia();
+  $("geophoto-status").textContent="GeoPhoto-Kameradaten lokal gespeichert.";
+}
+function showGeoPhotos(){
+  if(!map||!photoLayer){$("geophoto-status").textContent="Karte nicht verfügbar.";return;}
+  photoLayer.clearLayers();const spots=[];
+  for(const m of knownMedia){
+    if(!m.mime.startsWith("image/")||!Number.isFinite(m.latitude)||!Number.isFinite(m.longitude))continue;
+    const p=[m.latitude,m.longitude];spots.push(p);
+    L.circleMarker(p,{color:"#fa8cbd",radius:7,fillOpacity:.85})
+      .bindTooltip(m.name+(m.heading_deg==null?"":" · Blick "+m.heading_deg+"°")).addTo(photoLayer);
+  }
+  switchTab("map-pane");
+  if(spots.length)map.fitBounds(L.latLngBounds(spots),{padding:[40,40],maxZoom:17});
+  notice(spots.length+" gespeicherte Aufnahmeorte auf Karte; keine Bildabdeckung behauptet.");
+}
+function drawTerrainPreview(grid){
+  const cv=$("terrain-canvas"),ctx=cv.getContext("2d");
+  if(!ctx)return;
+  const heights=grid.heights_m,h=heights.length,w=heights[0].length;
+  ctx.clearRect(0,0,cv.width,cv.height);ctx.fillStyle="#0d2233";ctx.fillRect(0,0,cv.width,cv.height);
+  const zmin=Math.min(...heights.flat()),zmax=Math.max(...heights.flat());
+  const coords=(r,c)=>{
+    const depth=(zmax===zmin?0:(heights[r][c]-zmin)/(zmax-zmin));
+    return [160+(c/(w-1)-r/(h-1))*105,
+      135+(c/(w-1)+r/(h-1)-1)*44-depth*62];
+  };
+  ctx.strokeStyle="#8ed7b8";ctx.lineWidth=1;
+  for(let r=0;r<h;r+=Math.max(1,Math.floor(h/16))){
+    ctx.beginPath();for(let c=0;c<w;c++){const p=coords(r,c);c?ctx.lineTo(...p):ctx.moveTo(...p);}ctx.stroke();
+  }
+  for(let c=0;c<w;c+=Math.max(1,Math.floor(w/16))){
+    ctx.beginPath();for(let r=0;r<h;r++){const p=coords(r,c);r?ctx.lineTo(...p):ctx.moveTo(...p);}ctx.stroke();
+  }
+}
+async function previewTerrain(){
+  const file=$("terrain-file").files?.[0];
+  if(!file)throw new Error("Zuerst DEM-GeoTIFF auswählen");
+  if(file.size>8*1024*1024)throw new Error("GeoTIFF maximal 8 MiB");
+  const r=await api("/api/v1/studio/terrain/geotiff",{
+    method:"POST",headers:{"Content-Type":"image/tiff"},body:file});
+  const data=await r.json();terrainGrid=data.grid;
+  drawTerrainPreview(terrainGrid);$("terrain-export").disabled=false;
+  $("terrain-message").textContent=data.overview.rows+" × "+data.overview.columns+
+    " Zellen · Höhe "+data.overview.min_elevation_m+"–"+data.overview.max_elevation_m+
+    " m. Schematische lokale Höhenvorschau, kein tatsächliches 3D-Kartenmodell oder Flugfreigabe.";
+}
+async function exportTerrain(){
+  if(!terrainGrid)throw new Error("Zuerst GeoTIFF auswerten");
+  const r=await api("/api/v1/studio/terrain/export.stl",{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(terrainGrid)});
+  const blob=await r.blob(),url=URL.createObjectURL(blob),a=els("a");
+  a.href=url;a.download="aeronexus-terrain.stl";document.body.appendChild(a);
+  a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+function connectStudioEvents(){
+  if(studioSocket&&studioSocket.readyState<=1)return;
+  if(location.protocol!=="https:"&&location.hostname!=="localhost"){
+    $("event-status").textContent="Live-Ereignisse benötigen HTTPS.";return;
+  }
+  const scheme=location.protocol==="https:"?"wss:":"ws:";
+  const ws=new WebSocket(scheme+"//"+location.host+"/api/v1/studio/events");
+  studioSocket=ws;
+  $("event-status").textContent="Verbinde mit lokalem Ereigniskanal…";
+  ws.onopen=()=>{$("event-status").textContent="Lokaler Live-Ereigniskanal verbunden.";};
+  ws.onmessage=event=>{
+    let message;try{message=JSON.parse(event.data)}catch(_){return;}
+    if(message?.type==="fleet_changed"&&!studioFleetLoading){
+      studioFleetLoading=true;
+      loadFleet().catch(()=>{}).finally(()=>{studioFleetLoading=false;});
+    }
+  };
+  ws.onerror=()=>{$("event-status").textContent="Ereigniskanal nicht verfügbar (Pi-Konfiguration prüfen).";};
+  ws.onclose=()=>{$("event-status").textContent="Ereigniskanal getrennt. Verbinden bei Bedarf erneut.";};
+}
 function wire(){
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.addEventListener("click",()=>switchTab(el.dataset.tab)));
   $("mission-list").addEventListener("change",e=>loadMission(e.target.value).catch(err=>notice(err.message,true)));
@@ -882,6 +1150,7 @@ function wire(){
   $("export-mission").addEventListener("click",()=>exportMission().catch(err=>notice(err.message,true)));
   $("import-mission").addEventListener("click",()=>importMission().catch(err=>notice(err.message,true)));
   $("add-mode").addEventListener("click",()=>{
+    if(geoDraw)setGeoMode(false);
     addMode=!addMode;$("add-mode").textContent=addMode?"Klickmodus beenden":"+ Auf Karte setzen";
     $("add-mode").classList.toggle("primary",addMode);
   });
@@ -909,6 +1178,18 @@ function wire(){
       notice("WGS84-Koordinaten kopiert.");
     }catch(_){notice("Kopieren nicht möglich. Koordinaten im Editor markieren.",true);}
   });
+  $("geo-draw").addEventListener("click",()=>setGeoMode(!geoDraw));
+  $("geo-reset").addEventListener("click",()=>{geoDraft=[];geoEditingId=null;setGeoMode(false);redrawGeo();});
+  $("geo-save").addEventListener("click",()=>saveGeoObject().catch(err=>$("geo-draft-status").textContent=err.message));
+  $("geo-kind").addEventListener("change",redrawGeo);
+  $("survey-generate").addEventListener("click",()=>surveyPreview().catch(err=>$("survey-message").textContent=err.message));
+  $("geophoto-media").addEventListener("change",showGeoPhotoFields);
+  $("geophoto-save").addEventListener("click",()=>saveGeoPhoto().catch(err=>$("geophoto-status").textContent=err.message));
+  $("geophoto-show").addEventListener("click",showGeoPhotos);
+  $("terrain-preview").addEventListener("click",()=>previewTerrain().catch(err=>$("terrain-message").textContent=err.message));
+  $("terrain-export").addEventListener("click",()=>exportTerrain().catch(err=>$("terrain-message").textContent=err.message));
+  $("terrain-file").addEventListener("change",()=>{terrainGrid=null;$("terrain-export").disabled=true;});
+  $("connect-events").addEventListener("click",connectStudioEvents);
   $("upload-media").addEventListener("click",()=>uploadMedia().catch(err=>$("media-notice").textContent=err.message));
   $("refresh-media").addEventListener("click",()=>loadMedia().catch(err=>$("media-notice").textContent=err.message));
   $("media-search").addEventListener("input",()=>{displayMedia=20;renderMedia().catch(()=>{});});

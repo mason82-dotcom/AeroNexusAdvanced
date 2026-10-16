@@ -35,17 +35,22 @@ def require_lan(request: Request) -> None:
     hostname = request.url.hostname
     if hostname not in {host, "localhost", "127.0.0.1"}:
         raise HTTPException(status_code=403, detail="Unexpected request host")
-    if request.url.scheme != "https" and not peer.is_loopback:
+    # WSS is the TLS-equivalent of HTTPS for same-origin WebSocket clients.
+    is_socket = request.scope.get("type") == "websocket"
+    scheme = "https" if is_socket and request.url.scheme == "wss" else request.url.scheme
+    if scheme != "https" and not peer.is_loopback:
         raise HTTPException(status_code=403, detail="LAN access requires HTTPS")
     fetch_site = request.headers.get("sec-fetch-site", "")
     if fetch_site not in ALLOWED_FETCH_SITES:
         raise HTTPException(status_code=403, detail="Cross-site request denied")
     origin = request.headers.get("origin")
+    if is_socket and not origin:
+        raise HTTPException(status_code=403, detail="WebSocket Origin required")
     if origin:
         try:
             parsed = urlsplit(origin)
             accepted = (
-                parsed.scheme == request.url.scheme
+                parsed.scheme == scheme
                 and parsed.hostname == hostname
                 and parsed.port == request.url.port
                 and not parsed.username and not parsed.password
@@ -58,7 +63,7 @@ def require_lan(request: Request) -> None:
             raise HTTPException(status_code=403, detail="Cross-origin request denied")
     # A JavaScript or malicious HTML page on another origin cannot mutate data
     # through form posts (without a matching Origin) or forged cross-site fetch.
-    if request.method not in ("GET", "HEAD", "OPTIONS") and not origin:
+    if not is_socket and request.method not in ("GET", "HEAD", "OPTIONS") and not origin:
         # Chrome same-origin fetch for mutations normally sends Sec-Fetch-Site.
         if fetch_site != "same-origin":
             raise HTTPException(status_code=403, detail="Same-origin write required")

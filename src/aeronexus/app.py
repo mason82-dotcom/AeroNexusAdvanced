@@ -13,9 +13,10 @@ import time
 from enum import Enum
 from secrets import compare_digest
 
-from fastapi import FastAPI, Header, HTTPException, Query, Response, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Response, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from datetime import datetime
 
 from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
 from .cloud_api2_bridge import CloudApi2Bridge, CloudApi2Settings
@@ -26,6 +27,9 @@ from .status_page import render_page
 from .studio_page import render_studio
 from .operations_page import render_operations
 from .studio_workspace import Workspace, WorkspaceError, MAX_MEDIA_BYTES, MEDIA_TYPES
+from .geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
+from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
+from .studio_events import serve_studio_events
 from .lan_access import lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
 from .status_polling import ReadOnlyStatusPoller
@@ -72,6 +76,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AeroNexusAdvanced", version="0.1.0", lifespan=lifespan)
 app.state.cloud_api2_bridge = None
 app.state.task_media_cache = {}
+app.state.studio_event_clients = 0
 app.state.status_runtime = StatusRuntime(
     settings=StatusSettings(
         stale_after_seconds=int(os.environ.get("AERONEXUS_STATUS_STALE_AFTER_SECONDS", "90")),
@@ -339,7 +344,7 @@ def studio_page(request: Request, response: Response) -> str:
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "img-src 'self' blob: data: https://tile.openstreetmap.org "
         "https://server.arcgisonline.com; "
-        "connect-src 'self' https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "connect-src 'self' wss://192.168.178.63:8000 https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "media-src 'self' blob:; frame-ancestors 'none'; "
         "base-uri 'none'; form-action 'none'"
     )
@@ -492,6 +497,132 @@ def studio_media_delete(media_id: str, request: Request, response: Response,
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
 
+
+
+
+
+class GeoPhotoPatch(BaseModel):
+    """Manually assigned WGS84 photo metadata; never infer unsupported EXIF."""
+    model_config=ConfigDict(extra="forbid")
+    latitude: float | None = Field(default=None,ge=-90,le=90,allow_inf_nan=False)
+    longitude: float | None = Field(default=None,ge=-180,le=180,allow_inf_nan=False)
+    altitude_m: float | None = Field(default=None,ge=-500,le=12000,allow_inf_nan=False)
+    heading_deg: float | None = Field(default=None,ge=0,lt=360,allow_inf_nan=False)
+    pitch_deg: float | None = Field(default=None,ge=-90,le=90,allow_inf_nan=False)
+    roll_deg: float | None = Field(default=None,ge=-180,le=180,allow_inf_nan=False)
+    captured_at: datetime | None = None
+    notes: str = Field(default="",max_length=512)
+
+    @model_validator(mode="after")
+    def geo_pair(self):
+        if (self.latitude is None)!=(self.longitude is None):
+            raise ValueError("Latitude and longitude must be supplied together")
+        if self.captured_at is not None and self.captured_at.utcoffset() is None:
+            raise ValueError("Capture timestamp must include timezone")
+        return self
+
+
+@app.websocket("/api/v1/studio/events")
+async def studio_events(socket: WebSocket) -> None:
+    """Opt-in LAN-only cached-status invalidations; read-only by design."""
+    await serve_studio_events(socket, app.state.status_runtime, app.state)
+
+
+@app.get("/api/v1/studio/geo-objects")
+def studio_geo_objects(request: Request,response: Response,
+                       authorization: str | None=Header(default=None)) -> dict:
+    _no_cache(response)
+    return {"objects":_studio_workspace(request,authorization).list_geo_objects()}
+
+
+@app.post("/api/v1/studio/geo-objects",status_code=201)
+def studio_geo_add(obj: GeoObject,request: Request,response: Response,
+                   authorization: str | None=Header(default=None)) -> dict:
+    _no_cache(response)
+    try:
+        return _studio_workspace(request,authorization).save_geo_object(obj)
+    except WorkspaceError as exc:
+        raise _studio_error(exc) from exc
+
+
+@app.put("/api/v1/studio/geo-objects/{geo_id}")
+def studio_geo_update(geo_id:str,obj:GeoObject,request:Request,response:Response,
+                      authorization:str|None=Header(default=None))->dict:
+    _no_cache(response)
+    try:
+        return _studio_workspace(request,authorization).save_geo_object(obj,geo_id)
+    except WorkspaceError as exc:
+        raise _studio_error(exc) from exc
+
+
+@app.delete("/api/v1/studio/geo-objects/{geo_id}",status_code=204)
+def studio_geo_delete(geo_id:str,request:Request,response:Response,
+                      authorization:str|None=Header(default=None))->None:
+    _no_cache(response)
+    try:
+        _studio_workspace(request,authorization).delete_geo_object(geo_id)
+    except WorkspaceError as exc:
+        raise _studio_error(exc) from exc
+
+
+@app.post("/api/v1/studio/survey/preview")
+def studio_survey_preview(plan:SurveyPlanRequest,request:Request,response:Response,
+                          authorization:str|None=Header(default=None))->dict:
+    _require_viewer_access(request,authorization)
+    _no_cache(response)
+    try:
+        return generate_survey_preview(plan)
+    except ValueError as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+
+
+@app.patch("/api/v1/studio/media/{media_id}/geo")
+def studio_media_geo_update(media_id:str,geo:GeoPhotoPatch,request:Request,
+                            response:Response,
+                            authorization:str|None=Header(default=None))->dict:
+    _no_cache(response)
+    try:
+        store=_studio_workspace(request,authorization)
+        meta,_=store.get_media(media_id)
+        if not meta["mime"].startswith("image/"):
+            raise HTTPException(status_code=422,detail="GeoPhoto requires an image")
+        return store.update_media_georef(
+            media_id,latitude=geo.latitude,longitude=geo.longitude,
+            heading_deg=geo.heading_deg,pitch_deg=geo.pitch_deg,
+            roll_deg=geo.roll_deg,altitude_m=geo.altitude_m,
+            captured_at=geo.captured_at.isoformat() if geo.captured_at else None,
+            notes=geo.notes)
+    except WorkspaceError as exc:
+        raise _studio_error(exc) from exc
+
+
+@app.post("/api/v1/studio/terrain/geotiff")
+async def studio_terrain_geotiff(request:Request,response:Response,
+                               authorization:str|None=Header(default=None))->dict:
+    """Bounded transient GeoTIFF sampler; optional GDAL, no persisted upload."""
+    _require_viewer_access(request,authorization)
+    content=bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content)>8*1024*1024:
+            raise HTTPException(status_code=413,detail="Maximum GeoTIFF upload 8 MiB")
+    try:
+        grid=geotiff_preview(bytes(content))
+    except TerrainUnavailable as exc:
+        raise HTTPException(status_code=503,detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    _no_cache(response)
+    return {"grid":grid.model_dump(),"overview":terrain_overview(grid)}
+
+
+@app.post("/api/v1/studio/terrain/export.stl")
+def studio_terrain_stl(grid:TerrainGrid,request:Request,
+                       authorization:str|None=Header(default=None)):
+    _require_viewer_access(request,authorization)
+    return Response(content=terrain_stl(grid),media_type="model/stl",
+                    headers={"Content-Disposition":'attachment; filename="aeronexus-terrain.stl"',
+                             "Cache-Control":"no-store","X-Content-Type-Options":"nosniff"})
 
 
 @app.post("/api/v1/flight/command", status_code=403)

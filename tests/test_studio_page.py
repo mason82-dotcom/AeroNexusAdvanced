@@ -90,7 +90,7 @@ def test_lan_workspace_auto_loads_without_any_browser_token():
     assert 'headerToken' not in page
     assert 'Authorization' not in page
     assert 'loadWorkspace();' in page
-    assert 'await Promise.allSettled([loadMedia(),loadFleet()]);' in page
+    assert 'await Promise.allSettled([loadMedia(),loadFleet(),loadGeoObjects()]);' in page
     assert 'async function api(path,options={})' in page
     assert 'textContent' in page
 
@@ -212,3 +212,23 @@ def test_unsaved_editor_changes_guard_switches_and_saved_baseline():
     assert 'e.returnValue=""' in page
     assert 'HISTORY_LIMIT=60' in page
     assert '/api/v1/flight/command' not in page
+
+
+def test_new_geo_photo_survey_terrain_ui_is_explicitly_local():
+    page=render_studio()
+    for element_id in (
+        'geo-panel','geo-kind','geo-draw','geo-save','geo-list',
+        'survey-object','survey-generate','survey-message',
+        'geophoto-media','geophoto-lat','geophoto-lon','geophoto-save',
+        'geophoto-show','terrain-file','terrain-preview','terrain-export',
+        'terrain-canvas','connect-events','event-status'
+    ):
+        assert 'id="'+element_id+'"' in page
+    assert 'function surveyPreview()' in page
+    assert 'function drawTerrainPreview(grid)' in page
+    assert 'function saveGeoPhoto()' in page
+    assert 'function connectStudioEvents()' in page
+    assert "Keine DJI-Missionsausführung" in page
+    assert "keine verbundenen Flugwege" in page
+    assert "no-store" in page
+    assert "innerHTML" not in page
