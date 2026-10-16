@@ -100,9 +100,8 @@ def _require_dashboard_token(authorization: str | None) -> None:
 
 
 @app.get("/", include_in_schema=False)
-def dashboard_home(response: Response) -> RedirectResponse:
+def dashboard_home() -> RedirectResponse:
     """Relative redirect keeps the current HTTPS origin, IP and port."""
-    _no_cache(response)
     return RedirectResponse(
         url="/status", status_code=307,
         headers={
