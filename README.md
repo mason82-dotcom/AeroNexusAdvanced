@@ -98,7 +98,8 @@ AeroNexus status token as for the dashboard (never the DJI organization key).
 
 - Desktop-sized interactive OpenStreetMap/Esri map with click/drag waypoints,
   mission metadata, point editing/reordering and optional photo actions.
-- Create/save/reopen/edit/delete waypoint drafts locally on the Pi.
+- Create/save/reopen/edit/delete waypoint drafts locally on the Pi, including
+  safe re-import of AeroNexus-generated KMZ waypoint files.
 - Download DJI waypoint KMZ (`wpmz/template.kml`, `wpmz/waylines.wpml`)
   for **manual** review/import in DJI Pilot 2; initial aircraft profiles
   Matrice 4T and Matrice 4E, uniform height relative to takeoff.
