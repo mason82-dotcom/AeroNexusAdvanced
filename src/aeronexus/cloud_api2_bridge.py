@@ -15,6 +15,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import ipaddress
+import json
 import os
 import re
 import time
@@ -166,14 +167,17 @@ def normalize_devices(payload, *, now: datetime | None = None,
             freshness = ("missing" if received is None or raw is None else
                          "clock_skew" if age is not None and age < -1 else
                          "fresh" if age is not None and age <= stale_after_seconds else "stale")
-            online = device.get("online") is True
+            reported_online = device.get("online")
+            if type(reported_online) is not bool:
+                reported_online = None
             rows.append({
                 "provider": "dji-cloud-api-2", "project_id": "cloud-api-2",
                 "kind": "aircraft",
                 "device_id": serial,
                 "name": _text(device.get("name")) or _text(device.get("model")) or "DJI-Fluggerät",
                 "model": _text(device.get("model")),
-                "online": online if freshness == "fresh" else None,
+                "online": reported_online if freshness == "fresh" else None,
+                "reported_online": reported_online,
                 "freshness": freshness,
                 "age_seconds": round(max(age, 0), 2) if age is not None and age >= 0 else None,
                 "received_at": received.isoformat().replace("+00:00", "Z") if received else None,
@@ -221,17 +225,23 @@ class CloudApi2Bridge:
                     base_url=self.settings.base_url, timeout=7,
                     follow_redirects=False, trust_env=False, verify=True,
                 ) as client:
-                    response = await client.get(_DEVICE_PATH, headers={
+                    # Stream and bound the upstream response BEFORE buffering in RAM.
+                    # The server is optional and never receives a write request.
+                    async with client.stream("GET", _DEVICE_PATH, headers={
                         "Authorization": "Bearer " + self.settings.api_token,
                         "Accept": "application/json",
                         "User-Agent": "AeroNexusAdvanced/0.1 CloudAPI2 read-only",
-                    })
-                    if response.status_code != 200:
-                        raise CloudApi2BridgeError("Cloud API 2 backend unavailable")
-                    if len(response.content) > MAX_RESPONSE_BYTES:
-                        raise CloudApi2BridgeError("Cloud API 2 response too large")
+                    }) as response:
+                        if response.status_code != 200:
+                            raise CloudApi2BridgeError("Cloud API 2 backend unavailable")
+                        chunks, byte_count = [], 0
+                        async for chunk in response.aiter_bytes():
+                            byte_count += len(chunk)
+                            if byte_count > MAX_RESPONSE_BYTES:
+                                raise CloudApi2BridgeError("Cloud API 2 response too large")
+                            chunks.append(chunk)
                     devices = normalize_devices(
-                        response.json(),
+                        json.loads(b"".join(chunks)),
                         stale_after_seconds=self.settings.stale_after_seconds,
                     )
                 self._cached = devices
@@ -243,5 +253,23 @@ class CloudApi2Bridge:
             return self._response()
 
     def _response(self) -> dict:
+        # A 15-second cache must not freeze the 'fresh' classification.
+        # Recompute age using the SDK's lastOsdAt event time on every read.
+        now = datetime.now(timezone.utc)
+        devices = []
+        for cached in self._cached:
+            row = dict(cached)
+            sample_at = _date(row.get("received_at"))
+            if sample_at is not None and row["freshness"] != "missing":
+                age = (now - sample_at).total_seconds()
+                row["freshness"] = (
+                    "clock_skew" if age < -1 else
+                    "fresh" if age <= self.settings.stale_after_seconds else "stale"
+                )
+                row["age_seconds"] = round(max(age, 0), 2) if age >= 0 else None
+            row["online"] = (
+                row["reported_online"] if row["freshness"] == "fresh" else None
+            )
+            devices.append(row)
         return {"state": self._status, "source": "dji-cloud-api-2",
-                "devices": list(self._cached), "total": len(self._cached)}
+                "devices": devices, "total": len(devices)}
