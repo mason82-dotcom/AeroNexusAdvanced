@@ -1,7 +1,7 @@
-"""Self-contained, auto-refreshing read-only fleet status web page.
+"""Auto-refreshing read-only fleet dashboard for trusted HTTPS LAN clients.
 
-The dashboard API remains separately authenticated for device details.
-The browser holds the dashboard token in memory only (no localStorage).
+The frontend has no token form, cookie or credential storage. The backend
+enforces an explicitly enabled, direct-to-Pi LAN policy.
 """
 
 
@@ -108,19 +108,14 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <div class="metric"><span>HMS-Warnungen</span><b id="health">–</b></div>
 </section>
 <section class="panel">
-<h2>Geschützte Gerätedetails</h2>
-<p class="subtle">Separaten AeroNexus-Status-Token eingeben, nicht den DJI-Zugriffstoken. Der Token bleibt ausschließlich im Arbeitsspeicher dieses Browser-Tabs.</p>
-<div class="controls">
-<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="AeroNexus-Status-Token" aria-label="Status-Zugriffstoken">
-<button id="connect" type="button">Details laden</button>
-<button id="disconnect" type="button">Trennen</button>
-<span id="message" class="meta" role="status">Details noch nicht verbunden</span>
-</div>
+<h2>Lokaler Flottenzugriff</h2>
+<p class="subtle">Geräte, Telemetrie und Projektbibliothek werden im freigegebenen HTTPS-Heimnetz automatisch geladen. Keine Token-Eingabe erforderlich.</p>
+<span id="message" class="meta" role="status">Lade Gerätedetails und Bibliothek…</span>
 </section>
 <section class="panel">
 <h2>Geräte und Telemetrie</h2>
-<div class="subtle" id="device-info">Es werden ausschließlich freigegebene, authentifizierte Gerätedaten angezeigt.</div>
-<div id="device-cards" class="device-grid" aria-label="Gerätekarten"><div class="device-empty">Zum Laden der Gerätekarten mit dem Status-Token verbinden.</div></div>
+<div class="subtle" id="device-info">Die Daten werden über die lokale AeroNexus-Schnittstelle geladen.</div>
+<div id="device-cards" class="device-grid" aria-label="Gerätekarten"><div class="device-empty">Gerätekarten werden geladen…</div></div>
 <details class="raw-table"><summary>Technische Gerätetabelle anzeigen</summary>
 <div class="scroller">
 <table>
@@ -132,7 +127,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 </section>
 <section class="panel" id="catalog-panel" hidden>
 <h2>FlightHub-Bibliothek</h2>
-<div class="subtle" id="catalog-info" role="status">Die Projektbibliothek wird nur nach erfolgreicher Anmeldung geladen.</div>
+<div class="subtle" id="catalog-info" role="status">Projektbibliothek wird automatisch geladen.</div>
 <section class="catalog-section" aria-labelledby="wayline-heading">
 <div class="catalog-heading"><h3 id="wayline-heading">Routen</h3><span class="catalog-count" id="wayline-count">–</span></div>
 <div class="catalog-grid" id="wayline-cards"></div>
@@ -157,7 +152,6 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <script>
 "use strict";
 const intervalMs = __INTERVAL_MILLISECONDS__;
-let accessToken = "";
 let sessionEpoch=0;
 let devicesRequest=0;
 let catalogRequest=0;
@@ -200,11 +194,10 @@ function date(sec){return sec?new Date(sec*1000).toISOString().slice(0,16).repla
 function rowOf(body,values){const row=document.createElement("tr");values.forEach(v=>cell(row,v));body.appendChild(row);return row;}
 function placeholder(body,cols,text){const row=document.createElement("tr");const td=cell(row,text);td.colSpan=cols;td.className="subtle";body.appendChild(row);}
 async function downloadTrack(project,task,name){
-  if(!accessToken)return;
-  const token=accessToken,epoch=sessionEpoch;
+  const epoch=sessionEpoch;
   try{
     const r=await fetch("/api/v1/flighthub/projects/"+encodeURIComponent(project)+"/tasks/"+encodeURIComponent(task)+"/track",
-      {cache:"no-store",headers:{"Authorization":"Bearer "+token}});
+      {cache:"no-store"});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const geojson=await r.text();
     if(epoch!==sessionEpoch)return; // disconnect must prevent late file downloads
@@ -272,12 +265,11 @@ function renderCatalogCards(project,cards,counts){
 }
 
 async function updateCatalog() {
-  if(!accessToken)return;
-  const token=accessToken,epoch=sessionEpoch,request=++catalogRequest;
+  const epoch=sessionEpoch,request=++catalogRequest;
   const lists={waylines:byId("waylines"),models:byId("models"),tasks:byId("tasks")};
   const cards={waylines:byId("wayline-cards"),models:byId("model-cards"),tasks:byId("task-cards")};
   try{
-    const r=await fetch("/api/v1/flighthub/catalog",{cache:"no-store",headers:{"Authorization":"Bearer "+token}});
+    const r=await fetch("/api/v1/flighthub/catalog",{cache:"no-store"});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();
     if(epoch!==sessionEpoch||request!==catalogRequest)return;
@@ -472,12 +464,9 @@ async function updateSummary() {
   } catch (_) {byId("timestamp").textContent="Status-API nicht erreichbar";byId("poll-health").textContent="DJI-Polling-Status nicht erreichbar";}
 }
 async function updateDevices() {
-  if(!accessToken)return;
-  const token=accessToken,epoch=sessionEpoch,request=++devicesRequest;
+  const epoch=sessionEpoch,request=++devicesRequest;
   try {
-    const r=await fetch("/api/v1/status/devices?limit=200",{
-      cache:"no-store",headers:{"Authorization":"Bearer "+token}
-    });
+    const r=await fetch("/api/v1/status/devices?limit=200",{cache:"no-store"});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();
     if(epoch!==sessionEpoch||request!==devicesRequest)return;
@@ -516,26 +505,10 @@ async function updateDevices() {
     byId("message").textContent="Details nicht verfügbar ("+e.message+").";
   }
 }
-byId("connect").addEventListener("click",()=>{
-  const token=byId("token").value;
-  if(!token){byId("message").textContent="Bitte Status-Token eingeben.";return;}
-  sessionEpoch++;accessToken=token;byId("token").value="";
-  byId("catalog-panel").hidden=true;
-  ["waylines","models","tasks","wayline-cards","model-cards","task-cards","devices"].forEach(
-    id=>byId(id).replaceChildren());
-  byId("device-cards").replaceChildren();
-  byId("message").textContent="Geräte und Bibliothek werden geladen...";
-  byId("device-info").textContent="Lade geschützte Gerätedetails...";
-  updateDevices();updateCatalog();
-});
-byId("disconnect").addEventListener("click",()=>{
-  sessionEpoch++;accessToken="";byId("token").value="";byId("devices").replaceChildren();
-  byId("device-cards").replaceChildren();
-  ["waylines","models","tasks","wayline-cards","model-cards","task-cards"].forEach(id=>byId(id).replaceChildren());
-  byId("catalog-panel").hidden=true;
-  ["wayline-count","model-count","task-count"].forEach(id=>byId(id).textContent="–");
-  byId("device-info").textContent="Details getrennt.";byId("catalog-info").textContent="Bibliothek getrennt.";byId("message").textContent="Getrennt";
-});
+// All dashboard sections load automatically for trusted HTTPS LAN browsers.
+byId("message").textContent="Gerätedaten werden automatisch geladen…";
+updateDevices();
+updateCatalog();
 updateSummary();
 setInterval(()=>{updateSummary();updateDevices();},intervalMs);
 setInterval(updateCatalog,60000);
