@@ -86,6 +86,7 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .geo-list{display:flex;flex-direction:column;gap:6px;margin:12px 0}
 .geo-row{display:flex;align-items:center;gap:8px;padding:8px;background:#142b42;border:1px solid #395a78;border-radius:8px}
 .geo-row span{flex:1;min-width:0;overflow-wrap:anywhere}
+.geo-vertex{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;border:2px solid #ffffff;background:#ffad65;color:#142132;font-size:11px;font-weight:800;box-shadow:0 1px 6px #0007;cursor:move}
 #terrain-canvas{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c}
 .geo-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.geo-buttons button{flex:1}
 .editor-dirty{font-size:12px;padding:6px 9px;border-radius:7px;color:#a0efcf;background:#123e34;border:1px solid #316d56}
@@ -186,8 +187,10 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <label>Geometrietyp<select id="geo-kind"><option value="polygon">Polygon / Fläche</option><option value="line">Linie</option><option value="point">Punkt</option><option value="circle">Kreis</option></select></label>
 <label>Kreisradius (m)<input id="geo-radius" type="number" min="1" max="5000" value="50"></label>
 </div>
-<div class="geo-buttons"><button id="geo-draw">Punkte auf Karte setzen</button><button id="geo-reset">Punkte verwerfen</button></div>
+<div class="geo-buttons"><button id="geo-draw">Punkte auf Karte setzen</button><button id="geo-undo-vertex">Letzten Punkt entfernen</button><button id="geo-reset">Entwurf verwerfen</button></div>
 <div id="geo-draft-status" class="note" role="status">Noch keine Geo-Punkte gesetzt.</div>
+<div id="geo-draft-points" class="geo-list" aria-label="Stützpunkte des Geo-Entwurfs"></div>
+<p class="note">Eckpunkte auf der Karte verschieben oder einzeln aus der Liste entfernen. Gespeicherte Objekte werden erst durch „Speichern“ aktualisiert.</p>
 <button id="geo-save" class="primary" style="width:100%">Geo-Objekt speichern</button>
 <h2>Lokale Geo-Objekte</h2><div id="geo-list" class="geo-list"></div>
 <hr><h2>Parallele Flugstreifen · Vorschau</h2>
@@ -923,6 +926,14 @@ function setGeoMode(enabled){
 function redrawGeo(){
   $("geo-draft-status").textContent=geoDraft.length+" Koordinaten im Entwurf · "+$("geo-kind").value+
     ". Zum Speichern Kartenmodus beenden.";
+  const list=$("geo-draft-points");list.replaceChildren();
+  geoDraft.forEach((point,index)=>{
+    const row=cardText(list,"div","geo-row");
+    cardText(row,"span","",String(index+1)+": "+point.latitude.toFixed(7)+", "+point.longitude.toFixed(7));
+    const remove=cardText(row,"button","danger","Entfernen");
+    remove.addEventListener("click",()=>{geoDraft.splice(index,1);redrawGeo();});
+  });
+  $("geo-undo-vertex").disabled=geoDraft.length===0;
   if(!geoLayer||!map)return;
   geoLayer.clearLayers();
   const draw=(points,kind,label,draft=false,radius=0)=>{
@@ -934,7 +945,22 @@ function redrawGeo(){
     else if(kind==="circle"&&coords.length===1)shape=L.circle(coords[0],{...style,radius});
     else if(coords.length===1)shape=L.circleMarker(coords[0],{...style,radius:6});
     if(shape)shape.bindTooltip(label).addTo(geoLayer);
-    if(draft)coords.forEach(p=>L.circleMarker(p,{color:"#ffc878",radius:4}).addTo(geoLayer));
+    if(draft)coords.forEach((p,index)=>{
+      // Draggable draft vertices only; saved geometry stays unchanged until save.
+      L.marker(p,{draggable:true,autoPan:true,
+        icon:L.divIcon({className:"geo-vertex",html:"+" ,iconSize:[18,18],iconAnchor:[9,9]})})
+        .bindTooltip("Eckpunkt "+(index+1)+" verschieben")
+        .on("dragend",event=>{
+          const moved=event.target.getLatLng();
+          const lat=+moved.lat.toFixed(7);
+          const lon=+(((((moved.lng+540)%360)+360)%360)-180).toFixed(7);
+          if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)){
+            redrawGeo();return;
+          }
+          geoDraft[index]={latitude:lat,longitude:lon};
+          redrawGeo();
+        }).addTo(geoLayer);
+    });
   };
   for(const row of geoObjects){
     if(row.id===geoEditingId)continue;
@@ -957,6 +983,8 @@ async function loadGeoObjects(){
     cardText(row,"span","",obj.name+" · "+obj.kind+" · "+obj.vertices.length+" Punkte");
     const edit=cardText(row,"button","","Bearbeiten");
     edit.addEventListener("click",()=>{
+      if(geoDraft.length&&(!geoEditingId||geoEditingId!==item.id)&&
+         !window.confirm("Ungespeicherten Geo-Entwurf verwerfen?"))return;
       geoEditingId=item.id;
       $("geo-name").value=obj.name;
       $("geo-kind").value=obj.kind;
@@ -984,11 +1012,21 @@ async function saveGeoObject(){
   const kind=$("geo-kind").value;
   const obj={name:$("geo-name").value.trim(),kind,vertices:geoDraft.slice(),
     radius_m:kind==="circle"?Number($("geo-radius").value):null};
-  const path="/api/v1/studio/geo-objects"+(geoEditingId?"/"+encodeURIComponent(geoEditingId):"");
+  const editingId=geoEditingId;
+  const saveSignature=JSON.stringify([geoDraft,$("geo-name").value,
+    $("geo-kind").value,$("geo-radius").value]);
+  const path="/api/v1/studio/geo-objects"+(editingId?"/"+encodeURIComponent(editingId):"");
   const r=await api(path,{
-    method:geoEditingId?"PUT":"POST",
+    method:editingId?"PUT":"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
   const saved=await r.json();
+  // A completed request must not wipe points drawn while the save was pending.
+  if(geoEditingId!==editingId||JSON.stringify([geoDraft,$("geo-name").value,
+      $("geo-kind").value,$("geo-radius").value])!==saveSignature){
+    await loadGeoObjects();
+    $("geo-draft-status").textContent="Gespeicherte frühere Version. Der aktuelle Geo-Entwurf blieb erhalten.";
+    return;
+  }
   geoDraft=[];geoEditingId=null;setGeoMode(false);await loadGeoObjects();
   if(kind==="polygon")$("survey-object").value=saved.id;
   $("geo-draft-status").textContent="Geo-Objekt gespeichert (nur lokal).";
@@ -1129,7 +1167,7 @@ function wire(){
     $(id).addEventListener("change",()=>historyRecord());
   }
   window.addEventListener("beforeunload",e=>{
-    if(!editorDirty())return;
+    if(!editorDirty()&&geoDraft.length===0&&geoEditingId===null)return;
     e.preventDefault();
     e.returnValue="";
   });
@@ -1179,7 +1217,11 @@ function wire(){
     }catch(_){notice("Kopieren nicht möglich. Koordinaten im Editor markieren.",true);}
   });
   $("geo-draw").addEventListener("click",()=>setGeoMode(!geoDraw));
-  $("geo-reset").addEventListener("click",()=>{geoDraft=[];geoEditingId=null;setGeoMode(false);redrawGeo();});
+  $("geo-reset").addEventListener("click",()=>{
+    if(geoDraft.length&&!window.confirm("Ungespeicherten Geo-Entwurf verwerfen?"))return;
+    geoDraft=[];geoEditingId=null;setGeoMode(false);redrawGeo();
+  });
+  $("geo-undo-vertex").addEventListener("click",()=>{geoDraft.pop();redrawGeo();});
   $("geo-save").addEventListener("click",()=>saveGeoObject().catch(err=>$("geo-draft-status").textContent=err.message));
   $("geo-kind").addEventListener("change",redrawGeo);
   $("survey-generate").addEventListener("click",()=>surveyPreview().catch(err=>$("survey-message").textContent=err.message));
