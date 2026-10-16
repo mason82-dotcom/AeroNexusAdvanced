@@ -77,3 +77,32 @@ def test_reject_invalid_responses(monkeypatch, payload):
     monkeypatch.setattr(httpx, "AsyncClient", Client)
     with pytest.raises(ReadOnlyTransportError):
         asyncio.run(transport().get(PATH))
+
+
+@pytest.mark.parametrize("project_uuid", ["../unsafe", "", 42])
+def test_reject_invalid_project_uuid(project_uuid):
+    import asyncio
+    with pytest.raises(ValueError, match="UUID"):
+        asyncio.run(transport().get(PATH, project_uuid=project_uuid))
+
+
+def test_project_uuid_header_for_approved_get(monkeypatch):
+    import asyncio
+    captured = {}
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return False
+        async def get(self, path, **kwargs):
+            captured.update(kwargs["headers"])
+            return httpx.Response(200, json={"code": 0, "data": {"list": []}},
+                                  request=httpx.Request("GET", "https://dji.example" + path))
+    monkeypatch.setattr(httpx, "AsyncClient", Client)
+    project = "93df839d-ae74-4f04-842e-2f1f81c89a66"
+    result = asyncio.run(transport().get(PATH, project_uuid=project))
+    assert result["code"] == 0
+    assert captured["X-Project-Uuid"] == project
+    assert captured["X-User-Token"] == "secret"
