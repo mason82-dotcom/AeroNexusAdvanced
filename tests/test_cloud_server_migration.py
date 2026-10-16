@@ -47,7 +47,7 @@ def fake_source(tmp_path):
     target_parent.mkdir()
     for rel in migration.REQUIRED:
         path = source / rel
-        if path.suffix in (".env", ".yml", ".conf", ".csv", ".sh"):
+        if path.name == ".env" or path.suffix in (".yml", ".conf", ".csv", ".sh"):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("conf\n")
         else:
