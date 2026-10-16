@@ -75,6 +75,7 @@ class WaypointMission(BaseModel):
     takeoff_security_height_m: float = Field(default=20.0, ge=1.2, le=1500)
     rth_height_m: float = Field(default=60.0, ge=2, le=500)
     finish_action: Literal["goHome", "noAction"] = "goHome"
+    close_route: bool = False  # extra real return-to-first waypoint in exported WPML
     waypoints: list[Waypoint] = Field(default_factory=list, max_length=500)
 
     @field_validator("altitude_m", "speed_mps", "takeoff_security_height_m", "rth_height_m")
@@ -90,6 +91,22 @@ class WaypointMission(BaseModel):
         if not value.strip():
             raise ValueError("Mission name is required")
         return value.strip()
+
+
+def waypoints_for_export(mission: WaypointMission) -> list[Waypoint]:
+    """Resolved flight route, not just a drawn polygon.
+
+    A closed route ends with a genuine executable WPML waypoint at the first
+    waypoint's location. Never automatically repeat the first photo action.
+    Keep user waypoints separate so turning the option off is reversible.
+    """
+    points = list(mission.waypoints)
+    if mission.close_route and len(points) >= 2:
+        first, last = points[0], points[-1]
+        if (first.latitude, first.longitude) != (last.latitude, last.longitude):
+            points.append(Waypoint(latitude=first.latitude,
+                                   longitude=first.longitude, take_photo=False))
+    return points
 
 
 def _mission_config(doc: ET.Element, mission: WaypointMission) -> None:
@@ -163,7 +180,7 @@ def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int) -> byte
         _set(folder, "executeHeightMode", "relativeToStartPoint")
         _set(folder, "waylineId", 0)
         _set(folder, "autoFlightSpeed", _num(mission.speed_mps))
-    for index, wp in enumerate(mission.waypoints):
+    for index, wp in enumerate(waypoints_for_export(mission)):
         place = ET.SubElement(folder, _k("Placemark"))
         point = ET.SubElement(place, _k("Point"))
         ET.SubElement(point, _k("coordinates")).text = (
@@ -194,8 +211,14 @@ def export_kmz(mission: WaypointMission, *, timestamp_ms: int) -> bytes:
     This is an interoperable WPML waypoint subset, not a DJI flight-safety
     validation or guaranteed firmware compatibility certification.
     """
-    if not 2 <= len(mission.waypoints) <= 500:
-        raise ValueError("WPML export requires between 2 and 500 waypoints")
+    resolved = waypoints_for_export(mission)
+    if not 2 <= len(resolved) <= 500:
+        raise ValueError("WPML export requires between 2 and 500 executed waypoints")
+    if mission.close_route:
+        # Closing a route is meaningful only with at least 3 distinct points.
+        coordinates = {(point.latitude, point.longitude) for point in mission.waypoints}
+        if len(coordinates) < 3:
+            raise ValueError("Closing a route requires at least 3 distinct waypoints")
     if timestamp_ms < 0:
         raise ValueError("Invalid timestamp")
     buffer = BytesIO()
@@ -286,6 +309,19 @@ def import_kmz(data: bytes) -> WaypointMission:
             raise ValueError("Invalid WGS84 waypoint") from exc
         waypoints.append({"latitude": lat, "longitude": lon,
                           "take_photo": bool(actions)})
+    # AeroNexus exports "close route" as the actual final flight waypoint.
+    # Recover the option from that final duplicate only when no camera action
+    # would be discarded. Older explicitly repeated finish points may be
+    # normalized to the same flight path with a separate reversible switch.
+    closed = (
+        len(waypoints) >= 4
+        and (waypoints[-1]["latitude"], waypoints[-1]["longitude"])
+            == (waypoints[0]["latitude"], waypoints[0]["longitude"])
+        and not waypoints[-1]["take_photo"]
+        and len({(point["latitude"], point["longitude"]) for point in waypoints[:-1]}) >= 3
+    )
+    if closed:
+        waypoints.pop()
     doc = template.find(_k("Document"))
     name = doc.findtext(_k("name")) if doc is not None else None
     description = doc.findtext(_k("description")) if doc is not None else None
@@ -298,5 +334,6 @@ def import_kmz(data: bytes) -> WaypointMission:
         "takeoff_security_height_m": float(txt(route, ".//" + _w("takeOffSecurityHeight"))),
         "rth_height_m": float(txt(route, ".//" + _w("globalRTHHeight"))),
         "finish_action": txt(route, ".//" + _w("finishAction")),
+        "close_route": closed,
         "waypoints": waypoints,
     })
