@@ -1,6 +1,6 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 16. Oktober 2026  
+**Stand:** 17. Oktober 2026  
 **Phase:** 17 (Mission Studio: P1 GeoObjekte/GeoPhoto, P2 lokale
 Flächenflugstreifen und WSS-Cache-Ereignisse, P4 GeoTIFF-/STL-Vorschau)
 nach PR #4 in main integriert und in GitHub Actions getestet.
@@ -11,9 +11,10 @@ Phase 9 Cloud-MQTT und optionaler Cloud API 2 BFF bleiben deaktiviert.
 **Letzter dokumentierter Pi-Teststand:** **541 Tests, 1 Warnung**
 (Phase 16, vor RTK-Scroll-Korrektur), systemd-Dienst `active`.
 DJI Matrice 4T im Operations Center live bestätigt.
-**Aktueller GitHub-Actions-Teststand:** **579 Tests, 1 Warnung**
-(Python 3.12; PR #4 einschließlich Phase 17). Ein Pi-/Chrome-Test
-der neu integrierten Funktionen sowie der RTK-Scroll-Korrektur steht aus.
+**Bekannter GitHub-Actions-Teststand:** Phase-17-Merge **579 Tests,
+1 Warnung** (PR #4); späterer Main-Stand einschließlich weiterer DJI-
+Erweiterungen **606 Tests, 1 Warnung** (PR #8, Python 3.12).
+Neue Pi-Tests/Chrome-Abnahme für Phase 17 stehen weiterhin aus.
 
 ## Bestätigt auf Raspberry Pi 5
 
@@ -285,6 +286,22 @@ der neu integrierten Funktionen sowie der RTK-Scroll-Korrektur steht aus.
   verifiziert werden. Die per-Gerät-Frischemarkierung enthält noch keine
   getrennten Empfangsalter je `osd` und `state`-Eigenschaft.
   Details: `docs/phase-9-cloud-api-live-feed.md`.
+
+## Phase 17 – Pi-Bereitschaft (in Entwicklung, 17.10.2026)
+
+- Die Phase-17-Geo-Objekt- und GeoPhoto-Module, reine Survey-Vorschau,
+  optionale LAN-Statusereignisse und optionale GeoTIFF/STL-Vorschau sind
+  seit PR #4 Teil von `main`.
+- Weiterer Prüfbranch: begrenzter DEM-Decoder (max. 4 Mio. Rasterpixel,
+  keine gedrehten Raster, klar definierter WGS84-Bezug), verbesserter
+  Geo-Editor mit verschiebbaren und entfernbaren Polygonpunkten sowie
+  ein **nicht destruktiver** Raspberry-Pi-5-Diagnoseablauf.
+- Pi-Skript: `bash scripts/pi/phase17-smoke.sh`; optional gesicherte
+  HTTPS-Liveprüfung: `PHASE17_CHECK_LIVE=1 bash scripts/pi/phase17-smoke.sh`.
+- Anleitung: `docs/phase-17-pi-validation.md`.
+- Weiterhin **nicht** automatisch aktiv: DJI-Flugoperationen, Survey-WPML,
+  WebSocket ohne explizites Opt-in, GDAL ohne verifizierte Python-Abhängigkeiten.
+- Echte Pi-/Chrome-/GDAL-Tests der neuen Oberfläche sind noch erforderlich.
 
 ## Nicht live verifiziert
 
