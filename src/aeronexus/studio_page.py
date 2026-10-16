@@ -86,6 +86,7 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .geo-list{display:flex;flex-direction:column;gap:6px;margin:12px 0}
 .geo-row{display:flex;align-items:center;gap:8px;padding:8px;background:#142b42;border:1px solid #395a78;border-radius:8px}
 .geo-row span{flex:1;min-width:0;overflow-wrap:anywhere}
+.geo-vertex{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;border:2px solid #ffffff;background:#ffad65;color:#142132;font-size:11px;font-weight:800;box-shadow:0 1px 6px #0007;cursor:move}
 #terrain-canvas{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c}
 .geo-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.geo-buttons button{flex:1}
 .editor-dirty{font-size:12px;padding:6px 9px;border-radius:7px;color:#a0efcf;background:#123e34;border:1px solid #316d56}
@@ -946,7 +947,8 @@ function redrawGeo(){
     if(shape)shape.bindTooltip(label).addTo(geoLayer);
     if(draft)coords.forEach((p,index)=>{
       // Draggable draft vertices only; saved geometry stays unchanged until save.
-      L.marker(p,{draggable:true,autoPan:true})
+      L.marker(p,{draggable:true,autoPan:true,
+        icon:L.divIcon({className:"geo-vertex",html:"+" ,iconSize:[18,18],iconAnchor:[9,9]})})
         .bindTooltip("Eckpunkt "+(index+1)+" verschieben")
         .on("dragend",event=>{
           const moved=event.target.getLatLng();
@@ -1011,14 +1013,16 @@ async function saveGeoObject(){
   const obj={name:$("geo-name").value.trim(),kind,vertices:geoDraft.slice(),
     radius_m:kind==="circle"?Number($("geo-radius").value):null};
   const editingId=geoEditingId;
-  const saveVertices=JSON.stringify(geoDraft);
+  const saveSignature=JSON.stringify([geoDraft,$("geo-name").value,
+    $("geo-kind").value,$("geo-radius").value]);
   const path="/api/v1/studio/geo-objects"+(editingId?"/"+encodeURIComponent(editingId):"");
   const r=await api(path,{
     method:editingId?"PUT":"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
   const saved=await r.json();
   // A completed request must not wipe points drawn while the save was pending.
-  if(geoEditingId!==editingId||JSON.stringify(geoDraft)!==saveVertices){
+  if(geoEditingId!==editingId||JSON.stringify([geoDraft,$("geo-name").value,
+      $("geo-kind").value,$("geo-radius").value])!==saveSignature){
     await loadGeoObjects();
     $("geo-draft-status").textContent="Gespeicherte frühere Version. Der aktuelle Geo-Entwurf blieb erhalten.";
     return;
@@ -1163,7 +1167,7 @@ function wire(){
     $(id).addEventListener("change",()=>historyRecord());
   }
   window.addEventListener("beforeunload",e=>{
-    if(!editorDirty())return;
+    if(!editorDirty()&&geoDraft.length===0&&geoEditingId===null)return;
     e.preventDefault();
     e.returnValue="";
   });
