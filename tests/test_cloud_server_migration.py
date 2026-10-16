@@ -131,6 +131,8 @@ def test_never_automatically_starts_or_deletes_original_server():
     assert "copy_cold(source, partial)" in text
     assert "validate_compose(partial, source)" in text
     assert "partial.rename(target)" in text
+    assert 'edge/docker-compose.legacy.yml' in text
+    assert 'edge/docker-compose.yml' in text
 
 
 def test_minimal_compose_is_isolated_and_uses_local_images():
