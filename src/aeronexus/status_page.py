@@ -51,6 +51,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 .device-battery .battery-label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
 .device-battery progress{display:block;width:100%;height:10px;accent-color:#5ac69c}
 .device-battery progress.low{accent-color:#ef9e68}
+.device-battery progress.caution{accent-color:#e8c06b}
 .device-alerts{margin-top:13px;border-top:1px solid #31465e;padding-top:10px}
 .device-alerts ul{padding-left:18px;margin:8px 0 0}
 .device-alerts li{font-size:12px;line-height:1.5;margin:5px 0;overflow-wrap:anywhere}
@@ -382,9 +383,11 @@ function renderDeviceCards(devices) {
       const label=cardEl(wrap,"div","battery-label");
       cardEl(label,"span","","Akku (letzter Messwert)");
       cardEl(label,"b","",battery.toFixed(0)+" %");
-      const bar=cardEl(wrap,"progress",battery<=20?"low":"");
+      const bar=cardEl(wrap,"progress",battery<=20?"low":battery<=30?"caution":"");
       bar.max=100;bar.value=battery;
       bar.setAttribute("aria-label","Akkustand "+battery.toFixed(0)+" Prozent");
+      if(battery<=30)cardEl(wrap,"div","hms-secondary",
+        "AeroNexus-Farbhinweis: niedriger Akkustand. Keine DJI-Flugfreigabe oder Warnschwelle.");
     }
     const values=cardEl(card,"div","device-values");
     const mode=t.flight_mode_code;
@@ -516,7 +519,14 @@ async function updateDevices() {
 byId("connect").addEventListener("click",()=>{
   const token=byId("token").value;
   if(!token){byId("message").textContent="Bitte Status-Token eingeben.";return;}
-  sessionEpoch++;accessToken=token;byId("token").value="";updateDevices();updateCatalog();
+  sessionEpoch++;accessToken=token;byId("token").value="";
+  byId("catalog-panel").hidden=true;
+  ["waylines","models","tasks","wayline-cards","model-cards","task-cards","devices"].forEach(
+    id=>byId(id).replaceChildren());
+  byId("device-cards").replaceChildren();
+  byId("message").textContent="Geräte und Bibliothek werden geladen...";
+  byId("device-info").textContent="Lade geschützte Gerätedetails...";
+  updateDevices();updateCatalog();
 });
 byId("disconnect").addEventListener("click",()=>{
   sessionEpoch++;accessToken="";byId("token").value="";byId("devices").replaceChildren();
