@@ -58,6 +58,31 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 .device-alerts li.reminder{color:#ffcd7b}
 .device-empty{padding:16px;border:1px dashed #49627e;border-radius:10px;color:#abc0d5}
 .raw-table{max-width:none}.raw-table>summary{cursor:pointer;color:#bbd4ed;font-size:14px;margin:8px 0}
+
+.catalog-section{margin:22px 0 0}
+.catalog-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.catalog-heading h3{margin:0}
+.catalog-count{font-size:12px;border:1px solid #486078;border-radius:20px;padding:3px 9px;color:#cbdced}
+.catalog-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}
+.catalog-card{min-width:0;border:1px solid #3b506a;border-radius:12px;background:#102034;padding:14px}
+.catalog-card h4{margin:0;color:#f0f6ff;font-size:16px;overflow-wrap:anywhere}
+.catalog-meta{font-size:12px;color:#b5c8dd;margin:6px 0 10px;overflow-wrap:anywhere}
+.catalog-tags{display:flex;flex-wrap:wrap;gap:6px}
+.catalog-tag{border:1px solid #405b78;border-radius:7px;padding:5px 7px;font-size:12px;overflow-wrap:anywhere}
+.catalog-status{font-size:13px;color:#adbfda;padding:10px 0}
+.catalog-raw{max-width:none;margin-top:10px}
+.catalog-raw summary{color:#abcbe7;font-size:13px;cursor:pointer;padding:8px 0}
+.catalog-card button{margin-top:12px;width:100%}
+.hms-list{display:grid;gap:8px;margin-top:10px}
+.hms-entry{border:1px solid #40546c;border-radius:9px;padding:10px;overflow-wrap:anywhere}
+.hms-entry[data-level="warning"]{border-left:4px solid #f3a2a0}
+.hms-entry[data-level="reminder"]{border-left:4px solid #eabf76}
+.hms-entry[data-level="notification"]{border-left:4px solid #82b9e6}
+.hms-heading{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-size:12px}
+.hms-code{color:#b4c9e2;font-size:12px}
+.hms-description{font-size:13px;margin-top:7px;overflow-wrap:anywhere}
+.hms-secondary{color:#9faec4;font-size:12px;margin-top:7px}
+.catalog-grid>.device-empty{grid-column:1/-1}
 #poll-health{margin-top:12px}
 @media(max-width:650px){body{padding:12px}.panel{padding:14px;margin:14px 0}.grid{gap:8px}.metric{padding:12px}.metric b{font-size:22px}.controls input{width:100%}}
 </style>
@@ -104,15 +129,27 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 </div>
 </details>
 </section>
-<section class="panel">
+<section class="panel" id="catalog-panel" hidden>
 <h2>FlightHub-Bibliothek</h2>
-<div class="subtle" id="catalog-info">Nach dem Verbinden: Routen, Karten-Modelle und Flugaufträge der FlightHub-Projekte (nur lesen).</div>
-<h3>Routen</h3>
+<div class="subtle" id="catalog-info" role="status">Die Projektbibliothek wird nur nach erfolgreicher Anmeldung geladen.</div>
+<section class="catalog-section" aria-labelledby="wayline-heading">
+<div class="catalog-heading"><h3 id="wayline-heading">Routen</h3><span class="catalog-count" id="wayline-count">–</span></div>
+<div class="catalog-grid" id="wayline-cards"></div>
+<details class="catalog-raw"><summary>Routentabelle anzeigen</summary>
 <div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Typ</th><th>Fluggerät</th><th>Linsen</th><th>Geändert</th><th>Größe</th></tr></thead><tbody id="waylines"></tbody></table></div>
-<h3>Karten-Modelle</h3>
+</details></section>
+<section class="catalog-section" aria-labelledby="model-heading">
+<div class="catalog-heading"><h3 id="model-heading">Karten-Modelle</h3><span class="catalog-count" id="model-count">–</span></div>
+<div class="catalog-grid" id="model-cards"></div>
+<details class="catalog-raw"><summary>Modelltabelle anzeigen</summary>
 <div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Typ</th><th>Auf Karte</th><th>Geändert</th><th>Größe</th></tr></thead><tbody id="models"></tbody></table></div>
-<h3>Flugaufträge</h3>
+</details></section>
+<section class="catalog-section" aria-labelledby="task-heading">
+<div class="catalog-heading"><h3 id="task-heading">Flugaufträge</h3><span class="catalog-count" id="task-count">–</span></div>
+<div class="catalog-grid" id="task-cards"></div>
+<details class="catalog-raw"><summary>Auftragstabelle anzeigen</summary>
 <div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Art</th><th>Status</th><th>Gestartet</th><th>Wegpunkte</th><th>Flugspur</th></tr></thead><tbody id="tasks"></tbody></table></div>
+</details></section>
 </section>
 <footer>Zeitstempel = Eingang bei AeroNexus, nicht DJI-Ereigniszeit. Veraltete Messwerte sind keine Live-Werte. Die Anzeige ruft selbst keine DJI-Endpunkte auf.</footer>
 </main>
