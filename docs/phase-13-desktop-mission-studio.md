@@ -25,7 +25,24 @@ browser validation on the Raspberry Pi still pending.
 ### Interactive mission map
 
 - Dark desktop console with persistent left sidebar and full-size map.
-- OpenStreetMap streets or Esri satellite imagery.
+- **Every fresh page opening starts centered on 76694 Forst (Baden)**,
+  approximate town-centre WGS84 coordinates **49.1533 N, 8.58417 E** at
+  zoom **15**. The **„76694 Forst“** map button resets the view there.
+  Saved missions can still be deliberately centred with „Mission zentrieren“.
+  This is only a **map viewport**, never an aircraft homepoint or flight
+  takeoff coordinate; users must set any actual route waypoints manually.
+- **Esri World Imagery satellite tiles are now the default**;
+  OpenStreetMap street tiles are optional. The old map default caused
+  visible 403 blocked tile graphics on Chrome.
+- The optional OSM layer uses Leaflet's
+  `referrerPolicy: "strict-origin-when-cross-origin"` so the OSMF tile
+  server can identify the HTTPS site without receiving page paths or
+  credentials, as required by the
+  [official OSM tile-use policy](https://operations.osmfoundation.org/policies/tiles/).
+  A detected tile network error switches to satellite imagery.
+  OSM can also return a denial graphic as a successful tile image, in
+  which case manually choose satellite from the map dropdown. We do not
+  circumvent an explicit OSM restriction or fetch tiles in bulk.
 - Click-to-place WGS84 waypoints, draggable markers, connected route line.
 - Edit coordinates, reorder/insert/remove waypoints, add optional
   **take-photo action** at each point, fit route to map.
