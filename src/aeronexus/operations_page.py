@@ -64,8 +64,10 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .cockpit>div b{font-size:17px;display:block;overflow-wrap:anywhere;margin-top:4px}
 .cockpit-status-row{margin:9px 0;gap:6px;flex-shrink:0}
 .cockpit-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;flex-shrink:0;margin:1px 0 10px}
-.cockpit-summary .hero-value{background:#102c46;border:1px solid #335773;border-radius:10px;padding:9px;min-width:0}
+.cockpit-summary .hero-value{background:#102c46;border:1px solid #335773;border-radius:10px;padding:7px 9px;min-width:0}
 .cockpit-summary .hero-value.battery{grid-column:1/-1}
+.right>.panel:first-child{flex:1.2}
+.right>.panel:last-child{flex:.8}
 .hero-value .hero-label{font-size:11px;color:#b4cce5;display:block}
 .hero-value strong{display:block;font-size:18px;overflow-wrap:anywhere;margin-top:3px}
 .hero-value.battery strong{font-size:23px}
