@@ -1,8 +1,8 @@
-"""Opt-in, read-only DJI Cloud API live feed over MQTT (OSD subscription only).
+"""Opt-in, read-only DJI Cloud API live feed over MQTT (OSD and optional state).
 
 Connects to the AeroNexus EMQX broker with a dedicated, ACL-restricted
-account (subscribe thing/product/+/osd, never publish) and feeds validated
-OSD telemetry into the local in-memory inventory. This module never
+account (subscribe thing/product/+/osd, optionally +/state, never publish) and
+feeds strictly mapped telemetry into the local in-memory inventory. This module never
 publishes MQTT messages; the client's publish method is disabled.
 
 paho-mqtt is an optional dependency (extra "mqtt"), imported only on start.
@@ -14,8 +14,8 @@ import ipaddress
 import os
 import secrets
 
-from .cloud_api_osd import (CloudOsdError, OSD_TOPIC, MAX_PAYLOAD_BYTES, classify,
-                            normalize_osd, osd_data, topic_serial)
+from .cloud_api_osd import (CloudOsdError, OSD_TOPIC, STATE_TOPIC, MAX_PAYLOAD_BYTES,
+                            classify, normalize_osd, osd_data, topic_device)
 from .inventory import DeviceType, Project
 from .providers import ProviderKind
 from .status_runtime import StatusRuntime, utc_iso, utc_now
@@ -39,6 +39,7 @@ class MqttSettings:
     tls: bool = False
     project_id: str = "aeronexus"
     max_devices: int = 50
+    include_state: bool = False
 
     def __post_init__(self):
         if not self.host or any(ch.isspace() for ch in self.host) or "/" in self.host:
@@ -54,6 +55,8 @@ class MqttSettings:
             raise ValueError("Project ID required")
         if type(self.max_devices) is not int or not 1 <= self.max_devices <= 500:
             raise ValueError("max_devices must be 1..500")
+        if type(self.include_state) is not bool:
+            raise ValueError("include_state must be boolean")
 
     def __repr__(self):
         return (f"MqttSettings(host={self.host!r}, port={self.port}, "
@@ -75,7 +78,11 @@ class MqttSettings:
             port = int(env.get("AERONEXUS_OSD_PORT", "1884"))
         except ValueError as exc:
             raise ValueError("Invalid MQTT broker port") from exc
+        state_setting = env.get("AERONEXUS_OSD_STATE_ENABLED", "0").strip().lower()
+        if state_setting not in (*_TRUE, "0", "false", "no", "off", ""):
+            raise ValueError("AERONEXUS_OSD_STATE_ENABLED must be 0 or 1")
         return cls(host=host, port=port, tls=tls,
+                   include_state=state_setting in _TRUE,
                    username=env.get("AERONEXUS_OSD_USERNAME", ""),
                    password=env.get("AERONEXUS_OSD_PASSWORD", ""),
                    project_id=env.get("AERONEXUS_CLOUD_PROJECT_ID", "aeronexus"))
@@ -106,19 +113,35 @@ class CloudOsdIngest:
         self.last_message_at: datetime | None = None
         runtime.inventory.add_project(Project(CLOUD, project_id, "AeroNexus (DJI Cloud API)"))
 
-    def handle(self, topic: str, payload: bytes) -> bool:
+    def handle(self, topic: str, payload: bytes, allow_state: bool = False) -> bool:
         inventory = self.runtime.inventory
         try:
-            serial = topic_serial(topic)
+            serial, channel = topic_device(topic)
+            if channel == "state" and not allow_state:
+                raise CloudOsdError("DJI state topic is not enabled")
             data = osd_data(payload)
-            kind = classify(data)
-            if kind is None:
-                self.ignored += 1
-                return False
+            classified = classify(data)
             known = inventory._devices.get((CLOUD, self.project_id, serial))
+            if channel == "state":
+                # A state-only packet cannot establish the kind or prove a fresh
+                # aircraft OSD sample. Only augment previously seen devices.
+                if known is None:
+                    self.ignored += 1
+                    return False
+                kind = known.kind
+                if classified is not None and classified != kind:
+                    raise CloudOsdError("State device type conflicts with known device")
+            else:
+                kind = classified
+                if kind is None:
+                    self.ignored += 1
+                    return False
             if known is None and len(inventory.devices(CLOUD, self.project_id)) >= self.max_devices:
                 raise CloudOsdError("Device limit reached")
             fields = normalize_osd(kind, data)
+            if channel == "state" and not fields:
+                self.ignored += 1
+                return False
             previous = inventory.telemetry(CLOUD, self.project_id, serial)
             base = {} if previous is None else {
                 key: value for key, value in vars(previous).items()
@@ -197,15 +220,21 @@ class CloudMqttFeed:
             self.state = "auth_failed"
             return
         self.state = "connected"
-        result = client.subscribe(OSD_TOPIC, qos=0)
+        topics = ([(OSD_TOPIC, 0), (STATE_TOPIC, 0)]
+                  if self.settings.include_state else OSD_TOPIC)
+        result = client.subscribe(topics, qos=0)
         if isinstance(result, tuple) and len(result) >= 2 and result[0] == 0:
             self._pending_mid = result[1]
+        else:
+            self.state = "subscription_denied"
 
     def on_subscribe(self, client, userdata, mid, reason_codes, properties=None):
         if self._pending_mid is None or mid != self._pending_mid:
             return
         self._pending_mid = None
-        granted = len(reason_codes) == 1 and _code(reason_codes[0]) in (0, 1, 2)
+        expected = 2 if self.settings.include_state else 1
+        granted = (len(reason_codes) == expected and
+                   all(_code(code) in (0, 1, 2) for code in reason_codes))
         self.state = "subscribed" if granted else "subscription_denied"
 
     def on_connect_fail(self, client, userdata):
@@ -224,7 +253,8 @@ class CloudMqttFeed:
         if not isinstance(payload, (bytes, bytearray)) or len(payload) > MAX_PAYLOAD_BYTES:
             return
         try:
-            self._loop.call_soon_threadsafe(self.ingest.handle, message.topic, bytes(payload))
+            self._loop.call_soon_threadsafe(
+                self.ingest.handle, message.topic, bytes(payload), self.settings.include_state)
         except RuntimeError:
             pass  # event loop closed during shutdown
 
@@ -233,6 +263,7 @@ class CloudMqttFeed:
         return {
             "source": "dji-cloud-api-mqtt",
             "state": self.state,
+            "state_topic_enabled": self.settings.include_state,
             "accepted": self.ingest.accepted,
             "rejected": self.ingest.rejected,
             "ignored": self.ingest.ignored,
