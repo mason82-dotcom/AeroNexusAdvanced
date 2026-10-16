@@ -8,6 +8,12 @@ browser or introduce any new provider endpoints, flight commands or dock support
 
 ## Dashboard: `/status`
 
+The root path `/` now returns an HTTP 307 redirect to `/status`. The
+redirect is **relative** and cannot change the browser's HTTPS origin or port.
+This prevents a JSON 404 when users open only the Pi's LAN address. A
+regression test verifies that no token, serial or position is exposed by the
+redirect or the public page.
+
 The authenticated `/api/v1/status/devices?limit=200` response feeds responsive
 cards for aircraft and remote controllers. Each card displays when available:
 
