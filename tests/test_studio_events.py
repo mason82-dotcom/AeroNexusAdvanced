@@ -28,6 +28,9 @@ class FakeWebSocket:
     async def send_json(self,value):
         self.messages.append(value)
 
+    async def receive(self):
+        return {"type":"websocket.disconnect"}
+
 
 class FakeRuntime:
     row={"provider":"test","project_id":"p","device_id":"D","received_at":"2026-10-16T10:00:00Z","online":True,"freshness":"fresh"}
@@ -80,14 +83,14 @@ def test_events_emit_only_cache_invalidation_and_limit_clients(monkeypatch):
     state=SimpleNamespace(studio_event_clients=0)
     calls=0
     runtime=FakeRuntime()
-    async def immediate_sleep(_):
+    async def mock_receive():
         nonlocal calls
         calls+=1
         if calls==1:
             runtime.row={**runtime.row,"received_at":"2026-10-16T10:00:01Z"}
-            return
-        raise WebSocketDisconnect()
-    monkeypatch.setattr(studio_events.asyncio,"sleep",immediate_sleep)
+            raise asyncio.TimeoutError()
+        return {"type":"websocket.disconnect"}
+    ws.receive=mock_receive
     asyncio.run(studio_events.serve_studio_events(ws,runtime,state))
     assert ws.accepted and ws.closed is None
     assert [msg["type"] for msg in ws.messages]==[
@@ -98,3 +101,10 @@ def test_events_emit_only_cache_invalidation_and_limit_clients(monkeypatch):
     other=FakeWebSocket()
     asyncio.run(studio_events.serve_studio_events(other,runtime,limited))
     assert other.closed and other.closed[0]==1013
+    # An attempted client command immediately terminates this read-only stream.
+    cmd=FakeWebSocket()
+    async def command():
+        return {"type":"websocket.receive","text":"{\"command\":\"takeoff\"}"}
+    cmd.receive=command
+    asyncio.run(studio_events.serve_studio_events(cmd,runtime,SimpleNamespace(studio_event_clients=0)))
+    assert cmd.closed[0]==1003
