@@ -165,3 +165,73 @@ def test_operations_cockpit_behavior_in_simulated_browser():
         ["node", "-e", _COCKPIT_RUNTIME_TEST], input=scripts[0], text=True,
         capture_output=True, timeout=15, check=False)
     assert result.returncode == 0, result.stderr
+
+
+# Evaluate the actual pure route-analysis functions from the browser bundle
+# in Node.js, without replacing production logic with Python approximations.
+_ROUTE_ANALYSIS_RUNTIME_TEST = r"""
+const fs=require("node:fs");
+const assert=require("node:assert/strict");
+const script=fs.readFileSync(0,"utf8");
+const start=script.indexOf("function geoDistanceMeters(");
+const end=script.indexOf("function updateRouteStatus(){",start);
+assert.ok(start>=0&&end>start,"route functions not found");
+const utils=new Function(script.slice(start,end)+
+  "\nreturn {geoDistanceMeters,routeMetrics,formatRouteDistance,formatRouteDuration};")();
+const {geoDistanceMeters,routeMetrics,formatRouteDistance,formatRouteDuration}=utils;
+const a={latitude:49.1,longitude:8.5,take_photo:true};
+const b={latitude:49.11,longitude:8.5,take_photo:false};
+const c={latitude:49.11,longitude:8.51,take_photo:false};
+const points=[a,b,c];
+const before=JSON.stringify(points);
+const ab=geoDistanceMeters(a,b);
+assert.ok(Math.abs(ab-1111.951)<0.5,"invalid haversine A-B: "+ab);
+const open=routeMetrics(points,false,5);
+assert.equal(open.valid,true);
+assert.equal(open.segments.length,2);
+assert.equal(open.executedPoints,3);
+assert.equal(open.returnMeters,null);
+assert.ok(Math.abs(open.segments[0].meters-ab)<0.00001);
+assert.ok(Math.abs(open.seconds-open.distanceMeters/5)<0.00001);
+const closed=routeMetrics(points,true,5);
+assert.equal(closed.valid,true);
+assert.equal(closed.segments.length,3);
+assert.equal(closed.executedPoints,4);
+assert.ok(closed.distanceMeters>open.distanceMeters);
+assert.ok(Math.abs(closed.returnMeters-geoDistanceMeters(c,a))<0.00001);
+assert.equal(JSON.stringify(points),before,"analysis must not modify the mission");
+const preclosed=routeMetrics([...points,{...a,take_photo:false}],true,5);
+assert.equal(preclosed.executedPoints,4,"explicit return must not be duplicated");
+assert.equal(preclosed.segments.length,3);
+assert.ok(Math.abs(preclosed.returnMeters-closed.returnMeters)<0.00001);
+assert.ok(Math.abs(preclosed.distanceMeters-closed.distanceMeters)<0.00001);
+const dateline=geoDistanceMeters({latitude:1,longitude:179.9},
+  {latitude:1,longitude:-179.9});
+assert.ok(dateline>22000&&dateline<22500,
+  "antimeridian should use short path, not 360 degree wrap");
+assert.equal(geoDistanceMeters({latitude:0,longitude:0},b),null);
+assert.equal(geoDistanceMeters({latitude:Infinity,longitude:8},b),null);
+assert.equal(routeMetrics([a,{latitude:91,longitude:8}],false,5).valid,false);
+assert.equal(routeMetrics([],false,5).distanceMeters,null);
+assert.equal(routeMetrics([a],false,5).seconds,null);
+assert.equal(routeMetrics(points,false,0).seconds,null);
+assert.equal(routeMetrics(points,false,NaN).seconds,null);
+assert.equal(routeMetrics(points,false,16).seconds,null);
+assert.equal(formatRouteDistance(null),"–");
+assert.equal(formatRouteDuration(null),"–");
+assert.equal(formatRouteDuration(59.1),"1 min 00 s");
+assert.equal(formatRouteDuration(3661),"1 h 01 min");
+assert.match(formatRouteDistance(1500),/km/);
+"""
+
+
+def test_studio_route_analysis_geometry_in_node():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js is needed to validate mission route analysis")
+    page = render_studio()
+    scripts = re.findall(r"<script>(.*?)</script>", page, flags=re.DOTALL)
+    assert len(scripts) == 1
+    result = subprocess.run(
+        ["node", "-e", _ROUTE_ANALYSIS_RUNTIME_TEST], input=scripts[0],
+        text=True, capture_output=True, timeout=15, check=False)
+    assert result.returncode == 0, result.stderr
