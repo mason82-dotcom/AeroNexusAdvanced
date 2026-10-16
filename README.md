@@ -52,7 +52,7 @@ python3 scripts/migrate_cloud_server.py --stage   # checked cold copy; no start
 Source data, DJI credentials and the prior stopped containers remain intact.
 The copied `edge/.env` is private, distinct from the current FlightHub
 `.env` at the repository root. See
-[Pi migration guide](docs/local-cloud-server-migration.md); [Pilot 2 branding and safe web-only rebuild](docs/pilot2-web-branding.md) for conditions,
+[Pi migration guide](docs/local-cloud-server-migration.md); [Pilot 2 branding and safe web-only rebuild](docs/pilot2-web-branding.md); [RC Plus 2 einmalig koppeln und Sitzung automatisch wiederherstellen](docs/pilot2-auto-session.md) for conditions,
 Compose validation, rollout and rollback. **No FlightHub 2 On-Premises
 installation** is included or implied.
 
