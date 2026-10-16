@@ -471,6 +471,22 @@ function renderTracks(){
     if(task.media_upload_status)
       add(card,"div","sub","Medienübertragung laut DJI: "+task.media_upload_status);
     if(task.uuid){
+      const mediaButton=add(card,"button","","Medienliste anzeigen");
+      mediaButton.type="button";
+      const mediaBody=add(card,"div","sub","");
+      mediaButton.addEventListener("click",async()=>{
+        mediaButton.disabled=true;
+        mediaBody.replaceChildren();
+        add(mediaBody,"div","sub","DJI-Dateimetadaten werden geladen…");
+        try{
+          await viewTaskMedia(project.project_id,task.uuid,mediaBody);
+        }catch(err){
+          mediaBody.replaceChildren();
+          add(mediaBody,"div","critical","Medienliste nicht verfügbar: "+err.message);
+        }finally{
+          mediaButton.disabled=false;
+        }
+      });
       const btn=add(card,"button","","Historische Flugspur auf Karte");
       btn.type="button";
       btn.addEventListener("click",()=>viewTrack(project.project_id,task).catch(err=>
@@ -488,6 +504,26 @@ async function getJSON(path){
   const response=await fetch(path,{cache:"no-store"});
   if(!response.ok)throw new Error("HTTP "+response.status);
   return response.json();
+}
+async function viewTaskMedia(projectId,taskUuid,container){
+  const path="/api/v1/flighthub/projects/"+encodeURIComponent(projectId)+
+    "/tasks/"+encodeURIComponent(taskUuid)+"/media";
+  const result=await getJSON(path);
+  container.replaceChildren();
+  if(!Array.isArray(result.media)||!result.media.length){
+    add(container,"div","sub","DJI meldet keine Medien zu diesem Auftrag.");
+    return;
+  }
+  add(container,"div","sub","Medienmetadaten · "+result.media.length+
+    " Dateien. Keine Download- oder Vorschau-URLs freigegeben.");
+  for(const file of result.media.slice(0,200)){
+    const box=add(container,"div","list-card");
+    add(box,"b","",file.name||"Unbenannte DJI-Datei");
+    const size=typeof file.size_bytes==="number"?
+      (file.size_bytes/1024/1024).toFixed(1)+" MiB":"Größe unbekannt";
+    add(box,"small","",text(file.file_type,"Dateityp unbekannt")+" · "+
+      size+" · "+text(file.created_at,"Zeit unbekannt"));
+  }
 }
 async function viewTrack(projectId,task){
   // Backend restricts this read-only request to cached tasks in the local
