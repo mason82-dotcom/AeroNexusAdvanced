@@ -186,8 +186,10 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <label>Geometrietyp<select id="geo-kind"><option value="polygon">Polygon / Fläche</option><option value="line">Linie</option><option value="point">Punkt</option><option value="circle">Kreis</option></select></label>
 <label>Kreisradius (m)<input id="geo-radius" type="number" min="1" max="5000" value="50"></label>
 </div>
-<div class="geo-buttons"><button id="geo-draw">Punkte auf Karte setzen</button><button id="geo-reset">Punkte verwerfen</button></div>
+<div class="geo-buttons"><button id="geo-draw">Punkte auf Karte setzen</button><button id="geo-undo-vertex">Letzten Punkt entfernen</button><button id="geo-reset">Entwurf verwerfen</button></div>
 <div id="geo-draft-status" class="note" role="status">Noch keine Geo-Punkte gesetzt.</div>
+<div id="geo-draft-points" class="geo-list" aria-label="Stützpunkte des Geo-Entwurfs"></div>
+<p class="note">Eckpunkte auf der Karte verschieben oder einzeln aus der Liste entfernen. Gespeicherte Objekte werden erst durch „Speichern“ aktualisiert.</p>
 <button id="geo-save" class="primary" style="width:100%">Geo-Objekt speichern</button>
 <h2>Lokale Geo-Objekte</h2><div id="geo-list" class="geo-list"></div>
 <hr><h2>Parallele Flugstreifen · Vorschau</h2>
@@ -923,6 +925,14 @@ function setGeoMode(enabled){
 function redrawGeo(){
   $("geo-draft-status").textContent=geoDraft.length+" Koordinaten im Entwurf · "+$("geo-kind").value+
     ". Zum Speichern Kartenmodus beenden.";
+  const list=$("geo-draft-points");list.replaceChildren();
+  geoDraft.forEach((point,index)=>{
+    const row=cardText(list,"div","geo-row");
+    cardText(row,"span","",String(index+1)+": "+point.latitude.toFixed(7)+", "+point.longitude.toFixed(7));
+    const remove=cardText(row,"button","danger","Entfernen");
+    remove.addEventListener("click",()=>{geoDraft.splice(index,1);redrawGeo();});
+  });
+  $("geo-undo-vertex").disabled=geoDraft.length===0;
   if(!geoLayer||!map)return;
   geoLayer.clearLayers();
   const draw=(points,kind,label,draft=false,radius=0)=>{
@@ -934,7 +944,21 @@ function redrawGeo(){
     else if(kind==="circle"&&coords.length===1)shape=L.circle(coords[0],{...style,radius});
     else if(coords.length===1)shape=L.circleMarker(coords[0],{...style,radius:6});
     if(shape)shape.bindTooltip(label).addTo(geoLayer);
-    if(draft)coords.forEach(p=>L.circleMarker(p,{color:"#ffc878",radius:4}).addTo(geoLayer));
+    if(draft)coords.forEach((p,index)=>{
+      // Draggable draft vertices only; saved geometry stays unchanged until save.
+      L.marker(p,{draggable:true,autoPan:true})
+        .bindTooltip("Eckpunkt "+(index+1)+" verschieben")
+        .on("dragend",event=>{
+          const moved=event.target.getLatLng();
+          const lat=+moved.lat.toFixed(7);
+          const lon=+(((((moved.lng+540)%360)+360)%360)-180).toFixed(7);
+          if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)){
+            redrawGeo();return;
+          }
+          geoDraft[index]={latitude:lat,longitude:lon};
+          redrawGeo();
+        }).addTo(geoLayer);
+    });
   };
   for(const row of geoObjects){
     if(row.id===geoEditingId)continue;
@@ -957,6 +981,8 @@ async function loadGeoObjects(){
     cardText(row,"span","",obj.name+" · "+obj.kind+" · "+obj.vertices.length+" Punkte");
     const edit=cardText(row,"button","","Bearbeiten");
     edit.addEventListener("click",()=>{
+      if(geoDraft.length&&(!geoEditingId||geoEditingId!==item.id)&&
+         !window.confirm("Ungespeicherten Geo-Entwurf verwerfen?"))return;
       geoEditingId=item.id;
       $("geo-name").value=obj.name;
       $("geo-kind").value=obj.kind;
@@ -984,11 +1010,19 @@ async function saveGeoObject(){
   const kind=$("geo-kind").value;
   const obj={name:$("geo-name").value.trim(),kind,vertices:geoDraft.slice(),
     radius_m:kind==="circle"?Number($("geo-radius").value):null};
-  const path="/api/v1/studio/geo-objects"+(geoEditingId?"/"+encodeURIComponent(geoEditingId):"");
+  const editingId=geoEditingId;
+  const saveVertices=JSON.stringify(geoDraft);
+  const path="/api/v1/studio/geo-objects"+(editingId?"/"+encodeURIComponent(editingId):"");
   const r=await api(path,{
-    method:geoEditingId?"PUT":"POST",
+    method:editingId?"PUT":"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
   const saved=await r.json();
+  // A completed request must not wipe points drawn while the save was pending.
+  if(geoEditingId!==editingId||JSON.stringify(geoDraft)!==saveVertices){
+    await loadGeoObjects();
+    $("geo-draft-status").textContent="Gespeicherte frühere Version. Der aktuelle Geo-Entwurf blieb erhalten.";
+    return;
+  }
   geoDraft=[];geoEditingId=null;setGeoMode(false);await loadGeoObjects();
   if(kind==="polygon")$("survey-object").value=saved.id;
   $("geo-draft-status").textContent="Geo-Objekt gespeichert (nur lokal).";
@@ -1179,7 +1213,11 @@ function wire(){
     }catch(_){notice("Kopieren nicht möglich. Koordinaten im Editor markieren.",true);}
   });
   $("geo-draw").addEventListener("click",()=>setGeoMode(!geoDraw));
-  $("geo-reset").addEventListener("click",()=>{geoDraft=[];geoEditingId=null;setGeoMode(false);redrawGeo();});
+  $("geo-reset").addEventListener("click",()=>{
+    if(geoDraft.length&&!window.confirm("Ungespeicherten Geo-Entwurf verwerfen?"))return;
+    geoDraft=[];geoEditingId=null;setGeoMode(false);redrawGeo();
+  });
+  $("geo-undo-vertex").addEventListener("click",()=>{geoDraft.pop();redrawGeo();});
   $("geo-save").addEventListener("click",()=>saveGeoObject().catch(err=>$("geo-draft-status").textContent=err.message));
   $("geo-kind").addEventListener("change",redrawGeo);
   $("survey-generate").addEventListener("click",()=>surveyPreview().catch(err=>$("survey-message").textContent=err.message));
