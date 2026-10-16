@@ -4,7 +4,7 @@
 **Phase:** 10 (FlightHub-2-Flotte, live) erfolgreich getestet; Phase 9
 (DJI Cloud API MQTT-Feed) implementiert, noch nicht live getestet.  
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
-**Letzter auf Raspberry Pi 5 bestätigter Entwicklungs-Commit:** `8134858`
+**Letzter auf Raspberry Pi 5 bestätigter Entwicklungs-Commit:** `6322869`
 
 ## Bestätigt auf Raspberry Pi 5
 
@@ -13,7 +13,15 @@
 - Installation: `aeronexusadvanced` 0.1.0, editierbar, zusätzlich
   `paho-mqtt` 2.1.0 (Extra `mqtt`)
 - `python -m pip check`: **No broken requirements found**
-- `python -m pytest -q`: **379 passed, 1 warning**
+- `env -u AERONEXUS_DJI_ORGANIZATION_ID .venv/bin/python -m pytest -q`:
+  **393 passed, 1 warning** (auf dem Pi für Commit `6322869` bestätigt).
+- Danach wurde `tests/conftest.py` ergänzt: Eine automatische Test-Fixture
+  blendet ausschließlich **während der Testläufe** die produktiven Variablen
+  `AERONEXUS_DJI_*`, `AERONEXUS_FH_*`, `AERONEXUS_CLOUD_MQTT_*` und
+  `AERONEXUS_STATUS_TOKEN` aus. Tests setzen bei Bedarf explizit künstliche
+  Werte. `tests/test_env_isolation.py` enthält zwei Regressionstests.
+  **Neuer Teststand (erwartet 395 Tests) muss noch auf dem Pi bestätigt werden.**
+  Die produktive Organisationsprüfung wurde nicht geändert.
 - Bekannte, derzeit nicht blockierende Warnung:
   `StarletteDeprecationWarning` in `fastapi/testclient.py`
   zu `httpx` / `httpx2`.
