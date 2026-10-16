@@ -9,8 +9,9 @@ und optionaler Cloud API 2 BFF weiter deaktiviert.
 **Letzter auf Raspberry Pi 5 bestätigter Teststand:** **537 Tests,
 1 Warnung** (Phase 15), systemd-Dienst `active`. DJI Matrice 4T in
 Operations Center live bestätigt.
-**Aktueller GitHub-Actions-Teststand:** **541 Tests, 1 Warnung**
-(Python 3.12; Phase 16 Cockpit), Pi-Test für Phase 16 noch ausstehend.
+**Aktueller GitHub-Actions-Teststand:** **543 Tests, 1 Warnung**
+(Python 3.12; Phase 16 inklusive RTK-Scroll-Korrektur). Neuer Pi-Test
+der Scroll-Korrektur noch ausstehend.
 
 ## Bestätigt auf Raspberry Pi 5
 
@@ -27,8 +28,10 @@ Operations Center live bestätigt.
 - Phase 13/14 Mission Studio und LAN-Zugriff sind auf dem Pi getestet.
   Phase 15 Operations Center mit der Matrice 4T im Chrome live gezeigt:
   aktueller FlightHub-Status, 5 Routen, 5 Modelle, HMS und OSD.
-  Phase 16 hat **541 GitHub-Actions-Tests** bestanden, der
-  aktuelle Pi-/Chrome-Smoke-Test steht noch aus.
+  Phase 16 hat **541 Tests auf dem Pi** bestanden, der Chrome-Live-Test
+  bestätigt Online-Status, 86-%-Akku, Standby, RTK und HMS. Die nachträgliche
+  RTK-Scroll-Korrektur ist mit **543 GitHub-Actions-Tests** geprüft;
+  deren Pi-/Chrome-Nachtest steht noch aus.
 - Bekannte, derzeit nicht blockierende Warnung:
   `StarletteDeprecationWarning` in `fastapi/testclient.py`
   zu `httpx` / `httpx2`.
@@ -226,8 +229,14 @@ Operations Center live bestätigt.
   Aufgeklappte Details und Scrollposition bleiben bei 15-s-Updates.
 - Zusätzliche Node.js-DOM-Regressionstests testen echte Rendererreaktionen
   bei Online-, Offline-, Stale- und unbekannten Statusangaben.
-  **GitHub Actions/main: 541 Tests bestanden, 1 Warnung**.
-  Neuer Pi-/Chrome-Live-Test Phase 16 noch ausstehend.
+  **Auf dem Pi: 541 Tests bestanden, 1 Warnung.**
+  Neue Chrome-Screenshots bestätigen das Haupt-Cockpit mit 86-%-Akku,
+  Standby und korrekt lesbarem RTK sowie den aufklappbaren Technikbereich.
+  Bei längerem RTK-Rohwert wurde ein abgeschnittener Textrest beobachtet;
+  dessen Korrektur (Paint-Containment, Monospace-Volllängenzeile, kein
+  unnötiges DOM-Rebuild beim 15-Sekunden-Refresh) ist mit
+  **GitHub Actions/main: 543 Tests bestanden, 1 Warnung** geprüft.
+  Pi-/Chrome-Nachtest dieser Scrollkorrektur ist noch ausstehend.
 
 ## Nicht live verifiziert
 
