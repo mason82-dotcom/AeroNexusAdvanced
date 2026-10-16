@@ -140,3 +140,13 @@ def test_page_refresh_validation():
 
 def test_flight_commands_still_forbidden(api):
     assert api.post("/api/v1/flight/command").status_code == 403
+
+
+@pytest.mark.parametrize("configured", [
+    "é" * 40, "A" * 513, ("A" * 35) + " ",
+])
+def test_malformed_server_token_fails_closed(api, monkeypatch, configured):
+    monkeypatch.setenv("AERONEXUS_STATUS_TOKEN", configured)
+    res = api.get("/api/v1/status/devices", headers={"Authorization": "Bearer " + TOKEN})
+    assert res.status_code == 503
+    assert "ABC123" not in res.text
