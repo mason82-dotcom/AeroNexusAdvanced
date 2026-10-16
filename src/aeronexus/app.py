@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
 from .cloud_api2_bridge import CloudApi2Bridge, CloudApi2Settings
-from .flighthub_catalog import read_task_track
+from .flighthub_catalog import read_task_track, read_task_media
 from .flighthub_poller import FlightHubFleetRefresher, FlightHubPollSettings
 from .providers import ProviderKind
 from .status_page import render_page
@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
     poll_task = None
     app.state.flighthub = None
     app.state.track_cache = {}
+    app.state.task_media_cache = {}
     stop_polling = asyncio.Event()
     if settings is not None:
         runtime = app.state.status_runtime
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AeroNexusAdvanced", version="0.1.0", lifespan=lifespan)
 app.state.cloud_api2_bridge = None
+app.state.task_media_cache = {}
 app.state.status_runtime = StatusRuntime(
     settings=StatusSettings(
         stale_after_seconds=int(os.environ.get("AERONEXUS_STATUS_STALE_AFTER_SECONDS", "90")),
@@ -222,6 +224,41 @@ async def flighthub_task_track(project_id: str, task_uuid: str, request: Request
         cache[key] = cached = (time.monotonic(), feature)
     return JSONResponse(cached[1], media_type="application/geo+json",
                         headers=dict(response.headers))
+
+
+@app.get("/api/v1/flighthub/projects/{project_id}/tasks/{task_uuid}/media")
+async def flighthub_task_media(project_id: str, task_uuid: str, request: Request,
+                              response: Response,
+                              authorization: str | None = Header(default=None)) -> dict:
+    """DJI task media metadata only. Never expose expiring storage URLs.
+
+    FlightHub's GET /flight-task/{uuid}/media may include signed preview and
+    original download URLs; these are discarded in flighthub_catalog.
+    Both project and task must already exist in the local read-only cache.
+    """
+    _no_cache(response)
+    _require_viewer_access(request, authorization)
+    refresher = app.state.flighthub
+    runtime = app.state.status_runtime
+    if refresher is None or refresher.settings.config.kind != ProviderKind.PUBLIC_V2:
+        raise HTTPException(status_code=404, detail="FlightHub library not enabled")
+    catalog = runtime.catalog.get((ProviderKind.PUBLIC_V2, project_id))
+    tasks = (catalog or {}).get("tasks") or []
+    if not any(task.get("uuid") == task_uuid for task in tasks):
+        raise HTTPException(status_code=404, detail="Unknown flight task")
+    key = (project_id, task_uuid)
+    cache = app.state.task_media_cache
+    cached = cache.get(key)
+    if cached is None or time.monotonic() - cached[0] > TRACK_CACHE_SECONDS:
+        try:
+            media = await read_task_media(refresher.settings.config, project_id, task_uuid)
+        except (ValueError, RuntimeError):
+            raise HTTPException(status_code=502, detail="Task media not available from FlightHub")
+        if len(cache) >= TRACK_CACHE_ENTRIES:
+            cache.pop(min(cache, key=lambda k: cache[k][0]))
+        cache[key] = cached = (time.monotonic(), list(media))
+    return {"task_uuid": task_uuid, "project_id": project_id,
+            "total": len(cached[1]), "media": cached[1]}
 
 
 @app.get("/status", response_class=HTMLResponse)
