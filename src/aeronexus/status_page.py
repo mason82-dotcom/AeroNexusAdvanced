@@ -413,13 +413,26 @@ function renderDeviceCards(devices) {
     if(alerts.length){
       const section=cardEl(card,"div","device-alerts");
       cardEl(section,"b","","HMS · "+alerts.length+" zuletzt gemeldete Meldung(en)");
-      const list=cardEl(section,"ul","");
+      cardEl(section,"div","hms-secondary",
+        device.freshness==="fresh"?"Stand der letzten HMS-Abfrage; DJI-Ereigniszeit unbekannt.":
+        "HMS-Stand möglicherweise veraltet; letzte DJI-Abfrage unbekannt.");
+      const list=cardEl(section,"div","hms-list");
       for(const alert of alerts.slice(0,5)){
-        const level=alert.level==="warning"?"Warnung":alert.level==="reminder"?"Hinweis":"Info";
-        cardEl(list,"li",alert.level==="warning"?"warning":alert.level==="reminder"?"reminder":"",
-          level+": "+(alert.message||alert.code||"Ohne Beschreibung"));
+        const entry=cardEl(list,"div","hms-entry");
+        const level=alert.level==="warning"?"Warnung":alert.level==="reminder"?"Hinweis":
+          alert.level==="notification"?"Information":"Nicht klassifiziert";
+        entry.dataset.level=alert.level||"unknown";
+        const title=cardEl(entry,"div","hms-heading");
+        cardEl(title,"b","",level);
+        if(alert.imminent===true)cardEl(title,"span","bad","· Dringend laut DJI");
+        if(alert.in_the_sky===true)cardEl(title,"span","warn","· Im Flug gemeldet");
+        if(alert.code)cardEl(entry,"code","hms-code","Code: "+alert.code);
+        cardEl(entry,"div","hms-description",
+          alert.message&&alert.message!==alert.code?alert.message:
+          "DJI hat für diesen HMS-Code keinen Beschreibungstext übermittelt.");
       }
-      if(alerts.length>5)cardEl(section,"div","subtle","Weitere "+(alerts.length-5)+" Meldung(en) in der technischen Tabelle.");
+      if(alerts.length>5)cardEl(section,"div","hms-secondary",
+        "Weitere "+(alerts.length-5)+" Meldung(en) in der technischen Tabelle.");
     }
   }
 }
