@@ -59,13 +59,17 @@ def test_media_files_are_transferred_only_to_local_workspace():
     assert "25 MiB" in page
 
 
-def test_private_content_loaded_only_with_bearer_token():
+def test_lan_workspace_auto_loads_without_any_browser_token():
     page = render_studio()
-    assert 'headers:{...headerToken()' in page
-    assert '"Authorization":"Bearer "+accessToken' in page
-    assert 'if(!accessToken)throw' in page
-    assert 'function logout()' in page
-    assert 'epoch++' in page
+    assert 'id="auth-token"' not in page
+    assert 'id="login"' not in page
+    assert 'id="logout"' not in page
+    assert 'accessToken' not in page
+    assert 'headerToken' not in page
+    assert 'Authorization' not in page
+    assert 'loadWorkspace();' in page
+    assert 'await Promise.allSettled([loadMedia(),loadFleet()]);' in page
+    assert 'async function api(path,options={})' in page
     assert 'textContent' in page
 
 
