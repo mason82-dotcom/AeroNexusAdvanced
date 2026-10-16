@@ -27,7 +27,7 @@ class CloudOsdError(ValueError):
 OSD_TOPIC = "thing/product/+/osd"
 STATE_TOPIC = "thing/product/+/state"
 MAX_PAYLOAD_BYTES = 65536
-_TOPIC = re.compile(r"thing/product/([A-Za-z0-9_-]{1,80})/(osd|state)\\Z")
+_TOPIC = re.compile(r"thing/product/([A-Za-z0-9_-]{1,80})/(osd|state)\Z")
 _AIRCRAFT_KEYS = frozenset({"mode_code", "elevation", "position_state", "home_distance",
                             "horizontal_speed", "total_flight_sorties"})
 _CONTROLLER_KEYS = frozenset({"capacity_percent", "wireless_link",
