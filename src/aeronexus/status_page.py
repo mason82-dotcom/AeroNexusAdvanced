@@ -57,7 +57,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 .device-alerts li.warning{color:#ffadac}
 .device-alerts li.reminder{color:#ffcd7b}
 .device-empty{padding:16px;border:1px dashed #49627e;border-radius:10px;color:#abc0d5}
-.raw-table>summary{cursor:pointer;color:#bbd4ed;font-size:14px;margin:8px 0}
+.raw-table{max-width:none}.raw-table>summary{cursor:pointer;color:#bbd4ed;font-size:14px;margin:8px 0}
 #poll-health{margin-top:12px}
 @media(max-width:650px){body{padding:12px}.panel{padding:14px;margin:14px 0}.grid{gap:8px}.metric{padding:12px}.metric b{font-size:22px}.controls input{width:100%}}
 </style>
@@ -162,14 +162,18 @@ function date(sec){return sec?new Date(sec*1000).toISOString().slice(0,16).repla
 function rowOf(body,values){const row=document.createElement("tr");values.forEach(v=>cell(row,v));body.appendChild(row);return row;}
 function placeholder(body,cols,text){const row=document.createElement("tr");const td=cell(row,text);td.colSpan=cols;td.className="subtle";body.appendChild(row);}
 async function downloadTrack(project,task,name){
+  if(!accessToken)return;
+  const token=accessToken,epoch=sessionEpoch;
   try{
     const r=await fetch("/api/v1/flighthub/projects/"+encodeURIComponent(project)+"/tasks/"+encodeURIComponent(task)+"/track",
-      {cache:"no-store",headers:{"Authorization":"Bearer "+accessToken}});
+      {cache:"no-store",headers:{"Authorization":"Bearer "+token}});
     if(!r.ok)throw new Error("HTTP "+r.status);
-    const url=URL.createObjectURL(new Blob([await r.text()],{type:"application/geo+json"}));
+    const geojson=await r.text();
+    if(epoch!==sessionEpoch)return; // disconnect must prevent late file downloads
+    const url=URL.createObjectURL(new Blob([geojson],{type:"application/geo+json"}));
     const a=document.createElement("a");a.href=url;a.download=(name||"flugspur").replace(/[^A-Za-z0-9_-]+/g,"_")+".geojson";
     document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  }catch(e){byId("catalog-info").textContent="Flugspur nicht verf\u00fcgbar ("+e.message+").";}
+  }catch(e){if(epoch===sessionEpoch)byId("catalog-info").textContent="Flugspur nicht verf\u00fcgbar ("+e.message+").";}
 }
 async function updateCatalog() {
   if(!accessToken)return;
@@ -293,7 +297,7 @@ function renderDeviceCards(devices) {
     const alerts=device.health||[];
     if(alerts.length){
       const section=cardEl(card,"div","device-alerts");
-      cardEl(section,"b","","HMS · "+alerts.length+" aktive Meldung(en)");
+      cardEl(section,"b","","HMS · "+alerts.length+" zuletzt gemeldete Meldung(en)");
       const list=cardEl(section,"ul","");
       for(const alert of alerts.slice(0,5)){
         const level=alert.level==="warning"?"Warnung":alert.level==="reminder"?"Hinweis":"Info";
