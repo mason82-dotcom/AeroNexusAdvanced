@@ -14,3 +14,10 @@ mqtt = ["paho-mqtt>=2.1,<3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+# Only collect the application test suite. Pi deployments also contain a
+# Git-ignored, Docker-owned cloud-server/edge/data tree (MySQL and Redis);
+# collecting from project root must never scan those private databases.
+testpaths = ["tests"]
+norecursedirs = [".*", "cloud-server", "node_modules", "build", "dist"]
