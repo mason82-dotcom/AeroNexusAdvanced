@@ -278,7 +278,7 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
-let geoObjects=[],geoDraft=[],geoDraw=false,terrainGrid=null,studioSocket=null,studioFleetLoading=false;
+let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
   $("auth-message").textContent=text;
@@ -937,6 +937,7 @@ function redrawGeo(){
     if(draft)coords.forEach(p=>L.circleMarker(p,{color:"#ffc878",radius:4}).addTo(geoLayer));
   };
   for(const row of geoObjects){
+    if(row.id===geoEditingId)continue;
     const obj=row.object;
     draw(obj.vertices,obj.kind,obj.name,false,obj.radius_m||0);
   }
@@ -954,11 +955,22 @@ async function loadGeoObjects(){
     const obj=item.object;
     const row=cardText(list,"div","geo-row");
     cardText(row,"span","",obj.name+" · "+obj.kind+" · "+obj.vertices.length+" Punkte");
+    const edit=cardText(row,"button","","Bearbeiten");
+    edit.addEventListener("click",()=>{
+      geoEditingId=item.id;
+      $("geo-name").value=obj.name;
+      $("geo-kind").value=obj.kind;
+      $("geo-radius").value=obj.radius_m??50;
+      geoDraft=obj.vertices.map(p=>({...p}));
+      setGeoMode(false);redrawGeo();
+      $("geo-draft-status").textContent="Geo-Objekt bearbeiten: "+obj.name;
+    });
     const del=cardText(row,"button","danger","×");
     del.title="Geo-Objekt löschen";
     del.addEventListener("click",async()=>{
       if(!confirm("Lokales Geo-Objekt löschen?"))return;
       await api("/api/v1/studio/geo-objects/"+encodeURIComponent(item.id),{method:"DELETE"});
+      if(geoEditingId===item.id){geoEditingId=null;geoDraft=[];}
       await loadGeoObjects();
     });
     if(obj.kind==="polygon"){
@@ -972,10 +984,14 @@ async function saveGeoObject(){
   const kind=$("geo-kind").value;
   const obj={name:$("geo-name").value.trim(),kind,vertices:geoDraft.slice(),
     radius_m:kind==="circle"?Number($("geo-radius").value):null};
-  const r=await api("/api/v1/studio/geo-objects",{
-    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
-  if(r.ok){geoDraft=[];setGeoMode(false);await loadGeoObjects();
-    $("geo-draft-status").textContent="Geo-Objekt gespeichert (nur lokal).";}
+  const path="/api/v1/studio/geo-objects"+(geoEditingId?"/"+encodeURIComponent(geoEditingId):"");
+  const r=await api(path,{
+    method:geoEditingId?"PUT":"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
+  const saved=await r.json();
+  geoDraft=[];geoEditingId=null;setGeoMode(false);await loadGeoObjects();
+  if(kind==="polygon")$("survey-object").value=saved.id;
+  $("geo-draft-status").textContent="Geo-Objekt gespeichert (nur lokal).";
 }
 async function surveyPreview(){
   const row=geoObjects.find(x=>x.id===$("survey-object").value);
@@ -1134,6 +1150,7 @@ function wire(){
   $("export-mission").addEventListener("click",()=>exportMission().catch(err=>notice(err.message,true)));
   $("import-mission").addEventListener("click",()=>importMission().catch(err=>notice(err.message,true)));
   $("add-mode").addEventListener("click",()=>{
+    if(geoDraw)setGeoMode(false);
     addMode=!addMode;$("add-mode").textContent=addMode?"Klickmodus beenden":"+ Auf Karte setzen";
     $("add-mode").classList.toggle("primary",addMode);
   });
@@ -1162,7 +1179,7 @@ function wire(){
     }catch(_){notice("Kopieren nicht möglich. Koordinaten im Editor markieren.",true);}
   });
   $("geo-draw").addEventListener("click",()=>setGeoMode(!geoDraw));
-  $("geo-reset").addEventListener("click",()=>{geoDraft=[];setGeoMode(false);redrawGeo();});
+  $("geo-reset").addEventListener("click",()=>{geoDraft=[];geoEditingId=null;setGeoMode(false);redrawGeo();});
   $("geo-save").addEventListener("click",()=>saveGeoObject().catch(err=>$("geo-draft-status").textContent=err.message));
   $("geo-kind").addEventListener("change",redrawGeo);
   $("survey-generate").addEventListener("click",()=>surveyPreview().catch(err=>$("survey-message").textContent=err.message));
