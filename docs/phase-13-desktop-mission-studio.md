@@ -53,6 +53,23 @@ browser validation on the Raspberry Pi still pending.
   which case manually choose satellite from the map dropdown. We do not
   circumvent an explicit OSM restriction or fetch tiles in bulk.
 - Click-to-place WGS84 waypoints, draggable markers, connected route line.
+- **Neu – theoretische Routenanalyse im Missionseditor:** Live-Anzeige
+  der geradlinigen WGS84-Gesamtstrecke, der Segmentlängen in der
+  Wegpunktliste, der Segmentanzahl, des Rückkehrsegments zu WP 1
+  und der daraus geschätzten Reisezeit bei eingestellter Sollgeschwindigkeit.
+  Automatisch berechnete und bereits manuell eingefügte Rückkehrpunkte
+  werden jeweils nur einmal gezählt. Neuordnung, Verschieben, Koordinaten-
+  änderung, Schließen der Route, Laden und Bearbeitung der Sollgeschwindigkeit
+  aktualisieren die Anzeige. Berechnungen erfolgen ausschließlich im
+  Browser und ändern keine gespeicherten Missionsdaten.
+- **Grenzen der Zeitschätzung:** reine horizontale Großkreisdistanz
+  zwischen den Wegpunkten geteilt durch Sollgeschwindigkeit. Nicht berücksichtigt
+  werden Kurvenradius, Beschleunigung, Start, Steig-/Sinkflug, Hover,
+  Fotoaktionen, Wind, Hindernisse, Höhenprofil, Return-to-Home,
+  Landung oder Akkuleistung. **Keine** Freigabe zum Fliegen.
+  Für fehlende/ungültige Koordinaten bzw. Geschwindigkeit wird keine
+  fiktive Zeit ausgegeben. Die App weist auf unzulässige Wegpunktanzahl
+  und zu wenige unterschiedliche Punkte für geschlossene Routen hin.
 - **Schalter „Route schließen“:** Die letzte Koordinate wird mit dem
   ersten Wegpunkt verbunden. Das Rückflugsegment erscheint auf der Karte
   **gelb gestrichelt** und wird beim KMZ-Export als **tatsächlich
