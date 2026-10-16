@@ -13,8 +13,10 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from .wpml_export import WaypointMission
+from .geo_planning import GeoObject
 
 
+MAX_GEO_OBJECTS = 200
 MAX_MISSIONS = 200
 MAX_MEDIA = 500
 MAX_MEDIA_BYTES = 25 * 1024 * 1024
@@ -84,6 +86,7 @@ class Workspace:
         self.root = _private_dir(root)
         self.missions_dir = _private_dir(self.root / "missions")
         self.media_dir = _private_dir(self.root / "media")
+        self.geo_dir = _private_dir(self.root / "geo_objects")
 
     def _mission_path(self, item_id: str) -> Path:
         return self.missions_dir / (safe_id(item_id) + ".json")
@@ -124,6 +127,39 @@ class Workspace:
         path = self._mission_path(item_id)
         if not path.is_file() or path.is_symlink():
             raise WorkspaceError("Mission not found")
+        path.unlink()
+
+    def _geo_path(self, item_id: str) -> Path:
+        return self.geo_dir / (safe_id(item_id) + ".json")
+
+    def list_geo_objects(self) -> list[dict]:
+        result = []
+        for path in list(self.geo_dir.glob("*.json"))[:MAX_GEO_OBJECTS+1]:
+            try:
+                item = _read_json(path)
+                item["object"] = GeoObject.model_validate(item["object"]).model_dump()
+                result.append(item)
+            except (KeyError, ValueError, OSError, json.JSONDecodeError):
+                continue
+        return sorted(result,key=lambda x:x["updated_at"],reverse=True)[:MAX_GEO_OBJECTS]
+
+    def save_geo_object(self, obj: GeoObject, item_id: str | None = None) -> dict:
+        if item_id is None:
+            if len(list(self.geo_dir.glob("*.json"))) >= MAX_GEO_OBJECTS:
+                raise WorkspaceError("Maximum geo objects reached")
+            item_id = str(uuid4())
+        else:
+            path = self._geo_path(item_id)
+            if not path.is_file() or path.is_symlink():
+                raise WorkspaceError("Geo object not found")
+        record = {"id":item_id,"updated_at":now_utc(),"object":obj.model_dump()}
+        _write_json_atomic(self._geo_path(item_id),record)
+        return record
+
+    def delete_geo_object(self,item_id:str)->None:
+        path=self._geo_path(item_id)
+        if not path.is_file() or path.is_symlink():
+            raise WorkspaceError("Geo object not found")
         path.unlink()
 
     def _media_metadata_path(self, item_id: str) -> Path:
@@ -188,6 +224,19 @@ class Workspace:
         if not data_path.is_file() or data_path.is_symlink():
             raise WorkspaceError("Media not found")
         return meta, data_path
+
+    def update_media_georef(self, item_id: str, *, latitude: float | None,
+                            longitude: float | None, heading_deg: float | None,
+                            pitch_deg: float | None, roll_deg: float | None,
+                            altitude_m: float | None, captured_at: str | None,
+                            notes: str) -> dict:
+        meta, _ = self.get_media(item_id)
+        meta.update(latitude=latitude,longitude=longitude,
+                    heading_deg=heading_deg,pitch_deg=pitch_deg,
+                    roll_deg=roll_deg,altitude_m=altitude_m,
+                    captured_at=captured_at,notes=notes)
+        _write_json_atomic(self._media_metadata_path(item_id),meta)
+        return meta
 
     def delete_media(self, item_id: str) -> None:
         meta, path = self.get_media(item_id)
