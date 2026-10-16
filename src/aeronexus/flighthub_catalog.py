@@ -6,6 +6,7 @@ Endpoints (OpenAPI V2.0 reference, same paths in v0.1):
   GET /model                       2D/3D map models of the project
   GET /flight-task/list            flight tasks in a time window
   GET /flight-task/{uuid}/track    flown trajectory of a task
+  GET /flight-task/{uuid}/media    media filenames and metadata (NO download URLs)
   GET /system_status               FlightHub 2 system status
 
 Feature set and the track-to-GeoJSON shape follow alecad/dji-flighthub2-cli
@@ -125,6 +126,46 @@ def normalize_tasks(payload) -> tuple[dict, ...]:
     return tuple(result)
 
 
+def normalize_task_media(payload) -> tuple[dict, ...]:
+    """Safe media metadata from a known FlightHub task, NEVER signed URLs.
+
+    The CLI reference tolerates data as a list or data.list; both occur in
+    DJI endpoints. Everything else fails closed rather than forwarding a raw
+    upstream object containing temporary storage credentials.
+    """
+    if not isinstance(payload, Mapping) or payload.get("code") != 0:
+        raise CatalogError("Unsuccessful FlightHub response")
+    data = payload.get("data")
+    if isinstance(data, list):
+        rows = data
+    elif isinstance(data, Mapping):
+        rows = data.get("list")
+    else:
+        rows = None
+    if rows is None:
+        rows = []
+    if not isinstance(rows, list):
+        raise CatalogError("Invalid FlightHub media list")
+    result = []
+    for media in rows[:MAX_ITEMS]:
+        if not isinstance(media, Mapping):
+            continue
+        # Only explicitly named, non-executable file types. No preview_url,
+        # original_url, storage object keys, file paths or arbitrary fields.
+        mime = _text(media.get("file_type"), 40)
+        suffix = _text(media.get("suffix"), 12)
+        result.append({
+            "id": _text(media.get("uuid"), 64),
+            "name": _text(media.get("name"), 200),
+            "file_type": mime,
+            "suffix": suffix,
+            "size_bytes": _int(media.get("size")),
+            "created_at": _text(media.get("create_at"), 40),
+            "updated_at": _text(media.get("update_at"), 40),
+        })
+    return tuple(result)
+
+
 def track_geojson(payload) -> dict:
     """GeoJSON Feature (LineString lon/lat/height), like fh2 task track --geojson."""
     if not isinstance(payload, Mapping) or payload.get("code") != 0:
@@ -201,3 +242,11 @@ async def read_task_track(config: ProviderConfig, project_uuid: str, task_uuid: 
     _require_public(config)
     return track_geojson(await _get(config, f"/flight-task/{_uuid(task_uuid)}/track",
                                     _uuid(project_uuid)))
+
+
+async def read_task_media(config: ProviderConfig, project_uuid: str, task_uuid: str) -> tuple[dict, ...]:
+    """Read metadata for an already-authorized and catalog-scoped task only."""
+    _require_public(config)
+    task = _uuid(task_uuid)
+    return normalize_task_media(
+        await _get(config, f"/flight-task/{task}/media", _uuid(project_uuid)))
