@@ -396,7 +396,7 @@ function routeMetrics(points,closeRoute,speedMps){
   }
   if(route.length===1&&geoDistanceMeters(route[0],route[0])===null)
     return invalid;
-  const speedOK=Number.isFinite(speedMps)&&speedMps>0&&speedMps<=15;
+  const speedOK=Number.isFinite(speedMps)&&speedMps>=0.1&&speedMps<=15;
   return {valid:true,segments,distanceMeters:distance,
     seconds:speedOK&&segments.length?distance/speedMps:null,
     returnMeters,executedPoints:route.length};
@@ -428,8 +428,8 @@ function updateRouteAnalysis(){
   if(data.executedPoints>500)problems.push("Mehr als 500 ausführbare Wegpunkte.");
   if(mission.close_route&&(mission.waypoints.length<3||unique<3))
     problems.push("Geschlossene Route: mindestens drei verschiedene Koordinaten erforderlich.");
-  if(!Number.isFinite(speed)||speed<=0||speed>15)
-    problems.push("Sollgeschwindigkeit muss größer 0 und höchstens 15 m/s sein.");
+  if(!Number.isFinite(speed)||speed<0.1||speed>15)
+    problems.push("Sollgeschwindigkeit muss 0,1 bis 15 m/s betragen.");
   $("route-analysis-warning").textContent=problems.join(" ");
   return data;
 }
