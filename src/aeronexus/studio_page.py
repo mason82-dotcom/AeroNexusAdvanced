@@ -1474,7 +1474,7 @@ async function openCloudOverview(){
   }));
   cloudOverviewLayer.clearLayers();cloudOverviewLayer.addTo(map);
   $("cloud-overview-panel").hidden=false;
-  setCloudOverviewMinimized(window.matchMedia("(max-width:700px)").matches);
+  setCloudOverviewMinimized(typeof window!=="undefined"&&window.matchMedia("(max-width:700px)").matches);
   renderCloudOverview();
   for(const entry of cloudOverviewRoutes){
     if(generation!==cloudOverviewGeneration||controller.signal.aborted)break;

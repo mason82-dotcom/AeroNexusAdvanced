@@ -49,7 +49,7 @@ def test_cloud_overview_javascript_fetches_only_8_local_routes_and_toggles_layer
 const fs=require('node:fs'),assert=require('node:assert/strict');
 const logic=fs.readFileSync(0,'utf8');
 const elems=new Map();
-function element(){return {textContent:'',children:[],style:{},hidden:true,disabled:false,checked:false,value:'',
+function element(){return {textContent:'',children:[],style:{},dataset:{},hidden:true,disabled:false,checked:false,value:'',
   setAttribute(){},replaceChildren(){this.children=[]},appendChild(el){this.children.push(el);return el}}}
 const $=id=>{if(!elems.has(id))elems.set(id,element());return elems.get(id)};
 const els=(tag,cls,text)=>Object.assign(element(),{tag,className:cls,textContent:String(text??'')});
