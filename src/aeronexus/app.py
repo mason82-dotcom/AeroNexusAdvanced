@@ -60,6 +60,7 @@ from .studio_events import serve_studio_events
 from .lan_access import lan_host, lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
 from .mission_reconciliation import compare_missions
+from .local_waylines import LocalWaylineReader
 from .mission_csv import MAX_CSV_BYTES, MissionCsvError, preview_csv
 from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI):
     poll_settings = FlightHubPollSettings.from_env()
     api2_settings = CloudApi2Settings.from_env()
     app.state.cloud_api2_bridge = CloudApi2Bridge(api2_settings) if api2_settings else None
+    app.state.local_waylines = LocalWaylineReader()
     app.state.provider_configured = {
         Provider.public_v2: poll_settings is not None and poll_settings.config.kind == ProviderKind.PUBLIC_V2,
         Provider.onprem_v2: poll_settings is not None and poll_settings.config.kind == ProviderKind.ONPREM_V2,
@@ -624,13 +626,14 @@ def studio_create_mission(mission: WaypointMission, request: Request,
 
 
 @app.get("/api/v1/studio/missions/reconciliation")
-def studio_mission_reconciliation(request: Request, response: Response,
+async def studio_mission_reconciliation(request: Request, response: Response,
                                   authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
     workspace = _studio_workspace(request, authorization)
     runtime = app.state.status_runtime
+    local = await app.state.local_waylines.read()
     return compare_missions(workspace.list_missions(), runtime.catalog,
-                            runtime.summary()["flighthub"]["catalog_updated_at"])
+                            runtime.summary()["flighthub"]["catalog_updated_at"], local)
 
 
 @app.post("/api/v1/studio/missions/preview.csv")

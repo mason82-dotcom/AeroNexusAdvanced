@@ -22,3 +22,5 @@ def isolate_live_service_environment(monkeypatch):
     for key in tuple(os.environ):
         if key.startswith(_LIVE_PREFIXES) or key in _LIVE_KEYS:
             monkeypatch.delenv(key)
+    # Never read an actual local Cloud session or contact the Pi during tests.
+    monkeypatch.setenv("AERONEXUS_LOCAL_WAYLINES_FILE", "/nonexistent/aeronexus-test-session.json")

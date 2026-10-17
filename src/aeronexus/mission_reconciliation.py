@@ -13,7 +13,8 @@ def _name(value: str | None) -> str:
     return " ".join(unicodedata.normalize("NFC", value or "").casefold().split())
 
 
-def compare_missions(missions: list[dict], catalog: dict, updated_at: str | None) -> dict:
+def compare_missions(missions: list[dict], catalog: dict, updated_at: str | None,
+                     local: dict | None = None) -> dict:
     """Compare only already authorized local/cache data, without network IO.
 
     Lists may be capped by the upstream reader. Absence is not evidence of
@@ -41,6 +42,14 @@ def compare_missions(missions: list[dict], catalog: dict, updated_at: str | None
             tasks.append({**source, "task_uuid": task.get("uuid"),
                           "name": task.get("name"), "status": task.get("status"),
                           "wayline_link": "unavailable"})
+    local = local or {"state": "not_configured", "waylines": []}
+    if local["state"] == "connected":
+        source = {"provider": "pilot2-local-cloud", "project_id": local["workspace_id"],
+                  "workspace_id": local["workspace_id"]}
+        projects.append({**source, "waylines_readable": True, "tasks_readable": False,
+                         "waylines_at_limit": not local["pagination_complete"],
+                         "tasks_at_limit": False})
+        routes.extend({**source, **route} for route in local["waylines"])
     rows = []
     for mission in missions:
         aircraft, subtype, _, _ = MODELS[mission["drone_model"]]
@@ -60,10 +69,15 @@ def compare_missions(missions: list[dict], catalog: dict, updated_at: str | None
                      "candidate_count": len(candidates), "candidates": candidates[:10]})
     return {"catalog_updated_at": updated_at, "projects": projects,
             "missions": rows, "waylines": routes, "flight_tasks": tasks,
-            "coverage": {"source": "cached_flighthub_public",
-                         "cloud_cache_available": bool(catalog),
+            "local_pilot": {key: local[key] for key in (
+                "state", "workspace_id", "reported_total", "pagination_complete",
+                "snapshot_consistency_verified", "updated_at", "max_pages",
+                "requested_page_size") if key in local},
+            "coverage": {"source": "flighthub_public_and_pilot2_local",
+                         "cloud_cache_available": bool(catalog) or local["state"] == "connected",
+                         "flighthub_cache_available": bool(catalog),
                          "full_inventory_verified": False,
-                         "pilot2_local_cloud": "not_connected",
+                         "pilot2_local_cloud": local["state"],
                          "task_window_days": TASK_WINDOW_DAYS,
                          "max_items_per_project_collection": MAX_ITEMS,
                          "max_candidates_per_mission": 10,

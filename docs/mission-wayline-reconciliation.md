@@ -2,9 +2,9 @@
 
 Stand 17.10.2026. Es gibt drei getrennte Bestände: lokale Studio-Entwürfe,
 FlightHub-Public-Cloud-Waylines/Flugaufträge und die Wayline-Bibliothek des
-lokalen Pilot-2-Cloud-Servers. Der neue Bericht vergleicht die ersten beiden
-anhand bereits gelesener Metadaten. Er verbindet sich nicht mit dem lokalen
-Pilot-2-Cloud-Server und kennt dessen Routenbestand nicht.
+lokalen Pilot-2-Cloud-Servers. Der Bericht vergleicht Studio-Missionen mit
+FlightHub-Cache und optional der lokalen Serverbibliothek. Eine nur auf der
+Fernsteuerung gespeicherte, nicht hochgeladene Route bleibt unbekannt.
 
 ## Missionsprofile
 
@@ -50,9 +50,10 @@ Eine abgelehnte Datei wird nicht als neue Mission gespeichert.
 `GET /api/v1/studio/missions/reconciliation`
 
 Gleicher LAN-/Bearer-Schutz wie die Studio- und FlightHub-Daten-APIs;
-`Cache-Control: no-store`. Kein neuer öffentlicher Zugriff. Keine externe
-Abfrage, Schreiboperation oder automatische Verknüpfung. Der Aufruf liest den
-vorhandenen FlightHub-Cache und die gespeicherten lokalen Missionsmetadaten.
+`Cache-Control: no-store`. Kein neuer öffentlicher Zugriff und keine automatische
+Verknüpfung. Der Aufruf liest den FlightHub-Cache und lokale Missionsmetadaten.
+Bei eingerichteter lokaler Anbindung werden zusätzlich die Server-Waylines
+per GET geladen, höchstens einmal in 30 Sekunden. Siehe Einrichtung unten.
 
 - `missions`: lokale ID, Name, Profil und Anzahl editierbarer Punkte; bis zu zehn
   Namenskandidaten je Mission mit Anbieter, Projekt, Cloud-Wayline-ID, Modell,
@@ -66,6 +67,14 @@ vorhandenen FlightHub-Cache und die gespeicherten lokalen Missionsmetadaten.
   markiert Sammlungen am derzeitigen 200-Einträge-Limit.
 - `catalog_updated_at`: vorhandener globaler Cache-Zeitnachweis, keine Garantie,
   dass jede einzelne Sammlung erfolgreich oder vollständig aktualisiert wurde.
+- `local_pilot`: eigener Verbindungszustand, Workspace, Abrufzeit, gemeldete
+  Gesamtzahl, `pagination_complete`, `max_pages` und `requested_page_size`.
+  Das bisherige Coverage-Feld `max_items_per_project_collection=200` gilt nur
+  für den FlightHub-Katalog, nicht für die hier separat begrenzte lokale Quelle.
+  Lokale Routen tragen den Anbieter
+  `pilot2-local-cloud`; Workspace- und FlightHub-Projekt-IDs werden nicht vermischt.
+  `updated_at_ms` ist die lokale Server-Änderungszeit in Millisekunden, während
+  FlightHub `updated_at` weiterhin in Sekunden verwendet.
 
 Namen werden nach NFC-Normalisierung, Groß-/Kleinschreibung und Leerzeichen
 verglichen. Das ist ausschließlich ein Suchhinweis. `model_match` ist
@@ -91,8 +100,77 @@ curl --fail --show-error --max-time 15 \
 ```
 
 Im Token-Modus denselben geschützten Zugang wie beim bestehenden Studio verwenden;
-keine Token in Chat-Ausgaben kopieren. Es gibt in diesem Änderungssatz keine neue
-Vergleichsseite; der Bericht ist über die API zugänglich.
+keine Token in Chat-Ausgaben kopieren. Der Bericht bleibt API-only.
+
+## Lokale Pilot-2-Cloud anbinden
+
+Voraussetzung: Der bereits migrierte Cloud-API-Server läuft auf dem Pi an
+`127.0.0.1:6789`. Kein FlightHub-EU-Konto und kein DJI-App-Key ersetzen dessen
+lokales Benutzerkonto. Die Anbindung startet oder verändert keine Container,
+Datenbank, Brokerrechte oder Legacy-Dienste.
+
+Nach Installation des neuen Codes als Dienstbenutzer `mason`:
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+.venv/bin/python -m aeronexus.local_waylines --configure
+```
+
+Der Benutzername wird am Terminal erfragt, das Passwort verdeckt. Standard ist
+ein bestehendes **Web-Konto** des lokalen Cloud-Servers. Für ein bestehendes
+Pilot-Konto explizit `--configure --account pilot` verwenden. Keine Benutzer
+werden angelegt, keine Standardpasswörter ausprobiert und keine Rechte erhöht.
+Nur dieser explizite CLI-Einrichtungsschritt sendet POST `/manage/api/v1/login`.
+Anschließend wird der lesende Wayline-GET geprüft. Erst bei Erfolg wird die
+bisherige Sitzungsdatei atomar ersetzt. Das Passwort wird nie gespeichert.
+
+Die Datei `~/.config/aeronexusadvanced/pilot-waylines.json` enthält ausschließlich
+Workspace-ID und Sitzungstoken, Modus 0600 im Verzeichnis 0700. Dieses Token hat
+die Kontoberechtigungen; **es ist kein vom Server eingeschränktes Lesetoken**.
+Nur der Adapter beschränkt seine Verwendung auf GET. Symlinks, FIFOs, fremde
+Dateibesitzer und unsichere Dateirechte werden verweigert. Die Datei gehört
+nicht ins Repository oder in Chat-Ausgaben. Optionaler privater Pfad:
+`AERONEXUS_LOCAL_WAYLINES_FILE`; CLI und Dienst müssen denselben Pfad verwenden.
+
+Die eingerichtete Datei aktiviert den Adapter ausdrücklich. Ohne Datei bleibt
+er `not_configured` und sendet keine Anfrage. Ein Dienstneustart ist für eine
+neue Sitzung nicht nötig; der nächste Bericht liest die Datei erneut. Zum
+Deaktivieren die eigene Sitzungsdatei lokal entfernen; ein eventuell noch
+serverseitig gültiges Token wird dadurch nicht widerrufen.
+
+Probe ohne FastAPI-Neustart, Ausgabe enthält nur gefilterte Routenmetadaten:
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+.venv/bin/python -m aeronexus.local_waylines
+```
+
+Danach denselben HTTPS-Abgleichsbefehl oben ausführen. `connected` mit null
+Waylines bedeutet erfolgreich leer; `not_configured`, `configuration_error`,
+`authentication_required`, `business_error`, `upstream_error`, `unavailable`,
+`invalid_response` und `inventory_changed` bedeuten keinen bestätigten Bestand.
+Bei abgelaufener Sitzung erneut lokal `--configure` ausführen; Webaufrufe
+melden sich weder neu an noch verlängern sie Sitzungen.
+
+Der Adapter verwendet ausschließlich die feste Loopback-Adresse und
+`GET /wayline/api/v1/workspaces/{workspace_id}/waylines` mit `x-auth-token`.
+Keine Weiterleitungen, System-Proxys, Datei-/Download-URLs, Uploads, Favoriten,
+Flugaufträge oder MQTT-Kommandos. Nutzername, Storage-Key, signierte Links,
+Signatur und Startkoordinaten werden verworfen. Unbekannte Template-Codes
+bleiben numerisch unter `template_type_codes` erhalten; insbesondere die
+lokalen Erweiterungen 4/5 werden nicht als Standard-Wegpunktmodus ausgegeben.
+
+Es werden bis zu zehn Seiten mit je angefragten 50 Einträgen gelesen, insgesamt
+höchstens 500 (bei kleinerer serverseitiger Seitengröße entsprechend weniger).
+Antwortgröße pro Seite höchstens 1 MiB, HTTP-Timeout 5 Sekunden,
+Gesamtbudget 15 Sekunden. Abweichende Seitenzahlen, wechselnde Gesamtzahl/
+Seitengröße, doppelte Routen-IDs und unplausible Lücken verwerfen den Abruf.
+Am Limit werden gefilterte Teilbestände mit `pagination_complete=false`
+ausgegeben. Auch vollständig gelesene Seiten sind kein transaktionaler
+Snapshot; `snapshot_consistency_verified=false` bleibt ausdrücklich bestehen.
+Fehler ersetzen alte Cache-Werte durch eine leere Fehlerantwort; veraltete
+Erfolge werden nicht als aktuelle Verbindung dargestellt. Cache maximal
+30 Sekunden, nur im RAM; Löschen oder Wechsel der Sitzung wirkt sofort.
 
 ## Quellen und Prüfung
 
@@ -100,6 +178,9 @@ Vergleichsseite; der Bericht ist über die API zugänglich.
 - [DJI WPML-Indizes M3E/M3T/M3M](https://github.com/dji-sdk/Cloud-API-Doc/blob/master/docs/cn/60.api-reference/00.dji-wpml/40.common-element.md)
 - [DJI WPML gemeinsame Elemente](https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html)
 - [DJI Pilot-2-Wayline-Verwaltung und lokale Kopien](https://developer.dji.com/doc/cloud-api-tutorial/en/feature-set/pilot-feature-set/pilot-wayline-management.html)
+- [Offizielle Wayline-GET-Parameter und Antwort](https://github.com/dji-sdk/Cloud-API-Doc/blob/master/docs/en/60.api-reference/10.pilot-to-cloud/10.https/20.waypoint-management/10.obtain-waypointfile-list.md)
+- [DJI Demo LoginController](https://github.com/dji-sdk/DJI-Cloud-API-Demo/blob/main/sample/src/main/java/com/dji/sample/manage/controller/LoginController.java)
+- [DJI Demo Kontotypen](https://github.com/dji-sdk/DJI-Cloud-API-Demo/blob/main/sample/src/main/java/com/dji/sample/manage/model/enums/UserTypeEnum.java)
 
 Regressionen: alle sechs Geräteprofile mit geschlossener Route/Fotoaktion,
 veränderte RTH-/Geschwindigkeits-/Aktionsparameter, unbekannte/mehrfache XML-Felder,
@@ -107,3 +188,6 @@ Speichern/Laden/Export/Re-Import über die API, API-Zugriffsschutz, fehlende Que
 Namensmehrdeutigkeit und Modellkonflikte. Chromium war lokal nicht verfügbar;
 der Installationsversuch lieferte defekte Downloadarchive. Echte Browserprüfung
 der erweiterten Geräteauswahl und Pi-/Pilot-2-Abnahme stehen aus.
+Lokaler Adapter zusätzlich mit HTTP-Mocks geprüft: GET-/Workspace-Begrenzung,
+Pagination, Fehler, Limits, Cache, Tokenwechsel, Auth-Schutz und Dateirechte.
+Die echte lokale Anmeldung und der Pi-Routenbestand sind noch nicht abgenommen.
