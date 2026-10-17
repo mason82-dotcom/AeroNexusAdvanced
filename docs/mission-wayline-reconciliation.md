@@ -420,3 +420,24 @@ begrenzt und kann über „Werkzeuge“ → „Hinweis zeigen“ erweitert werde
 Dies sind ausschließlich Browseransichtsänderungen: keine neuen DJI-API-
 Aufrufe, keine Speicherung von Cloud-KMZ-Dateien, keine Missionsänderungen
 und keine Flugfreigabe. Visuelle Live-Abnahme auf Android steht noch aus.
+
+## Mobiler Cloud-Status: einklappbarer Hinweis oberhalb der Kartenquellen
+
+Nach bestätigter Kartenfokus-Live-Abnahme auf einem Android-Smartphone
+wurde die Statusanzeige am unteren Kartenrand korrigiert. Die bisherige
+CSS-Zeilenkürzung konnte eine zweizeilige, abgeschnittene Warnbox direkt
+über der Leaflet-Attribution erzeugen.
+
+Die neue schmale Status-Schaltfläche zeigt etwa „Cloud-Vorschau: Kapelle1 ·
+Details“, während der vollständige Wortlaut in einem separaten DOM-Knoten
+erhalten bleibt. Ein Tippen auf die Schaltfläche öffnet die Details;
+„Weniger“ klappt sie wieder ein. Hinweis und Detailanzeige liegen
+mindestens 39 CSS-Pixel zuzüglich Safe-Area-Abstand oberhalb des
+Kartenfußes. Es werden keine Browser-Hover-Aktionen benötigt.
+Sowohl normale Hinweise als auch Warnungen verwenden dieselbe
+Statusverwaltung mit `textContent` statt `innerHTML`, sodass
+Wayline-Namen weder HTML ausführen noch auf die Karte gezeichnet werden.
+
+Die Änderungen betreffen ausschließlich die mobile Browseroberfläche.
+DJI-Downloads, Flight-Commands, lokale Missionen und Cloud-KMZ bleiben
+unverändert. Die Darstellung muss auf dem realen Smartphone geprüft werden.
