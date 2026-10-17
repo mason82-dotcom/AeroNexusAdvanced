@@ -408,13 +408,17 @@ async function updateCloud() {
       card.append(label,value);box.appendChild(card);
     }
     const fleet=data.fleet||{devices:[]};
-    const online=fleet.devices.filter(d=>d.online);
-    byId("cloud-overall").textContent=(data.overall==="ok"?"Alle Kerndienste erreichbar":"Mindestens ein Kerndienst gestört")+
+    const known=Array.isArray(fleet.devices)?fleet.devices:[];
+    const online=known.filter(d=>d.online===true);
+    const offline=known.filter(d=>d.online===false).length;
+    const unknown=known.filter(d=>d.online===null).length;
+    byId("cloud-overall").textContent=(data.overall==="ok"?"Lokale Kerndienste erreichbar":"Mindestens ein Kerndienst gestört")+
       " · MQTT-Feed: "+(feedStates[fleet.feed_state]||fleet.feed_state);
-    byId("cloud-fleet").textContent=online.length?"Verbunden: "+online.map(d=>
+    byId("cloud-fleet").textContent=(online.length?"Live verbunden: "+online.map(d=>
       (d.kind==="controller"?"Fernsteuerung ":"Fluggerät ")+d.name).join(" · "):
-      "Keine Fernsteuerung verbunden"+(fleet.devices.length?" (bekannt: "+fleet.devices.length+", zuletzt "+
-      (fleet.last_message_at||"–")+")":"");
+      "Keine bestätigte Live-Verbindung")+
+      " · Offline: "+offline+" · Status unbekannt: "+unknown+
+      " · Letzte gültige Nachricht: "+(fleet.last_message_at||"noch keine");
   } catch (error) {byId("cloud-overall").textContent="Cloud-Server-Status nicht abrufbar: "+error.message;}
 }
 async function updateDevices() {
