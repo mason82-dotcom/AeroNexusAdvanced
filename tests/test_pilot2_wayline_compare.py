@@ -31,7 +31,8 @@ def mission(**changes):
 
 def preview(*segments):
     return {"source": "waylines.wpml", "features": [
-        {"geometry": {"type": "LineString", "coordinates": pts}}
+        {"geometry": {"type": "Point" if len(pts) == 1 else "LineString",
+                      "coordinates": pts[0] if len(pts) == 1 else pts}}
         for pts in segments
     ]}
 
