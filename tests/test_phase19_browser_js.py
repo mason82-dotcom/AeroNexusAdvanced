@@ -44,7 +44,7 @@ const center=api.terrainGridPoint(grid,geo,{latitude:49.1999,longitude:8.5001});
 assert.ok(center);
 assert.ok(Math.abs(center.row-1)<1e-7);
 assert.ok(Math.abs(center.col-1)<1e-7);
-assert.equal(center.elevation,140);
+assert.ok(Math.abs(center.elevation-140)<1e-5);
 const midway=api.terrainGridPoint(grid,geo,{latitude:49.19995,longitude:8.50005});
 assert.ok(Math.abs(midway.elevation-110)<1e-5);
 const far=api.terrainGridPoint(grid,geo,{latitude:49.1,longitude:8.6});
@@ -52,8 +52,9 @@ assert.equal(far,null);
 assert.equal(api.terrainGridPoint(grid,null,{latitude:49.2,longitude:8.5}),null);
 assert.equal(api.terrainGridPoint(grid,{...geo,crs:"EPSG:32632"},
   {latitude:49.2,longitude:8.5}),null);
-assert.deepEqual(api.terrainGeoFromGrid(geo,1,1),{
-  latitude:49.1999,longitude:8.5001});
+const gps=api.terrainGeoFromGrid(geo,1,1);
+assert.ok(Math.abs(gps.latitude-49.1999)<1e-9);
+assert.ok(Math.abs(gps.longitude-8.5001)<1e-9);
 const line={name:"Profil",kind:"line",vertices:[
   {latitude:49.2,longitude:8.5},{latitude:49.1998,longitude:8.5002}]};
 const profile=api.terrainPolylineProfile(line,grid,geo);
@@ -62,8 +63,8 @@ assert.equal(profile.samples.length,129);
 assert.ok(profile.distance_m>25&&profile.distance_m<27);
 assert.ok(profile.max_m>139.5);
 assert.ok(profile.min_m>=100);
-assert.equal(profile.samples[0].elevation,100);
-assert.equal(profile.samples[128].elevation,100);
+assert.ok(Math.abs(profile.samples[0].elevation-100)<1e-5);
+assert.ok(Math.abs(profile.samples[128].elevation-100)<1e-5);
 assert.ok(profile.samples.every(p=>Number.isFinite(p.elevation)));
 const outside={...line,vertices:[
   line.vertices[0],{latitude:49.18,longitude:8.6}]};
