@@ -3,7 +3,7 @@
 Probes only the published loopback ports of the Compose services and never
 uses their credentials: AeroNexusAdvanced does not read cloud-server/.env.
 
-* api      HTTP :6789  any answer below 500 means up (401 without login)
+* api      HTTP :6789  200 or auth challenge (401/403); 404 is not healthy
 * control  HTTP :8085  Pilot 2 login page (/pilot-login)
 * mqtt     TCP  :1884  EMQX accepts connections (no MQTT login attempted)
 * minio    HTTP :9000  /minio/health/live
@@ -54,16 +54,21 @@ async def _http(client: httpx.AsyncClient, host: str, name: str) -> dict:
     except httpx.HTTPError:
         return {"state": "down"}
     ms = round((time.monotonic() - started) * 1000)
-    if response.status_code >= 500:
-        return {"state": "error", "http": response.status_code, "ms": ms}
-    result = {"state": "up", "http": response.status_code, "ms": ms}
-    if name == "minio" and response.status_code != 200:
-        result["state"] = "error"
-    if name == "mediamtx":
+    status = response.status_code
+    # An arbitrary 2xx/3xx/4xx response only proves that *some* HTTP server
+    # answered. Match the expected endpoint contract instead of reporting
+    # a missing Cloud API route (404) as a healthy application.
+    expected = status in (200, 401, 403) if name == "api" else status == 200
+    result = {"state": "up" if expected else "error", "http": status, "ms": ms}
+    if name == "mediamtx" and expected:
         try:
-            items = response.json().get("items") or []
-            result["streams"] = sum(1 for i in items if isinstance(i, dict) and i.get("ready"))
-        except (ValueError, AttributeError):
+            payload = response.json()
+            items = payload.get("items") if isinstance(payload, dict) else None
+            if not isinstance(items, list):
+                raise ValueError("missing MediaMTX path listing")
+            result["streams"] = sum(1 for item in items
+                                    if isinstance(item, dict) and item.get("ready") is True)
+        except (ValueError, TypeError, AttributeError):
             result["state"] = "error"
     return result
 
