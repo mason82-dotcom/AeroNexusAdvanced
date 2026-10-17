@@ -19,7 +19,7 @@ from .local_session import verify_session
 from .local_waylines import (ORIGIN, Credentials, LocalWaylineError,
                              credentials_path, load_credentials, read_waylines)
 from .studio_workspace import Workspace, WorkspaceError
-from .wpml_export import WaypointMission, export_kmz, import_kmz
+from .wpml_export import MODELS, WaypointMission, export_kmz, import_kmz
 
 MAX_KMZ_BYTES = 2 * 1024 * 1024
 MAX_REPLY_BYTES = 65536
@@ -88,15 +88,19 @@ async def _upload_response(response: httpx.Response) -> None:
         raise UploadError("upload_rejected")
 
 
-async def upload(plan: UploadPlan, credentials: Credentials, *, transport=None) -> dict:
-    """The only write: one multipart POST, never followed or retried.
+def require_expected_model(plan: UploadPlan, expected_model: str | None) -> str:
+    """Block an accidental upload of a route for a different aircraft."""
+    if expected_model not in MODELS:
+        raise UploadError("expected_model_required")
+    if plan.drone_model != expected_model:
+        raise UploadError("model_mismatch")
+    drone, subtype, _, _ = MODELS[expected_model]
+    return f"0-{drone}-{subtype}"
 
-    The preflight checks the current user and a complete list. A lost response
-    after POST yields an ambiguous outcome; callers must verify manually rather
-    than sending another POST.
-    """
-    if os.environ.get("AERONEXUS_PILOT_WAYLINE_UPLOAD_ENABLED") != "1":
-        raise UploadError("upload_disabled")
+
+async def check_cloud(plan: UploadPlan, credentials: Credentials, *,
+                      transport=None) -> dict:
+    """Read-only authenticated preflight, no cloud write or storage credentials."""
     try:
         await asyncio.wait_for(verify_session(credentials, transport=transport), 8)
         before = await asyncio.wait_for(read_waylines(credentials, transport=transport), 18)
@@ -104,9 +108,24 @@ async def upload(plan: UploadPlan, credentials: Credentials, *, transport=None) 
         raise UploadError("preflight_unavailable") from None
     if before.get("state") != "connected" or before.get("pagination_complete") is not True:
         raise UploadError("inventory_incomplete")
-    cloud_name = plan.filename[:-4]
-    if any(item.get("name") == cloud_name for item in before["waylines"]):
+    name = plan.filename[:-4]
+    if any(item.get("name") == name for item in before["waylines"]):
         raise UploadError("name_conflict")
+    return before
+
+
+async def upload(plan: UploadPlan, credentials: Credentials, *,
+                 expected_model: str | None = None, transport=None) -> dict:
+    """One explicit multipart POST, no redirects or retries, after strict GETs.
+
+    A lost response after the write is ambiguous: never resend automatically.
+    """
+    if os.environ.get("AERONEXUS_PILOT_WAYLINE_UPLOAD_ENABLED") != "1":
+        raise UploadError("upload_disabled")
+    model_key = require_expected_model(plan, expected_model)
+    before = await check_cloud(plan, credentials, transport=transport)
+    prior_ids = {item["wayline_id"] for item in before["waylines"]}
+    cloud_name = plan.filename[:-4]
 
     path = f"/wayline/api/v1/workspaces/{credentials.workspace_id}/waylines/file/upload"
     try:
@@ -126,8 +145,13 @@ async def upload(plan: UploadPlan, credentials: Credentials, *, transport=None) 
 
     try:
         after = await asyncio.wait_for(read_waylines(credentials, transport=transport), 18)
-        verified = (after.get("state") == "connected" and
-                    any(item.get("name") == cloud_name for item in after.get("waylines", [])))
+        verified = False
+        if after.get("state") == "connected" and after.get("pagination_complete") is True:
+            matches = [item for item in after.get("waylines", [])
+                       if item["name"] == cloud_name
+                       and item["wayline_id"] not in prior_ids
+                       and item.get("device_model_key") == model_key]
+            verified = len(matches) == 1
     except (httpx.HTTPError, OSError, TimeoutError, LocalWaylineError):
         verified = False
     return {"state": "registered" if verified else "submitted_unverified",
@@ -137,7 +161,12 @@ async def upload(plan: UploadPlan, credentials: Credentials, *, transport=None) 
 def main() -> int:
     parser = argparse.ArgumentParser(description="AeroNexus mission -> local DJI Pilot 2 library")
     parser.add_argument("--mission", required=True, help="UUID of a saved AeroNexus mission")
-    parser.add_argument("--apply", action="store_true", help="Explicitly enable a real cloud upload")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--apply", action="store_true", help="Explicit real cloud upload")
+    action.add_argument("--check-cloud", action="store_true",
+                        help="Read-only cloud session and inventory preflight")
+    parser.add_argument("--expect-model", choices=tuple(MODELS),
+                        help="Required for --apply: expected exact aircraft profile")
     args = parser.parse_args()
     try:
         plan = prepare(args.mission)
@@ -145,6 +174,18 @@ def main() -> int:
         print("Profil:", plan.drone_model, "| Wegpunkte:", plan.points)
         print("KMZ:", len(plan.kmz), "Bytes")
         print("Vorgesehener Cloud-Name:", plan.filename[:-4])
+        if args.expect_model:
+            require_expected_model(plan, args.expect_model)
+        elif args.apply:
+            raise UploadError("expected_model_required")
+        if args.check_cloud:
+            credentials = load_credentials(credentials_path())
+            if credentials is None:
+                raise UploadError("session_missing")
+            before = asyncio.run(check_cloud(plan, credentials))
+            print("Cloud-Sitzung gültig; Waylines vollständig:", before["reported_total"])
+            print("READ ONLY: kein Upload.")
+            return 0
         if not args.apply:
             print("DRY RUN: kein Netzwerkzugriff, kein Upload. --apply für explizite Übertragung.")
             return 0
@@ -158,7 +199,7 @@ def main() -> int:
         credentials = load_credentials(credentials_path())
         if credentials is None:
             raise UploadError("session_missing")
-        result = asyncio.run(upload(plan, credentials))
+        result = asyncio.run(upload(plan, credentials, expected_model=args.expect_model))
         print("Serverergebnis:", result["state"], "| Cloud-Name:", result["name"])
         if not result["verified"]:
             print("Antwort nicht abschließend bestätigt; Bibliothek prüfen, NICHT erneut hochladen.")
