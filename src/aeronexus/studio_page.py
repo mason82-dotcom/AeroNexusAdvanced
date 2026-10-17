@@ -1282,6 +1282,40 @@ function terrainGeoPolyline(obj,grid,geo){
   if(obj.kind==="polygon"&&points.length>2)points.push({...points[0]});
   return points;
 }
+// Piecewise bilinear DEM interpolation makes a 3D GeoObject line follow
+// the displayed terrain instead of connecting only its elevated vertices.
+// Bound work even for many saved shapes; never mutate original GeoObjects.
+function terrainDrapePolyline(points,grid){
+  if(!Array.isArray(points)||points.length<1||points.length>130)return null;
+  if(points.length===1)return [{...points[0]}];
+  const maxSegments=1024;
+  const lengths=points.slice(1).map((point,i)=>
+    Math.hypot(point.row-points[i].row,point.col-points[i].col));
+  // Use an even subdivision count so midpoint terrain peaks are not
+  // systematically skipped when the straight segment crosses a summit.
+  const wanted=lengths.map(len=>len===0?1:Math.max(2,2*Math.ceil(len*1.5)));
+  const totalWanted=wanted.reduce((sum,count)=>sum+count,0);
+  let remaining=maxSegments;
+  const result=[{...points[0]}];
+  for(let i=0;i<lengths.length;i++){
+    const remainingEdges=lengths.length-i-1;
+    const limit=remaining-remainingEdges;
+    const count=Math.max(1,Math.min(wanted[i],limit,
+      Math.floor(wanted[i]*maxSegments/Math.max(maxSegments,totalWanted))));
+    const first=points[i],last=points[i+1];
+    for(let k=1;k<=count;k++){
+      const t=k/count;
+      const r=first.row+(last.row-first.row)*t;
+      const c=first.col+(last.col-first.col)*t;
+      const sampled=terrainHeightAt(grid,terrainClamp(r,0,grid.heights_m.length-1),
+        terrainClamp(c,0,grid.heights_m[0].length-1));
+      if(!sampled)return null;
+      result.push(sampled);
+    }
+    remaining-=count;
+  }
+  return result;
+}
 function terrainDrawOverlays(ctx,projection,grid,geo,objects,view){
   if(!geo||!view.geoOverlay||!Array.isArray(objects))return;
   ctx.lineWidth=2.4;
@@ -1289,14 +1323,16 @@ function terrainDrawOverlays(ctx,projection,grid,geo,objects,view){
     const obj=item.object;
     const points=terrainGeoPolyline(obj,grid,geo);
     if(!points||!points.length)continue;
+    const draped=terrainDrapePolyline(points,grid);
+    if(!draped||!draped.length)continue;
     ctx.beginPath();
-    for(let i=0;i<points.length;i++){
-      const p=points[i],screen=projection.project(p.row,p.col,p.elevation);
+    for(let i=0;i<draped.length;i++){
+      const p=draped[i],screen=projection.project(p.row,p.col,p.elevation);
       if(i===0)ctx.moveTo(screen.x,screen.y);
       else ctx.lineTo(screen.x,screen.y);
     }
-    if(points.length===1){
-      const p=points[0],screen=projection.project(p.row,p.col,p.elevation);
+    if(draped.length===1){
+      const p=draped[0],screen=projection.project(p.row,p.col,p.elevation);
       ctx.arc(screen.x,screen.y,4,0,2*Math.PI);
     }
     ctx.strokeStyle="#ff7c8d";

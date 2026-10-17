@@ -30,6 +30,14 @@ Raspberry Pi 5/Chrome getestet.
   Interpolation des angezeigten Rasterwerts. Dazu WGS84-Breite/Länge,
   falls tatsächlich verfügbar. Bei nicht georeferenziertem Raster wird
   nur die Rasterhöhe ohne erfundene Position angezeigt.
+- **Terrain-Draping (Korrektur nach Chrome-Abnahme):** Die rosa
+  Geo-Objekt-Konturen werden im 3D-Viewer nicht mehr nur als direkte
+  Geraden zwischen erhöhten Eckpunkten gezeichnet. Stattdessen
+  werden ihre Segmente in maximal 1024 zusätzliche Teilabschnitte
+  abgetastet und mit demselben bilinearen DEM-Höhenwert wie das
+  Höhenprofil auf die sichtbare Oberfläche gelegt. Die Originalpunkte,
+  das Raster und die STL-Ausgabe bleiben unverändert. Die gezeichneten
+  Linien sind weiterhin rein visuell; keine echte Verdeckungsberechnung.
 - **Höhenprofil:** Eine bereits **gespeicherte Geo-Linie**, die
   vollständig innerhalb des geeigneten EPSG:4326-Rasters liegt,
   lässt sich auswählen und entlang ihrer Segmentkette mit 129
