@@ -217,6 +217,14 @@ Aufnahmepunkten und Footprints, Overlay mit dem Sichtbild sowie PV-Inspektion
 `deploy/pi/install-thermal-sdk.sh <dji_thermal_sdk_v1.8_*.zip>`.
 Details: [docs/thermal.md](docs/thermal.md).
 
+## Automatischer Medien-Sync (Pilot 2 Uploads)
+
+Dienst `aeronexusadvanced-media-sync`: vollständiger Scan beim Start, danach
+nach jedem Pilot-2-Upload (Bucket-Abfrage alle 2 min oder MinIO-Ereignisse)
+Aktualisierung von Medienindex, Thermal-Geo-Index, Multispektral-Katalog,
+NDVI-Übersichten und Thermal-Messungen – nur lesend. Status auf `/media`.
+Details: [docs/media-auto-sync.md](docs/media-auto-sync.md).
+
 ## Multispektral DJI Mavic 3M (`/multispectral`)
 
 Eigener Web-UI-Tab für M3M-Bänder (Grün, Rot, RedEdge, NIR) aus dem

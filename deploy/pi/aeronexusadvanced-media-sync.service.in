@@ -1,0 +1,28 @@
+# Rendered by deploy/pi/install-service.sh (repository: @ROOT@).
+# Read-only catalogue sync after DJI Pilot 2 media uploads (MinIO -> local
+# media/thermal/multispectral catalogues). Never writes to MinIO or DJI.
+[Unit]
+Description=AeroNexusAdvanced media auto-sync (read-only)
+After=network-online.target aeronexusadvanced.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=@ROOT@/.venv/bin/python -m aeronexus.media_sync --env-file @ROOT@/.env
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=30
+# Background work: lower CPU/IO priority than the web service.
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=1500M
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
