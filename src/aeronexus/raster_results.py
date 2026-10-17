@@ -304,11 +304,12 @@ class RasterResults:
                 if not values.size:
                     raise RasterError("Das gewählte Band enthält keine gültigen Stichprobenwerte.")
                 lo, hi = (float(v) for v in np.percentile(values, [2, 98]))
+                display_low, display_high = lo, hi
                 if lo == hi:
                     delta = max(abs(lo) * .01, .5)
-                    lo, hi = lo - delta, hi + delta
+                    display_low, display_high = lo - delta, hi + delta
                 result = {"band": band, "min": float(values.min()), "max": float(values.max()),
-                          "p02": lo, "p98": hi, "sample_count": int(values.size), "approximate": True}
+                          "p02": lo, "p98": hi, "display_low": display_low, "display_high": display_high, "sample_count": int(values.size), "approximate": True}
             self.get(item_id, item["version"])
             with _cache_lock:
                 _stats[key] = result
