@@ -168,6 +168,8 @@ class DjiMediaIndex:
                 scan_marker TEXT NOT NULL,
                 UNIQUE(bucket, object_key)
             )""")
+            # Filename lookups pair thermal/visual images across SD-import folders.
+            conn.execute("CREATE INDEX IF NOT EXISTS media_filename ON media(filename)")
             conn.execute("""CREATE TABLE IF NOT EXISTS scans (
                 bucket TEXT PRIMARY KEY, completed_at TEXT NOT NULL,
                 indexed INTEGER NOT NULL, added INTEGER NOT NULL,
@@ -333,6 +335,40 @@ class DjiMediaIndex:
                 "WHERE mime='image/tiff' OR (mime='image/jpeg' AND ("
                 "filename LIKE '%\\_D.JPG' ESCAPE '\\' OR filename LIKE '%\\_F.JPG' ESCAPE '\\')) "
                 "ORDER BY filename")]
+        finally:
+            db.close()
+
+    def get_many(self, ids: list[str]) -> dict[str, dict]:
+        """Internal records for several opaque ids in one query."""
+        ids = [i for i in dict.fromkeys(ids) if isinstance(i, str) and _ID_RE.fullmatch(i)]
+        db = self._connect(write=False) if ids else None
+        if db is None:
+            return {}
+        try:
+            out = {}
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                for row in db.execute("SELECT * FROM media WHERE id IN (" + ",".join("?" * len(chunk))
+                                      + ")", chunk):
+                    out[row["id"]] = dict(row)
+            return out
+        finally:
+            db.close()
+
+    def ids_by_filenames(self, filenames: list[str]) -> dict[str, list[str]]:
+        """filename -> ids (all matches) for several names in one query."""
+        names = [n for n in dict.fromkeys(filenames) if isinstance(n, str) and 0 < len(n) <= 240]
+        db = self._connect(write=False) if names else None
+        if db is None:
+            return {}
+        try:
+            out: dict[str, list[str]] = {}
+            for start in range(0, len(names), 500):
+                chunk = names[start:start + 500]
+                for row in db.execute("SELECT id, filename FROM media WHERE filename IN ("
+                                      + ",".join("?" * len(chunk)) + ") ORDER BY id", chunk):
+                    out.setdefault(row["filename"], []).append(row["id"])
+            return out
         finally:
             db.close()
 

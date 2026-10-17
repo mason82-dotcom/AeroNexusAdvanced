@@ -39,7 +39,7 @@ from .thermal_page import render_thermal_page
 from .multispectral import (LAYERS, MultispectralBusy, MultispectralError, MultispectralNotFound,
                             MultispectralService)
 from .multispectral_page import render_multispectral_page
-from .thermal_geo import ThermalGeoIndex
+from .thermal_flights import ThermalFlights, ThermalJobRunning
 from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
 from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
@@ -771,7 +771,7 @@ def studio_terrain_stl(grid:TerrainGrid,request:Request,
                              "Cache-Control":"no-store","X-Content-Type-Options":"nosniff"})
 
 
-# Thermography: DJI R-JPEGs from the read-only MinIO index, temperatures only
+# Thermal: DJI R-JPEGs from the read-only MinIO index, temperatures only
 # from the DJI Thermal SDK (separate process). Originals are never modified.
 def _thermal_service(request: Request, authorization: str | None) -> ThermalService:
     workspace = _studio_workspace(request, authorization)
@@ -851,16 +851,87 @@ def thermal_images(request: Request, response: Response,
         raise _thermal_http_error(exc) from exc
 
 
+def _thermal_flights(request: Request, authorization: str | None) -> ThermalFlights:
+    service = _thermal_service(request, authorization)
+    flights = getattr(service, "flights", None)
+    if flights is None:
+        flights = service.flights = ThermalFlights(service)
+    return flights
+
+
+_GEO_ERRORS = (DjiMediaError, OSError, sqlite3.Error, ValueError)
+
+
 @app.get("/api/v1/thermal/map")
 def thermal_map(request: Request, response: Response,
                 authorization: str | None = Header(default=None)) -> dict:
-    """Positions and near-nadir footprints from the private thermal geo index."""
-    service = _thermal_service(request, authorization)
+    """Positions, near-nadir footprints, flight ids and cached per-image stats."""
+    flights = _thermal_flights(request, authorization)
     _no_cache(response)
     try:
-        return ThermalGeoIndex(service.index).map_items()
-    except (DjiMediaError, OSError, sqlite3.Error, ValueError) as exc:
+        return flights.map_items()
+    except _GEO_ERRORS as exc:
         raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
+@app.get("/api/v1/thermal/flights")
+def thermal_flights(request: Request, response: Response,
+                    authorization: str | None = Header(default=None)) -> dict:
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    try:
+        return flights.flights()
+    except _GEO_ERRORS as exc:
+        raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
+@app.get("/api/v1/thermal/flights/{flight_id}")
+def thermal_flight(flight_id: str, request: Request, response: Response,
+                   limit: int = Query(default=200, ge=1, le=1000),
+                   authorization: str | None = Header(default=None)) -> dict:
+    """Hotspot ranking of one flight (images sorted by maximum temperature)."""
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    try:
+        return flights.flight_detail(flight_id, limit=limit)
+    except ThermalNotFound as exc:
+        raise HTTPException(status_code=404, detail="Unknown flight") from exc
+    except _GEO_ERRORS as exc:
+        raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
+@app.post("/api/v1/thermal/flights/{flight_id}/analyze", status_code=202)
+def thermal_flight_analyze(flight_id: str, request: Request, response: Response,
+                           authorization: str | None = Header(default=None)) -> dict:
+    """Start the background SDK measurement of all not yet measured images.
+
+    Writes only the private local summary cache; nothing is written to MinIO/DJI."""
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    try:
+        return flights.start(flight_id)
+    except ThermalNotFound as exc:
+        raise HTTPException(status_code=404, detail="Unknown flight") from exc
+    except ThermalJobRunning as exc:
+        raise HTTPException(status_code=409, detail="A flight analysis is already running") from exc
+    except _GEO_ERRORS as exc:
+        raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
+@app.get("/api/v1/thermal/jobs/current")
+def thermal_job(request: Request, response: Response,
+                authorization: str | None = Header(default=None)) -> dict:
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    return flights.job()
+
+
+@app.post("/api/v1/thermal/jobs/current/cancel")
+def thermal_job_cancel(request: Request, response: Response,
+                       authorization: str | None = Header(default=None)) -> dict:
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    return flights.cancel()
 
 
 @app.get("/api/v1/thermal/images/{media_id}/analysis")

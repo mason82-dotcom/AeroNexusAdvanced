@@ -206,7 +206,7 @@ Phase-20-Indizes unter `var/` bleiben unangetastet; für deren Umstieg ist
 ein expliziter Scan mit dem neuen Lesezugang erforderlich.
 Details: [Phase 21 – DJI-MinIO-Medien](docs/phase-21-dji-minio-media.md).
 
-## Thermografie (`/thermal`)
+## Thermal (`/thermal`)
 
 Eigener Web-UI-Tab für radiometrische DJI-Wärmebilder (M3T/M4T R-JPEG) aus
 dem MinIO-Index. Temperaturen nur über das DJI Thermal SDK (`dji_irp`,
@@ -215,7 +215,7 @@ Bereichsmessung, Emissionsgrad & Co., PNG/CSV/JSON-Export, Karte mit
 Aufnahmepunkten und Footprints, Overlay mit dem Sichtbild sowie PV-Inspektion
 (ΔT-Klassen und Messbedingungen, Orientierung an IEC TS 62446-3). Installation:
 `deploy/pi/install-thermal-sdk.sh <dji_thermal_sdk_v1.8_*.zip>`.
-Details: [docs/thermography.md](docs/thermography.md).
+Details: [docs/thermal.md](docs/thermal.md).
 
 ## Multispektral DJI Mavic 3M (`/multispectral`)
 

@@ -182,6 +182,8 @@ class ThermalGeoIndex:
             conn.execute("""CREATE TABLE IF NOT EXISTS thermal_geo (
                 id TEXT PRIMARY KEY, etag TEXT, filename TEXT NOT NULL,
                 captured_at TEXT, model TEXT, meta TEXT NOT NULL)""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS thermal_stats (
+                id TEXT PRIMARY KEY, etag TEXT, stats TEXT NOT NULL, computed_at TEXT NOT NULL)""")
             conn.execute("""CREATE TABLE IF NOT EXISTS thermal_geo_scan (
                 id INTEGER PRIMARY KEY CHECK (id = 1), completed_at TEXT NOT NULL,
                 indexed INTEGER NOT NULL, read INTEGER NOT NULL, failed INTEGER NOT NULL)""")

@@ -1,4 +1,4 @@
-"""Thermography workspace (own web UI tab ``/thermal``).
+"""Thermal workspace (own web UI tab ``/thermal``).
 
 Static HTML/JS without credentials. Temperatures are fetched as a float32
 grid from the local API, which obtains them from the DJI Thermal SDK; the
@@ -14,7 +14,7 @@ HTML = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
-<title>AeroNexusAdvanced · Thermografie</title>
+<title>AeroNexusAdvanced · Thermal</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
 :root{font:14px/1.45 system-ui,"Segoe UI",sans-serif;color-scheme:dark;--bg:#0b1323;--pane:#122139;--card:#152b47;--line:#334e69;--ink:#eaf4ff;--sub:#a9bfd8;--mint:#75e3bd;--amber:#e4bd78;--red:#ff9ba8}
@@ -57,6 +57,16 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 #thermal-map{position:absolute;inset:0;display:none;background:#23374f}
 .empty{color:var(--sub);text-align:center;padding:30px}
 .readout{position:absolute;left:10px;bottom:10px;background:#0f1d31e6;border:1px solid #35536f;border-radius:8px;padding:5px 9px;font:12px ui-monospace,Consolas,monospace;pointer-events:none;z-index:2}
+.side-tabs{display:flex;gap:6px;margin:4px 0 8px}
+.flight{border:1px solid #33506d;border-radius:9px;padding:9px;margin:6px 0;background:#142842}
+.flight.active{border-color:#76bfff;background:#1b3a59}
+.flight b{display:block;font-size:13px}.flight small{display:block;color:#b5cae1;font-size:11px;margin-top:2px}
+.flight progress{width:100%;height:9px;accent-color:#ff8a5c;margin-top:6px}
+.rank td:first-child{color:var(--sub)}
+.map-tools{position:absolute;z-index:500;top:10px;right:52px;display:flex;gap:6px;flex-wrap:wrap;background:#112137e8;border-radius:8px;padding:6px 8px;font-size:12px;color:#c8dbed;align-items:center}
+.map-tools select{padding:4px 6px;font-size:12px}
+.map-legend{position:absolute;z-index:500;right:10px;bottom:22px;background:#112137e8;border-radius:8px;padding:6px 9px;font-size:11px;color:#c8dbed}
+.map-legend canvas{display:block;width:150px;height:10px;margin:4px 0;border-radius:3px}
 .map-state{position:absolute;z-index:500;left:10px;bottom:10px;max-width:min(520px,85%);background:#112137e8;border-radius:8px;padding:7px 9px;font-size:11px;color:#c8dbed}
 .colorbar{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px}
 .colorbar canvas{flex:1;height:14px;border-radius:4px;border:1px solid #3a5876}
@@ -86,13 +96,13 @@ details.section summary{cursor:pointer;font-weight:700;font-size:13px;padding:4p
 </head>
 <body>
 <header>
-<div class="logo"><small>AERONEXUS ADVANCED</small>Thermografie</div>
+<div class="logo"><small>AERONEXUS ADVANCED</small>Thermal</div>
 <nav class="tabs" aria-label="Projektbereiche">
 <a href="/operations">Operations Center</a>
 <a href="/studio">Mission Studio</a>
 <a href="/status">Live-Status</a>
 <a href="/media">DJI Medien</a>
-<span class="active" aria-current="page">Thermografie</span>
+<span class="active" aria-current="page">Thermal</span>
 <a href="/multispectral">Multispektral</a>
 </nav>
 <span class="header-state" id="sdk-state" role="status" aria-live="polite">Prüfe DJI Thermal SDK…</span>
@@ -101,12 +111,22 @@ details.section summary{cursor:pointer;font-weight:700;font-size:13px;padding:4p
 <section class="panel" aria-labelledby="list-title">
 <div class="eyebrow">MinIO · nur lesen</div>
 <h2 id="list-title">Wärmebilder (R-JPEG)</h2>
+<div class="side-tabs" role="tablist" aria-label="Liste">
+<button type="button" role="tab" id="tab-images" class="active" aria-selected="true">Bilder</button>
+<button type="button" role="tab" id="tab-flights" aria-selected="false">Flüge</button>
+</div>
+<div id="pane-flights" hidden style="display:none;flex-direction:column;min-height:0;flex:1">
+<div class="sub" id="flight-state" role="status" aria-live="polite">Lade Flüge…</div>
+<div class="scroll" id="flights"></div>
+</div>
+<div id="pane-images" style="display:flex;flex-direction:column;min-height:0;flex:1">
 <div class="row"><input id="search" class="grow" type="search" maxlength="120" placeholder="Dateiname / Datum (z. B. 20261002)" aria-label="Wärmebilder suchen">
 <button id="search-go" type="button">Suchen</button></div>
 <div class="sub" id="list-state" role="status" aria-live="polite" style="margin:7px 0">Lade…</div>
 <div class="scroll" id="list"></div>
 <div class="row" style="justify-content:space-between;margin-top:8px">
 <button id="prev" type="button">Zurück</button><span class="sub" id="page">–</span><button id="next" type="button">Weiter</button></div>
+</div>
 </section>
 
 <section class="panel" aria-labelledby="viewer-title">
@@ -142,6 +162,12 @@ details.section summary{cursor:pointer;font-weight:700;font-size:13px;padding:4p
 <img id="preview" alt="Wärmebild-Vorschau (ohne Temperaturdaten)">
 <div id="thermal-map" aria-label="Karte der Wärmebilder"></div>
 <div class="map-state" id="map-state" hidden>Lade Geo-Index…</div>
+<div class="map-tools" id="map-tools" hidden>
+<label>Flug <select id="map-flight"><option value="">alle</option></select></label>
+<label>Färbung <select id="map-color"><option value="max">Max-Temperatur</option><option value="delta">ΔT (Max − Median)</option><option value="none">einheitlich</option></select></label>
+<label><input type="checkbox" id="map-thermal" checked> Wärmebild auf Karte</label>
+</div>
+<div class="map-legend" id="map-legend" hidden><span id="legend-title">Max-Temperatur</span><canvas id="legend-bar" width="150" height="1"></canvas><span id="legend-low">–</span><span id="legend-high" style="float:right">–</span></div>
 <div class="readout" id="readout" hidden></div>
 </div>
 <div class="colorbar" id="colorbar-row"><span id="cb-low">–</span><canvas id="colorbar" width="256" height="1"></canvas><span id="cb-high">–</span></div>
@@ -225,7 +251,8 @@ const $=id=>document.getElementById(id);
 const PAGE=40;
 let offset=0,total=0,current=null,analysis=null,grid=null,W=0,H=0,spots=[],tool="point",drag=null;
 let view="image",pvRegion=null,pvReport=null,pvFocus=-1,visualImg=null,visualFor=null;
-let map=null,mapLoaded=false,markerLayer=null,footLayer=null,selectedFoot=null,mapItems=[];
+let map=null,mapLoaded=false,markerLayer=null,footLayer=null,selectedFoot=null,mapItems=[],thermalOverlay=null;
+let flightsData=null,openFlight=null,jobTimer=null,gridFor=null;
 
 const PALETTES={
   iron:[[0,0,0,0],[.15,32,0,90],[.35,140,0,140],[.55,220,40,40],[.75,250,140,0],[.9,255,220,40],[1,255,255,240]],
@@ -308,7 +335,7 @@ async function select(item){
   $("viewer-title").textContent=item.name;
   $("open-thermal").href=`/api/v1/studio/dji-media/${item.id}/file`;$("open-thermal").hidden=false;
   spots=[];pvRegion=null;pvReport=null;pvFocus=-1;renderSpots();renderPv();
-  if(view==="map")setView("image");
+  // Stay on the map: the measured image is drawn into its footprint there.
   await analyse();
 }
 
@@ -329,12 +356,13 @@ async function analyse(){
       const buf=await res.arrayBuffer();
       if(!(w>0&&h>0&&buf.byteLength===w*h*4))throw new Error("Unerwartetes Temperaturraster");
       if(!current||current.id!==id)return;
-      grid=new Float32Array(buf);W=w;H=h;
+      grid=new Float32Array(buf);W=w;H=h;gridFor=id;
       renderStats(a.measurement);
       if(view!=="map")showGrid();
+      else{for(const c of [$("thermal"),$("overlay"),$("visual")]){c.width=W;c.height=H;}draw();}  // map overlay source
       $("viewer-badge").innerHTML='<span class="badge good">Radiometrisch · DJI TSDK</span>';
     }else{
-      grid=null;renderStats(null);if(view!=="map")showPreview(`/api/v1/studio/dji-media/${id}/file`);
+      grid=null;gridFor=null;renderStats(null);if(view!=="map")showPreview(`/api/v1/studio/dji-media/${id}/file`);
       $("measure-error").textContent=a.measurement_error||"Keine Temperaturdaten";$("measure-error").hidden=false;
       $("viewer-badge").innerHTML='<span class="badge warn">Nur Vorschau</span>';
     }
@@ -375,6 +403,7 @@ function setView(v){
   }
   $("image-tools").hidden=v==="map";$("overlay-tools").hidden=v!=="overlay";$("colorbar-row").hidden=v==="map";
   $("thermal-map").style.display=v==="map"?"block":"none";$("map-state").hidden=v!=="map";
+  $("map-tools").hidden=v!=="map";$("map-legend").hidden=v!=="map"||$("map-color").value==="none";
   $("overlay-note").hidden=v!=="overlay";
   if(v==="map"){
     $("stack").hidden=true;$("preview").style.display="none";$("empty").hidden=true;$("readout").hidden=true;
@@ -427,6 +456,7 @@ function draw(){
   for(let k=0;k<256;k++){bar.data[k*4]=pal[k*3];bar.data[k*4+1]=pal[k*3+1];bar.data[k*4+2]=pal[k*3+2];bar.data[k*4+3]=255;}
   cb.putImageData(bar,0,0);$("cb-low").textContent=deg(lo);$("cb-high").textContent=deg(hi);
   drawOverlay();
+  if(view==="map")updateMapThermal();
 }
 
 /* -------------------------------------------------------------- overlay --- */
@@ -600,25 +630,45 @@ function initMap(){
   setTimeout(()=>map.invalidateSize(),50);
   if(!mapLoaded)loadMap();
 }
-async function loadMap(){
+async function loadMap(fit=true){
   try{
     const r=await api("/api/v1/thermal/map");mapLoaded=true;mapItems=r.items||[];
-    markerLayer.clearLayers();footLayer.clearLayers();
-    for(const it of mapItems){
-      const label=`${it.name}<br>${it.model||""} · ${fmt(it.relative_altitude_m)} m · Pitch ${fmt(it.gimbal_pitch_deg)}°`+(it.ground_sample_cm?` · ${fmt(it.ground_sample_cm,1)} cm/px`:"");
-      const mk=L.circleMarker([it.latitude,it.longitude],{radius:4,color:"#ff7a45",weight:1,fillOpacity:.8});
-      mk.bindTooltip(label);mk.on("click",()=>select({id:it.id,name:it.name}));markerLayer.addLayer(mk);
-      if(it.footprint){const fp=L.polygon(it.footprint,{color:"#ffb36b",weight:1,fillOpacity:.04,interactive:false});footLayer.addLayer(fp);}
-    }
     const stamp=r.scanned_at?new Date(r.scanned_at).toLocaleString("de-DE"):"nie";
-    $("map-state").textContent=mapItems.length?`${mapItems.length.toLocaleString("de-DE")} Wärmebilder mit Position · ${r.without_position} ohne GNSS-Fix · Footprints ab Zoom 17 (ebenes Gelände, Nadir) · Geo-Index ${stamp}`:
+    $("map-state").textContent=mapItems.length?`${mapItems.length.toLocaleString("de-DE")} Wärmebilder mit Position · ${r.without_position} ohne GNSS-Fix · Footprints ab Zoom 17 (ebenes Gelände) · Geo-Index ${stamp}`:
       "Geo-Index leer. Auf dem Pi ausführen: .venv/bin/python -m aeronexus.thermal_geo";
-    if(mapItems.length){
-      const pts=mapItems.map(i=>[i.latitude,i.longitude]);
-      map.fitBounds(L.latLngBounds(pts),{padding:[20,20],maxZoom:18});
-    }
-    if(analysis)highlightFootprint(analysis);
+    renderMapItems(fit);
   }catch(e){$("map-state").textContent="Geo-Index nicht verfügbar: "+e.message;}
+}
+function mapValue(it){
+  const mode=$("map-color").value;
+  if(!it.stats||mode==="none")return null;
+  return mode==="delta"?it.stats.delta_k:it.stats.max_c;
+}
+function renderMapItems(fit){
+  if(!map)return;
+  markerLayer.clearLayers();footLayer.clearLayers();
+  const flight=$("map-flight").value,items=mapItems.filter(i=>!flight||i.flight_id===flight);
+  const vals=items.map(mapValue).filter(v=>typeof v==="number").sort((a,b)=>a-b);
+  const lo=vals.length?vals[Math.floor(vals.length*.02)]:0,hi=vals.length?vals[Math.floor((vals.length-1)*.98)]:1;
+  const pal=lut("iron"),color=v=>{if(typeof v!=="number")return "#7d8fa3";const k=Math.round(Math.max(0,Math.min(1,(v-lo)/((hi-lo)||1)))*255);return `rgb(${pal[k*3]},${pal[k*3+1]},${pal[k*3+2]})`;};
+  for(const it of items){
+    const v=mapValue(it),c=$("map-color").value==="none"?"#ff7a45":color(v);
+    const st=it.stats?` · Max ${deg(it.stats.max_c)} · ΔT ${fmt(it.stats.delta_k)} K`:" · noch nicht gemessen";
+    const label=`${it.name}<br>${it.model||""} · ${fmt(it.relative_altitude_m)} m · Pitch ${fmt(it.gimbal_pitch_deg)}°`+(it.ground_sample_cm?` · ${fmt(it.ground_sample_cm,1)} cm/px`:"")+st;
+    const mk=L.circleMarker([it.latitude,it.longitude],{radius:it.stats?5:3,color:"#0b1323",weight:1,fillColor:c,fillOpacity:.95});
+    mk.bindTooltip(label);mk.on("click",()=>select({id:it.id,name:it.name}));markerLayer.addLayer(mk);
+    if(it.footprint)footLayer.addLayer(L.polygon(it.footprint,{color:c,weight:1,fillOpacity:.05,interactive:false}));
+  }
+  const showLegend=$("map-color").value!=="none"&&vals.length>0;
+  $("map-legend").hidden=view!=="map"||!showLegend;
+  if(showLegend){
+    $("legend-title").textContent=$("map-color").value==="delta"?"ΔT Max − Median (P2–P98)":"Max-Temperatur (P2–P98)";
+    const unit=$("map-color").value==="delta"?" K":" °C";$("legend-low").textContent=fmt(lo)+unit;$("legend-high").textContent=fmt(hi)+unit;
+    const bar=$("legend-bar").getContext("2d"),img=bar.createImageData(150,1);
+    for(let i=0;i<150;i++){const k=Math.round(i/149*255);img.data.set([pal[k*3],pal[k*3+1],pal[k*3+2],255],i*4);}bar.putImageData(img,0,0);
+  }
+  if(fit&&items.length)map.fitBounds(L.latLngBounds(items.map(i=>[i.latitude,i.longitude])),{padding:[20,20],maxZoom:18});
+  if(analysis)highlightFootprint(analysis);
 }
 function highlightFootprint(a){
   if(!map)return;
@@ -627,7 +677,103 @@ function highlightFootprint(a){
   if(fp)selectedFoot=L.polygon(fp,{color:"#75e3bd",weight:3,fillOpacity:.15}).addTo(map);
   else if(p)selectedFoot=L.circleMarker([p.latitude,p.longitude],{radius:9,color:"#75e3bd",weight:3}).addTo(map);
   if(selectedFoot&&view==="map")map.panTo(fp?selectedFoot.getBounds().getCenter():[p.latitude,p.longitude]);
+  updateMapThermal();
 }
+function updateMapThermal(){
+  if(!map)return;
+  if(thermalOverlay){map.removeLayer(thermalOverlay);thermalOverlay=null;}
+  const fp=analysis&&analysis.geometry&&analysis.geometry.footprint;
+  // Only the raster that belongs to the shown analysis (no stale image on a new footprint).
+  if(!fp||!grid||gridFor!==analysis.id||!$("map-thermal").checked)return;
+  // Affine image -> footprint mapping (corners: top-left, top-right, bottom-right, bottom-left).
+  const lats=fp.map(q=>q[0]),lons=fp.map(q=>q[1]);
+  const n=Math.max(...lats),so=Math.min(...lats),e=Math.max(...lons),w=Math.min(...lons);
+  const cw=900,ch=Math.max(1,Math.round(cw*(n-so)/((e-w)*Math.cos(n*Math.PI/180))));
+  const px=q=>[(q[1]-w)/(e-w)*cw,(n-q[0])/(n-so)*ch];
+  const [tl,tr,,bl]=fp.map(px);
+  const out=document.createElement("canvas");out.width=cw;out.height=ch;const oc=out.getContext("2d");
+  oc.setTransform((tr[0]-tl[0])/W,(tr[1]-tl[1])/W,(bl[0]-tl[0])/H,(bl[1]-tl[1])/H,tl[0],tl[1]);
+  oc.drawImage($("thermal"),0,0);
+  thermalOverlay=L.imageOverlay(out.toDataURL("image/png"),[[so,w],[n,e]],{opacity:.85,interactive:false}).addTo(map);
+}
+
+/* -------------------------------------------------------------- flights --- */
+function setSideTab(t){
+  for(const [id,name] of [["tab-images","images"],["tab-flights","flights"]]){$(id).classList.toggle("active",t===name);$(id).setAttribute("aria-selected",String(t===name));}
+  $("pane-images").hidden=t!=="images";$("pane-flights").hidden=t!=="flights";
+  $("pane-images").style.display=t==="images"?"flex":"none";$("pane-flights").style.display=t==="flights"?"flex":"none";
+  $("list-title").textContent=t==="images"?"Wärmebilder (R-JPEG)":"Flugauswertung";
+  if(t==="flights")loadFlights();
+}
+function when2(v){const d=v?new Date(v):null;return d&&!isNaN(d)?d.toLocaleString("de-DE",{dateStyle:"short",timeStyle:"short"}):"–";}
+async function loadFlights(){
+  try{
+    flightsData=await api("/api/v1/thermal/flights");renderFlights();
+    const sel=$("map-flight"),keep=sel.value;sel.replaceChildren(new Option("alle",""));
+    for(const f of flightsData.flights)if(f.with_position)sel.append(new Option(`${when2(f.start)} (${f.images})`,f.id));
+    sel.value=keep;
+    scheduleJobPoll(flightsData.job);
+  }catch(e){$("flight-state").textContent="Flüge nicht verfügbar: "+e.message;}
+}
+function renderFlights(){
+  const box=$("flights");box.replaceChildren();const job=flightsData.job||{};
+  $("flight-state").textContent=flightsData.flights.length?`${flightsData.flights.length} Flüge (neuer Flug nach > ${flightsData.gap_minutes} min Pause)`:"Keine Flüge – Geo-Index aufbauen: python -m aeronexus.thermal_geo";
+  for(const f of flightsData.flights){
+    const card=el("div",null,"flight"+(openFlight&&openFlight.id===f.id?" active":""));
+    card.append(el("b",`${when2(f.start)} – ${new Date(f.end).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}`));
+    card.append(el("small",`${f.model||"–"} · ${f.images} Bilder · ${f.with_position} mit Position · ${f.analyzed} gemessen`+(f.max_c!=null?` · Max ${deg(f.max_c)}`:"")));
+    const running=job.state==="running"&&job.flight_id===f.id;
+    if(running){const pr=el("progress");pr.max=job.total||1;pr.value=job.processed;card.append(pr,el("small",`${job.processed}/${job.total} · ${fmt(job.seconds,0)} s`+(job.failed?` · ${job.failed} Fehler`:"")));}
+    const row=el("div",null,"row");row.style.marginTop="6px";
+    const go=el("button",running?"Abbrechen":(f.analyzed<f.images?"Auswerten":"Erneut prüfen"));go.type="button";
+    go.disabled=!running&&job.state==="running";
+    go.addEventListener("click",()=>running?cancelJob():startJob(f.id));
+    const show=el("button","Rangliste");show.type="button";show.disabled=!f.analyzed;show.addEventListener("click",()=>openRanking(f.id));
+    const onMap=el("button","Karte");onMap.type="button";onMap.disabled=!f.with_position;
+    onMap.addEventListener("click",()=>{$("map-flight").value=f.id;setView("map");if(mapLoaded)renderMapItems(true);});
+    row.append(go,show,onMap);card.append(row);
+    if(openFlight&&openFlight.id===f.id)card.append(rankingTable(openFlight));
+    box.append(card);
+  }
+}
+function rankingTable(d){
+  const wrap=el("div");wrap.append(el("div",`Hotspot-Rangliste: ${d.analyzed} gemessen`+(d.pending?`, ${d.pending} offen`:""),"sub"));
+  const t=el("table",null,"rank"),tb=el("tbody");t.append(tb);
+  d.ranking.slice(0,50).forEach((r,i)=>{const tr=el("tr",null,"pick");
+    tr.append(el("td",String(i+1)),el("td",deg(r.max_c)),el("td","ΔT "+fmt(r.delta_k)+" K"),el("td",new Date(r.captured_at).toLocaleTimeString("de-DE")));
+    tr.title=r.name;tr.addEventListener("click",()=>select({id:r.id,name:r.name}));tb.append(tr);});
+  wrap.append(t);return wrap;
+}
+async function openRanking(id){
+  try{openFlight=await api(`/api/v1/thermal/flights/${id}`);renderFlights();}catch(e){$("flight-state").textContent="Rangliste nicht verfügbar: "+e.message;}
+}
+async function post(path){
+  const res=await fetch(path,{method:"POST",cache:"no-store",credentials:"same-origin"});
+  let body=null;try{body=await res.json();}catch(e){}
+  if(!res.ok)throw new Error(body&&body.detail||"HTTP "+res.status);
+  return body;
+}
+async function startJob(id){
+  try{const job=await post(`/api/v1/thermal/flights/${id}/analyze`);flightsData.job=job;renderFlights();scheduleJobPoll(job);}
+  catch(e){$("flight-state").textContent="Start fehlgeschlagen: "+e.message;}
+}
+async function cancelJob(){try{flightsData.job=await post("/api/v1/thermal/jobs/current/cancel");renderFlights();}catch(e){}}
+function scheduleJobPoll(job){
+  clearTimeout(jobTimer);
+  if(!job||job.state!=="running")return;
+  jobTimer=setTimeout(async()=>{
+    try{
+      const j=await api("/api/v1/thermal/jobs/current");flightsData.job=j;
+      if(j.state!=="running"){await loadFlights();if(openFlight&&openFlight.id===j.flight_id)openRanking(j.flight_id);if(mapLoaded)loadMap(false);}
+      else{renderFlights();scheduleJobPoll(j);}
+    }catch(e){scheduleJobPoll(job);}
+  },2000);
+}
+$("tab-images").addEventListener("click",()=>setSideTab("images"));
+$("tab-flights").addEventListener("click",()=>setSideTab("flights"));
+$("map-color").addEventListener("change",()=>renderMapItems(false));
+$("map-flight").addEventListener("change",()=>renderMapItems(true));
+$("map-thermal").addEventListener("change",updateMapThermal);
 
 /* -------------------------------------------------------------- exports --- */
 function save(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
@@ -683,7 +829,7 @@ $("search").addEventListener("keydown",e=>{if(e.key==="Enter"){offset=0;loadList
 $("prev").addEventListener("click",()=>{offset=Math.max(0,offset-PAGE);loadList();});
 $("next").addEventListener("click",()=>{offset+=PAGE;loadList();});
 window.addEventListener("resize",fitStack);
-loadStatus();loadList();
+loadStatus();loadList();loadFlights();
 </script>
 </body>
 </html>

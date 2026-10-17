@@ -1,4 +1,4 @@
-"""Thermography: DJI R-JPEG metadata, temperature grids and statistics.
+"""Thermal: DJI R-JPEG metadata, temperature grids and statistics.
 
 Thermal images are taken from the read-only MinIO media index
 (``*_T.JPG``, DJI infrared camera). Temperatures come exclusively from the
@@ -241,6 +241,7 @@ class ThermalService:
         self._lock = threading.Lock()
         self._files: OrderedDict = OrderedDict()
         self._measurements: OrderedDict = OrderedDict()
+        self.stats_sink = None  # callable(id, etag, stats); set by ThermalFlights
 
     def sdk(self) -> ThermalSdk:
         if self._sdk is None:
@@ -259,27 +260,42 @@ class ThermalService:
             raise ThermalNotFound("Thermal image not indexed")
         return record
 
-    def visual_id(self, record: dict) -> str | None:
-        """Same folder first; SD-card imports put each file in its own folder,
+    def visual_ids(self, records: list[dict]) -> dict[str, str | None]:
+        """Visible image per thermal record, resolved with batched queries.
+
+        Same folder first; SD-card imports put each file in its own folder,
         so fall back to a filename that is unique in the index."""
-        keys = visual_keys(record["object_key"])
-        for key in keys:
-            candidate = media_id(record["bucket"], key)
-            if self.index.get(candidate) is not None:
-                return candidate
-        for key in keys:
-            matches = self.index.ids_by_filename(key.rsplit("/", 1)[-1], limit=2)
-            if len(matches) == 1:
-                return matches[0]
-        return None
+        candidates = {r["id"]: visual_keys(r["object_key"]) for r in records}
+        same_folder = {media_id(r["bucket"], k): r["id"]
+                       for r in records for k in candidates[r["id"]]}
+        found = self.index.get_many(list(same_folder))
+        result: dict[str, str | None] = {}
+        for r in records:
+            result[r["id"]] = next((media_id(r["bucket"], k) for k in candidates[r["id"]]
+                                    if media_id(r["bucket"], k) in found), None)
+        missing = [r for r in records if result[r["id"]] is None]
+        by_name = self.index.ids_by_filenames(
+            [k.rsplit("/", 1)[-1] for r in missing for k in candidates[r["id"]]])
+        for r in missing:
+            for key in candidates[r["id"]]:
+                ids = by_name.get(key.rsplit("/", 1)[-1], [])
+                if len(ids) == 1:
+                    result[r["id"]] = ids[0]
+                    break
+        return result
+
+    def visual_id(self, record: dict) -> str | None:
+        return self.visual_ids([record])[record["id"]]
 
     def list(self, *, query="", limit=50, offset=0) -> dict:
         result = self.index.list_thermal(query=query, limit=limit, offset=offset)
+        records = self.index.get_many([item["id"] for item in result["media"]])
+        pairs = self.visual_ids([records[i["id"]] for i in result["media"] if i["id"] in records])
         for item in result["media"]:
-            item["visual_id"] = self.visual_id(self.index.get(item["id"]))
+            item["visual_id"] = pairs.get(item["id"])
         return result
 
-    def _bytes(self, record: dict) -> bytes:
+    def _bytes(self, record: dict, *, cache: bool = True) -> bytes:
         key = (record["id"], record["etag"], record["size_bytes"])
         with self._lock:
             if key in self._files:
@@ -292,6 +308,8 @@ class ThermalService:
             raise
         except Exception as exc:  # MinIO SDK errors may echo object keys
             raise DjiMediaError("MinIO object unavailable") from exc
+        if not cache:  # batch runs must not evict the interactive working set
+            return data
         with self._lock:
             self._files[key] = data
             while len(self._files) > self.FILE_CACHE_ENTRIES:
@@ -305,7 +323,8 @@ class ThermalService:
                 "size_bytes": record["size_bytes"], "uploaded_at": record["modified_at"],
                 "visual_id": self.visual_id(record), **meta}
 
-    def measure(self, item_id: str, params: MeasureParams | None = None) -> Measurement:
+    def measure(self, item_id: str, params: MeasureParams | None = None, *,
+                cache: bool = True) -> Measurement:
         record = self.record(item_id)
         params = params or MeasureParams()
         key = (record["id"], record["etag"], tuple(sorted(params.overrides().items())))
@@ -313,12 +332,19 @@ class ThermalService:
             if key in self._measurements:
                 self._measurements.move_to_end(key)
                 return self._measurements[key]
-        data = self._bytes(record)
+        data = self._bytes(record, cache=cache)
         if not thermal_metadata(data)["radiometric"]:
             raise ThermalError("Image has no radiometric DJI thermal data")
         width, height, grid = self.sdk().measure(data, params)
         result = Measurement(width, height, grid, temperature_stats(width, height, grid),
                              params.overrides())
+        if not params.overrides() and self.stats_sink is not None:
+            try:  # persisted per-image summary for flight analysis and the map
+                self.stats_sink(record["id"], record["etag"], result.stats)
+            except Exception:  # never fail a measurement because of the summary cache
+                pass
+        if not cache:
+            return result
         with self._lock:
             self._measurements[key] = result
             while len(self._measurements) > self.CACHE_ENTRIES:
