@@ -3,7 +3,6 @@
 All tests use local fixtures. Never contact DJI or an SDK backend.
 """
 from datetime import datetime, timezone, timedelta
-from contextlib import asynccontextmanager
 import asyncio
 
 from fastapi.testclient import TestClient
@@ -145,47 +144,94 @@ def test_cloud2_invalid_hms_payload_is_ignored():
 
 def test_cloud2_bridge_fetches_exactly_one_read_only_path(monkeypatch):
     calls = []
-    class FakeHttpxClient:
-        def __init__(self, **kwargs):
-            assert kwargs["follow_redirects"] is False
-            assert kwargs["trust_env"] is False
-            assert kwargs["verify"] is True
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, *exc):
-            pass
-        @asynccontextmanager
-        async def stream(self, method, path, **kw):
-            assert method == "GET"
-            calls.append((path, kw))
-            yield httpx.Response(200, json=[{**DRONE, "lastOsdAt": NOW.isoformat()}])
-    monkeypatch.setattr("aeronexus.cloud_api2_bridge.httpx.AsyncClient", FakeHttpxClient)
+    real_client = httpx.AsyncClient
+
+    def backend(request):
+        calls.append((request.method, request.url.path, request.headers["authorization"]))
+        return httpx.Response(200, json=[{
+            **DRONE, "lastOsdAt": datetime.now(timezone.utc).isoformat(),
+        }])
+
+    def client_factory(**kwargs):
+        assert kwargs["follow_redirects"] is False
+        assert kwargs["trust_env"] is False
+        assert kwargs["verify"] is True
+        return real_client(transport=httpx.MockTransport(backend), **kwargs)
+
+    monkeypatch.setattr("aeronexus.cloud_api2_bridge.httpx.AsyncClient", client_factory)
     bridge = CloudApi2Bridge(CloudApi2Settings("https://192.168.178.90", TOKEN))
     result = asyncio.run(bridge.read())
     again = asyncio.run(bridge.read())
+    assert result["state"] == again["state"] == "ok"
     assert result["total"] == again["total"] == 1
-    assert result["devices"][0]["received_at"] == again["devices"][0]["received_at"]
-    assert result["state"] == "ok"
     assert len(calls) == 1
-    assert calls[0][0] == "/api/v1/devices"
-    assert calls[0][1]["headers"]["Authorization"] == "Bearer " + TOKEN
+    assert calls[0] == ("GET", "/api/v1/devices", "Bearer " + TOKEN)
     assert TOKEN not in str(result)
 
 
 def test_cloud2_bff_failure_is_sanitized(monkeypatch):
-    class FailHttpxClient:
-        def __init__(self, **kw): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *exc): pass
-        @asynccontextmanager
-        async def stream(self, method, path, **kw):
-            yield httpx.Response(401, json={"message": "secret private backend"})
-    monkeypatch.setattr("aeronexus.cloud_api2_bridge.httpx.AsyncClient", FailHttpxClient)
+    real_client = httpx.AsyncClient
+
+    def client_factory(**kwargs):
+        return real_client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(401, json={"message": "secret private backend"})
+            ),
+            **kwargs,
+        )
+
+    monkeypatch.setattr("aeronexus.cloud_api2_bridge.httpx.AsyncClient", client_factory)
     bridge = CloudApi2Bridge(CloudApi2Settings("https://192.168.178.90", TOKEN))
     result = asyncio.run(bridge.read())
     assert result == {"source": "dji-cloud-api-2", "state": "unavailable",
                       "devices": [], "total": 0}
     assert TOKEN not in str(result)
+    assert "secret private backend" not in str(result)
+
+
+def test_cloud2_response_size_bounded_before_loading(monkeypatch):
+    real_client = httpx.AsyncClient
+
+    def client_factory(**kwargs):
+        return real_client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, content=b"X" * (1024 * 1024))
+            ),
+            **kwargs,
+        )
+
+    monkeypatch.setattr("aeronexus.cloud_api2_bridge.httpx.AsyncClient", client_factory)
+    bridge = CloudApi2Bridge(CloudApi2Settings("https://192.168.178.90", TOKEN))
+    result = asyncio.run(bridge.read())
+    assert result["state"] == "unavailable"
+    assert result["devices"] == []
+
+
+def test_cloud2_cache_recomputes_freshness_without_new_request(monkeypatch):
+    calls = []
+    real_client = httpx.AsyncClient
+
+    def backend(_):
+        calls.append(1)
+        return httpx.Response(200, json=[{
+            **DRONE, "lastOsdAt": datetime.now(timezone.utc).isoformat(),
+        }])
+
+    def client_factory(**kwargs):
+        return real_client(transport=httpx.MockTransport(backend), **kwargs)
+
+    monkeypatch.setattr("aeronexus.cloud_api2_bridge.httpx.AsyncClient", client_factory)
+    bridge = CloudApi2Bridge(CloudApi2Settings("https://192.168.178.90", TOKEN))
+    first = asyncio.run(bridge.read())
+    assert first["devices"][0]["online"] is True
+    assert first["devices"][0]["reported_online"] is True
+    bridge._cached[0]["received_at"] = "2026-10-16T10:00:00Z"
+    stale = asyncio.run(bridge.read())
+    assert len(calls) == 1
+    assert stale["state"] == "ok"
+    assert stale["devices"][0]["freshness"] == "stale"
+    assert stale["devices"][0]["online"] is None
+    assert stale["devices"][0]["reported_online"] is True
 
 
 def test_cloud2_endpoint_disabled_by_default_and_private(monkeypatch):

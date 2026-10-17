@@ -13,10 +13,10 @@ NEVER attempt direct DJI device access, SDK control, login, or any POST.
 """
 import asyncio
 from copy import deepcopy
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import ipaddress
+import json
 import os
 import re
 import time
@@ -168,15 +168,17 @@ def normalize_devices(payload, *, now: datetime | None = None,
             freshness = ("missing" if received is None or raw is None else
                          "clock_skew" if age is not None and age < -1 else
                          "fresh" if age is not None and age <= stale_after_seconds else "stale")
-            online = device.get("online") is True
+            reported_online = device.get("online")
+            if type(reported_online) is not bool:
+                reported_online = None
             rows.append({
                 "provider": "dji-cloud-api-2", "project_id": "cloud-api-2",
                 "kind": "aircraft",
                 "device_id": serial,
                 "name": _text(device.get("name")) or _text(device.get("model")) or "DJI-Fluggerät",
                 "model": _text(device.get("model")),
-                "online": online if freshness == "fresh" else None,
-                "reported_online": online,
+                "online": reported_online if freshness == "fresh" else None,
+                "reported_online": reported_online,
                 "freshness": freshness,
                 "age_seconds": round(max(age, 0), 2) if age is not None and age >= 0 else None,
                 "received_at": received.isoformat().replace("+00:00", "Z") if received else None,
@@ -224,6 +226,8 @@ class CloudApi2Bridge:
                     base_url=self.settings.base_url, timeout=7,
                     follow_redirects=False, trust_env=False, verify=True,
                 ) as client:
+                    # Stream and bound the upstream response BEFORE buffering in RAM.
+                    # The server is optional and never receives a write request.
                     async with client.stream("GET", _DEVICE_PATH, headers={
                         "Authorization": "Bearer " + self.settings.api_token,
                         "Accept": "application/json",
