@@ -15,11 +15,17 @@ MinIO oder DJI:
 
 Jeder Schritt ist isoliert: ein Fehler stoppt die anderen nicht; im Status
 erscheinen nur Fehlertypen, keine Objektschlüssel oder Zugangsdaten.
+Auch zurückgegebene Fehlerzähler (Thermal-Geo, Multispektral, NDVI und
+Thermal-Messungen) setzen den Schritt und den Gesamtdurchgang auf `ok=false`.
+`--once` endet dann mit Exitcode 1. NDVI-Fehler werden nur gezählt; Aufnahme-IDs
+werden nicht in den Sync-Status übernommen. Ein nicht konfiguriertes Thermal SDK
+bleibt ein ausdrücklich übersprungener Schritt.
 
 ## Ablauf
 
 - **Start = vollständiger Scan:** Beim Dienststart läuft ein kompletter
-  Durchgang (eingerichtet am 17.10.2026 als einmaliger Erstscan).
+  Durchgang. Im Abfrage-Modus wird der Vergleichs-Fingerabdruck **vor** diesem
+  Scan erfasst, damit Uploads während des Scans anschließend auffallen.
 - **Danach bei jedem Upload:**
   - *Abfrage-Modus* (Standard, keine zusätzlichen MinIO-Rechte): alle
     120 s wird ein Fingerabdruck des Bucket-Inhalts (Schlüssel, ETag, Größe)
@@ -28,8 +34,14 @@ erscheinen nur Fehlertypen, keine Objektschlüssel oder Zugangsdaten.
     spätestens 10 min nach der ersten Änderung.
   - *Ereignis-Modus* (automatisch, wenn erlaubt): Abonnement der MinIO-
     Bucket-Benachrichtigungen; Durchgang 45 s nach dem letzten Upload-
-    Ereignis, spätestens nach 10 min. Fällt bei verweigertem Recht
-    automatisch auf den Abfrage-Modus zurück.
+    Ereignis, spätestens nach 10 min. Bei verweigertem Recht, Verbindungsfehler
+    oder beendetem Ereignisstrom erfolgt ein vollständiger Abgleich und der
+    Wechsel auf den Abfrage-Modus. Ein erneuter Dienststart versucht den
+    Ereignis-Modus wieder; ein separater, möglicherweise hängenbleibender
+    Test-Listener wird nicht mehr gestartet.
+- **Fehlerwiederholung:** Fehlgeschlagene Durchgänge werden nach 120 s erneut
+  versucht (im Abfrage-Modus bei der nächsten fälligen Abfrage), auch ohne
+  neuen Upload. Der letzte fehlgeschlagene Bericht bleibt bis dahin sichtbar.
 - **Sicherheitslauf** alle 6 h, falls Änderungen verpasst wurden.
 
 ## Ereignis-Modus freischalten (optional)
@@ -63,3 +75,12 @@ journalctl --user -u aeronexusadvanced-media-sync -f
   `media_sync_status.json` (0600) im privaten Workspace.
 - Der Dienst läuft mit niedrigerer CPU-/IO-Priorität (`Nice=10`,
   `IOSchedulingClass=idle`) und `MemoryMax=1500M`.
+- Multispektral-Bandverarbeitung, M3M-Stacking und Thermal-SDK-Aufrufe teilen
+  sich eine prozessübergreifende `flock`-Sperre im privaten Workspace
+  (`image-processing.lock`, 0600). Webdienst, Sync und unterstützte CLI-
+  Einstiegspunkte müssen unter demselben Benutzer mit demselben
+  `AERONEXUS_WORKSPACE_DIR` laufen. Das gilt auch bei systemd `PrivateTmp`;
+  die Sperrdatei liegt deshalb nicht unter `/tmp` und darf nicht gelöscht oder
+  ersetzt werden. Nach einem Absturz gibt der Kernel die Sperre frei.
+  Cache-Lesezugriffe bleiben möglich; die Sperre begrenzt aktive Berechnungen,
+  nicht den insgesamt von Caches belegten Speicher. POSIX/Linux erforderlich.

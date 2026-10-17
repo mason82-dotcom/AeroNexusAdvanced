@@ -12,12 +12,13 @@ OpenCV/rasterio/GDAL) on top of ``multispectral``. Additions:
   translation by phase correlation of edge images against NIR, applied only
   when the correlation peak is clear and the shift is small.
 * Approximate georeference (EPSG:4326, affine ModelTransformation) for
-  near-nadir captures from position, gimbal and the calibrated focal length
+  exact-nadir captures from position, gimbal and the calibrated focal length
   over flat terrain - good for orientation in QGIS, not an orthomosaic.
 """
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 import struct
 import sys
@@ -26,12 +27,14 @@ import zlib
 
 from .multispectral import (MultispectralError, _np, _ms_optics, band_metadata, item_metadata,
                             read_band, rectify, relative_reflectance)
+from .processing_slot import ProcessingSlot
 
 BAND_ORDER = ("NIR", "Green", "Red", "RedEdge")
 PRODUCTS = ("reflectance", "dn")
 TILE = 256
 MAX_SHIFT_PX = 30          # at full resolution; larger shifts are treated as unreliable
 MIN_CONFIDENCE = 8.0       # correlation peak height in standard deviations
+NADIR_EPSILON_DEG = 1e-6  # numerical tolerance, NOT an allowance for tilted cameras
 SOFTWARE = "AeroNexusAdvanced m3m_stack (after mirrormapper/m3m-image-stacking, MIT)"
 
 
@@ -187,7 +190,12 @@ def georeference(result: dict) -> list[float] | None:
     """Affine ModelTransformation (16 doubles, lon/lat EPSG:4326) or None."""
     from .thermal_geo import ground_footprint
     optics = result.get("optics")
-    if not optics or not result.get("position"):
+    pitch = (result.get("gimbal") or {}).get("pitch_deg")
+    # A tilted footprint is a trapezoid. An affine transform cannot map all
+    # four corners; do not attach a misleading CRS until we implement a true
+    # projective resampling of the image. Maps may still show that footprint.
+    if (not optics or not result.get("position") or not isinstance(pitch, (int, float))
+            or not math.isfinite(pitch) or abs(pitch + 90) > NADIR_EPSILON_DEG):
         return None
     foot = ground_footprint(result["position"], result["gimbal"], optics["hfov_deg"],
                             optics["vfov_deg"], account_for_pitch=True)
@@ -296,7 +304,7 @@ def stack_to_geotiff(result: dict, *, georef: bool = True) -> bytes:
     }
     transform = georeference(result) if georef else None
     metadata["GEOREFERENCE"] = ("approximate, nadir footprint over flat terrain (EPSG:4326)"
-                                if transform else "none (not a nadir capture or no position)")
+                                if transform else "none (requires exact -90 degree pitch and valid position/optics)")
     reflectance = result["product"] == "reflectance"
     return write_geotiff(result["bands"], descriptions=list(BAND_ORDER), metadata=metadata,
                          dtype="float32" if reflectance else "uint16",
@@ -349,10 +357,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{target.name}: exists (use --force)", file=sys.stderr)
             continue
         try:
-            result = stack_bands({b: p.read_bytes() for b, p in bands.items()}, product=args.product,
-                                 scale=args.scale, refine=not args.no_refine,
-                                 crop_margin=args.crop_margin)
-            target.write_bytes(stack_to_geotiff(result, georef=not args.no_georef))
+            with ProcessingSlot():
+                result = stack_bands({b: p.read_bytes() for b, p in bands.items()}, product=args.product,
+                                     scale=args.scale, refine=not args.no_refine,
+                                     crop_margin=args.crop_margin)
+                target.write_bytes(stack_to_geotiff(result, georef=not args.no_georef))
             written += 1
             print(f"{target.name}: {result['crop']['width']}x{result['crop']['height']}x4, "
                   f"shifts {result['shifts'] or 'not computed'}")
