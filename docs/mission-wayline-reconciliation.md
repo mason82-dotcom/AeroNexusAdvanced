@@ -310,7 +310,8 @@ cd ~/Projekte/AeroNexusAdvanced
 set -a
 source .env
 set +a
-.venv/bin/python -m aeronexus.pilot2_wayline_preview --limit 1
+# Alte systemd-/Shell-Importpfade aus Fremd-Checkouts ausdrücklich überschreiben:
+PYTHONPATH="$PWD/src" .venv/bin/python -m aeronexus.pilot2_wayline_preview --limit 1
 ```
 
 Nach erfolgreichem Einzeltest können mit `--limit 8` bis zu acht inventarisierte
