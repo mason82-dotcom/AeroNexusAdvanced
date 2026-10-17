@@ -1,6 +1,6 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026 – Basis `main` @ `6fa7c6c` (PR #29),
+**Stand:** 17. Oktober 2026 – Basis `main` @ `7a9edf4` (PR #33),
 mit den nachfolgend beschriebenen Analysekorrekturen in diesem Änderungsstand.
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
@@ -18,13 +18,21 @@ mit den nachfolgend beschriebenen Analysekorrekturen in diesem Änderungsstand.
 | Multispektral-Rechenbegrenzung, gemeinsame Thermal-Footprints, lokale GDAL-Ausnahmen | gemergt | #26 |
 | Automatischer Medien-Sync nach Pilot-2-Uploads | gemergt | #28 |
 | M3M-4-Band-GeoTIFF-Export für QGIS | gemergt | #29 |
+| Metashape-Arbeitsauftrag für externen Worker | gemergt; echte Rekonstruktion separat abnehmen | #31 |
+| Multispektral-Serienbericht mit NDVI-Maske und Histogrammen | gemergt; Live-Pi-Abnahme offen | #32 |
+| GeoTIFF-/COG-Ergebniskatalog und Kachelviewer `/results` | gemergt; Live-Pi-Abnahme offen | #33 |
 
-- Basisprüfung bei `6fa7c6c`: **777 bestanden, 1 übersprungen**, 1 bekannte
+- Basisprüfung bei `7a9edf4`: **857 bestanden, 1 übersprungen**, 1 bekannte
   Starlette/httpx-Warnung; GitHub Actions für diesen Commit erfolgreich.
-- Korrekturstand lokal (Python 3.12): **799 bestanden, 1 übersprungen**,
+- Kombinierter Korrekturstand von PR #30 auf dieser Basis, lokal (Python 3.12):
+  **892 bestanden, 1 übersprungen**,
   dieselbe Warnung. Übersprungen: Prüfung mit echtem `osgeo.gdal`, hier nicht
   installiert. CI prüft Python 3.12 und 3.13 mit den Extras
-  `test,mqtt,minio,multispectral`; synthetische GeoTIFF- und Node-Tests laufen mit.
+  `test,mqtt,minio,multispectral,raster`; echte Rasterio-GeoTIFF-/COG-Fixtures
+  und Node-Tests laufen mit. `pip check` und `git diff --check` ohne Befund.
+- Der Merge-Konflikt in `multispectral.py` ist in diesem Branch gelöst;
+  Serienbericht, Metashape-Export und Ergebnisviewer bleiben enthalten.
+  Dieser Stand ist erst nach Merge Teil von `main`.
 - Zuletzt dokumentierter Pi-Dienst `aeronexusadvanced` (systemd `--user`, HTTPS
   `https://192.168.178.63:8000`), TLS-Zertifikat gültig bis 16.10.2027.
 - **Konfiguration seit 17.10.2026 03:42:** `AERONEXUS_CLOUD_MQTT_ENABLED=1`,
@@ -50,6 +58,13 @@ mit den nachfolgend beschriebenen Analysekorrekturen in diesem Änderungsstand.
 - GeoTIFF-Export: affine Georeferenz nur bei exakt −90° Pitch (numerische
   Toleranz 0,000001°). Geneigte Aufnahmen bleiben ohne CRS-/Transformations-
   Tags exportierbar; Karten-Footprints bleiben unverändert verfügbar.
+- Quellenkonsistenz: Einzelbildstatistik, Rasterabruf und 4-Band-Export
+  gleichen Medienindex und aktuellen Multispektralkatalog vor/nach der
+  Berechnung ab. Bei Änderungen HTTP 409 statt neuer Pixel mit alten
+  Aufnahmemetadaten. Auch Änderungen während Statistik/Encoding sowie
+  bereits gefüllte Band-Caches sind durch Regressionstests abgedeckt.
+  Vor einer NDVI-Summary-Speicherung wird erneut geprüft. Der Serienbericht
+  verwendet dieselbe erweiterte Katalogprüfung.
 - Thermal-Footprints verwenden dieselbe Projektion geneigter Kameras wie die
   Multispektral-Karte (vorher Rechteck auch bei −75…−105° Pitch).
 - GeoTIFF-Vorschau: GDAL-Ausnahmen nur lokal aktiviert (`gdal.ExceptionMgr`),
@@ -67,6 +82,9 @@ mit den nachfolgend beschriebenen Analysekorrekturen in diesem Änderungsstand.
   und Thermal-Footprints mit einem echten Nadir-Flug.
 - Korrekturen auf dem Pi installieren und nachtesten: Auto-Sync inklusive
   Fehlerfall/Erholung, parallele Web-/Hintergrundanforderungen und QGIS-Import.
+- Die Rasterio-Verarbeitung von `/results` verwendet weiterhin eigene
+  Rechenplätze. Gemeinsame RAM-/Laufzeitmessung mit Sync und Bildverarbeitung
+  auf dem Pi sowie echte Ergebnisdateien im Viewer prüfen.
 - Projektive Entzerrung geneigter M3M-Stacks und Gimbal-Roll sind noch offen.
 
 ## Historischer Verlauf

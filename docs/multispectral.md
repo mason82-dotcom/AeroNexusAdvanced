@@ -34,6 +34,17 @@ numpy umgesetzt (kein OpenCV nötig). Ausgabe in 1296×972 (Standard),
 
 ### Gültigkeit und Fehlerbehandlung
 
+Einzelbildstatistiken, Binärraster und 4-Band-GeoTIFF-Exporte prüfen vor und
+nach der Berechnung, ob die Bandversionen im Medienindex und der aktuelle
+Multispektralkatalog noch zur verwendeten Aufnahme passen. Das gilt auch
+bei gefülltem Band-Cache und während Statistikberechnung oder TIFF-Encoding.
+Andernfalls liefern die Datenrouten HTTP 409: Katalogabgleich abschließen
+und die Aufnahme erneut laden. Veraltete NDVI-Statistiken werden nach einer
+erkannten Quellenänderung nicht neu gespeichert. Die Prüfung ist eine
+Versionsprüfung anhand der indizierten ETags, keine gemeinsame Transaktion
+mit MinIO; unerkannte Änderungen außerhalb des Medienindex bleiben von
+dessen nächstem Scan abhängig.
+
 - Sonnenlichtsensor: ausschließlich `LS_status=1` oder `2` und eine
   `Irradiance > 1` werden zur Reflexionsberechnung zugelassen. Fehlende,
   ungültige oder Platzhalterwerte sperren die betroffenen Bänder mit HTTP 422;

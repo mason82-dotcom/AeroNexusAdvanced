@@ -511,7 +511,7 @@ class MultispectralCatalog:
             db.close()
 
     def assert_current(self, capture: dict) -> None:
-        """Reject a media index ahead of (or missing items from) this catalogue.
+        """Reject a changed catalogue snapshot or a media index ahead of it.
 
         A media-sync scan can complete before the following header scan. Comparing
         catalogue snapshots alone would miss that interval and allow new rasters
@@ -528,6 +528,8 @@ class MultispectralCatalog:
         source_key = PROCESSING_VERSION + "|" + "|".join(sorted(sources))
         if source_key != capture["source_key"]:
             raise DjiMediaChanged("Multispectral catalogue requires refresh")
+        if self.capture(capture["capture_uuid"])["source_key"] != capture["source_key"]:
+            raise DjiMediaChanged("Multispectral capture changed during processing")
 
     def summaries(self) -> dict[str, tuple[str, dict]]:
         db = self._connect(write=False)
@@ -601,7 +603,7 @@ class MultispectralService:
         self._client_factory = client_factory or minio_client
         self._lock = threading.Lock()
         # Shared with other service instances, the media-sync process and TSDK.
-        self._compute = ProcessingSlot()
+        self._compute = ProcessingSlot(self.media.root)
         self._bands: OrderedDict = OrderedDict()
         self.summary_failures: list[str] = []
 
@@ -654,18 +656,21 @@ class MultispectralService:
         if scale not in (1, 2, 4):
             raise MultispectralError("scale must be 1, 2 or 4")
         capture = self.catalog.capture(capture_uuid)
+        self.catalog.assert_current(capture)
         if layer not in capture["layers"]:
             raise MultispectralError("Bands for this layer are missing in this capture")
         needed = ((({v: k for k, v in BAND_KEYS.items()}[layer[5:]],) if layer.startswith("band_")
                    else INDICES[layer][1]))
         bands = {name: self._band(capture["bands"][name]["id"], scale) for name in needed}
         grid = compute_layer(layer, bands)
+        self.catalog.assert_current(capture)
         return capture, grid
 
     def analysis(self, capture_uuid: str, layer: str, *, scale: int = 2) -> dict:
         capture, grid = self.layer(capture_uuid, layer, scale=scale)
         label, _, formula = INDICES.get(layer, (None, None, None))
         stats = layer_stats(layer, grid)
+        self.catalog.assert_current(capture)
         if layer == "ndvi":  # remembered for the map overview (local cache only)
             try:
                 self.catalog.store_summary(capture_uuid, capture["source_key"], layer, stats)
@@ -689,6 +694,7 @@ class MultispectralService:
         from .m3m_stack import BAND_ORDER, stack_bands, stack_to_geotiff
         from .minio_media_index import read_indexed_object
         capture = self.catalog.capture(capture_uuid)
+        self.catalog.assert_current(capture)
         missing = [b for b in BAND_ORDER if b not in capture["bands"]]
         if missing:
             raise MultispectralError("Bands missing: " + ", ".join(missing))
@@ -710,6 +716,7 @@ class MultispectralService:
                     raise DjiMediaError("MinIO object unavailable") from exc
             result = stack_bands(files, product=product, scale=scale, refine=refine)
             data = stack_to_geotiff(result, georef=georef)
+            self.catalog.assert_current(capture)
         finally:
             self._compute.release()
         info = {k: result[k] for k in ("product", "scale", "crop", "shifts", "capture_uuid")}
