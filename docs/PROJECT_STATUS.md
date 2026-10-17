@@ -1,12 +1,40 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026 – `main` @ `60b5431` einschließlich PR #37.
+**Stand:** 17. Oktober 2026 – `main` @ `a3e786c` einschließlich PR #38.
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
-## Laufender Änderungsstand: Missionsprofile und Wayline-Abgleich
+## Laufender Änderungsstand: lokale Pilot-2-Cloud-Waylines
 
-Basis `main` @ `60b5431`, Branch `fix/mission-wayline-consistency-20261017`.
-Noch nicht auf dem Pi installiert.
+Basis `main` @ `a3e786c`, Branch `feature/local-pilot-waylines-20261017`.
+Noch nicht auf dem Pi installiert oder mit echtem lokalem Konto angemeldet.
+
+- Optionaler Adapter für genau den lokalen Cloud-API-Server
+  `http://127.0.0.1:6789`; ausschließlich Wayline-Metadaten per GET.
+- Interaktive Einrichtung `.venv/bin/python -m aeronexus.local_waylines --configure`
+  meldet das vorhandene lokale Konto einmalig an, prüft den Wayline-GET und
+  speichert nur Workspace-ID/Sitzungstoken mit 0600 im privaten Konfigurationsordner.
+  Passwort bleibt ungespeichert. Keine Token-Erzeugung aus JWT-Secrets, keine
+  Standardkonten oder neuen Rechte. Nur die CLI sendet den Login-POST.
+- Der bestehende Abgleich liest diese Quelle zusätzlich zum FlightHub-Cache;
+  Anbieter/Workspace, eigener Zeitnachweis und Pagination sind explizit.
+  Namenskandidaten bleiben unbestätigt. Keine Inhaltsgleichheit oder Task-Verbindung.
+- Begrenzte Pagination (10 Seiten, angefragt 50 Einträge), Antwortgrößen/Timeouts,
+  keine Redirects oder System-Proxys. Fehler löschen alte Ergebnisse aus dem
+  nächsten Bericht, statt sie als aktuell auszugeben. 30-Sekunden-RAM-Cache.
+- Vollsuite lokal Python 3.12: **1063 bestanden, 1 bestehender GDAL-Test mangels
+  osgeo übersprungen, 1 bekannte Starlette/httpx-Warnung**. Neue HTTP-Mocks und
+  CLI-Dateitests prüfen Auth, Pagination, Limits, Cache, Geheimnisse und Rechte.
+- Keine Änderungen an UI, Broker, Containern oder Serverdaten. Pi-Anmeldung und
+  echter Routenbestand benötigen die lokale Einrichtung durch den Anwender.
+
+Details: [Wayline-Abgleich und Einrichtung](mission-wayline-reconciliation.md).
+
+## Gemergt und auf dem Pi installiert: Missionsprofile und Wayline-Abgleich
+
+PR #38 gemergt in `main` @ `a3e786c`. Anwenderausgabe vom 17.10.2026 bestätigt
+**1030 Tests bestanden**, Dienst `active`, HTTPS-Health erfolgreich. Der echte
+Abgleich liefert eine lokale Matrice-4T-Mission mit vier Punkten, keinen
+FlightHub-Cache und noch keine lokale Pilot-2-Cloud-Anbindung.
 
 - Studio-Profile für M3E/M3T/M3M/M3TA zusätzlich zu M4E/M4T; Geräteauswahl
   aus derselben Tabelle wie der Export. Keine neuen Kamera-/Mapping-Modi.
@@ -17,7 +45,7 @@ Noch nicht auf dem Pi installiert.
   Entwürfe und bereits gelesene FlightHub-Metadaten. Namen bleiben unbestätigte
   Kandidaten; Modellkonflikte, Quellen-/Listenlimits und fehlende Task-Verbindung
   sind explizit. Keine Synchronisation, kein Cloud-Schreiben.
-- Die lokale Pilot-2-Cloud-Wayline-Bibliothek ist noch keine Quelle des Berichts.
+- In diesem gemergten Stand ist die lokale Pilot-2-Cloud noch keine Quelle.
   Inhalt/Prüfsumme und echte Pi-Bestände sind nicht verifiziert.
 - Lokale Gesamtsuite Python 3.12: **1029 bestanden, 1 bestehender GDAL-Test
   mangels osgeo übersprungen, 1 bekannte Starlette/httpx-Warnung**.
