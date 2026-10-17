@@ -63,6 +63,8 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .cloud-route-row label span{min-width:0;overflow-wrap:anywhere}
 .cloud-route-row .swatch{width:12px;height:12px;flex:0 0 12px;border-radius:3px;border:1px solid #a6b6c6}
 .cloud-route-row .cloud-route-detail{grid-column:1/-1;font-size:11px;color:#bad2e4;overflow-wrap:anywhere}
+.cloud-route-row .cloud-route-metrics{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px;font-size:12px;color:#d7ecff}
+.cloud-route-row .cloud-route-metrics span{background:#23445e;border-radius:5px;padding:3px 7px}
 .cloud-route-row button{align-self:center;padding:6px 8px}
 @media(max-width:600px){#cloud-overview-panel{top:110px;max-height:52vh}}
 .badge{border-radius:999px;border:1px solid #3c5875;color:#a9cbea;padding:3px 8px;font-size:11px}
@@ -319,7 +321,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
   <p class="note" id="cloud-overview-status" role="status" aria-live="polite">Keine Cloud-Routen geladen.</p>
   <button id="cloud-overview-fit" type="button" disabled>Alle sichtbaren Routen zentrieren</button>
   <div id="cloud-overview-list" aria-label="Routen ein- oder ausblenden"></div>
-  <p class="note">Nur Geometrie-Vorschau. Keine Flugfreigabe, keine Missionsänderung.</p>
+  <p class="note">Linienlänge = horizontale WGS84-Segmentstrecke, keine Flugdistanz. Weiße Kreise: Linienanfang, farbige Kreise: Linienende. Keine Flugfreigabe oder Missionsänderung.</p>
 </section>
 <div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
 </section>
@@ -1244,6 +1246,38 @@ async function previewCloudWayline(route,button){
   }
 }
 
+
+function cloudOverviewLineStats(features){
+  // Never join separate WPML folders or count polygon boundaries as flight paths.
+  // Horizontal great-circle distance between neighboring points only.
+  const rad=Math.PI/180,earth=6371008.8;
+  let metres=0,segments=0,lines=0;
+  const endpoints=[];
+  const valid=point=>Array.isArray(point)&&point.length>=2&&
+    Number.isFinite(point[0])&&Number.isFinite(point[1])&&
+    Math.abs(point[0])<=180&&Math.abs(point[1])<=90;
+  for(const feature of features){
+    const geom=feature?.geometry;
+    if(geom?.type!=="LineString"||!Array.isArray(geom.coordinates))continue;
+    const coords=geom.coordinates;
+    if(coords.length<2||coords.length>1000||!coords.every(valid))continue;
+    lines++;
+    endpoints.push([coords[0],coords[coords.length-1]]);
+    for(let i=1;i<coords.length;i++){
+      const a=coords[i-1],b=coords[i];
+      const dLat=(b[1]-a[1])*rad,dLon=(b[0]-a[0])*rad;
+      const h=Math.sin(dLat/2)**2+Math.cos(a[1]*rad)*Math.cos(b[1]*rad)*Math.sin(dLon/2)**2;
+      metres+=2*earth*Math.asin(Math.sqrt(Math.min(1,Math.max(0,h))));
+      segments++;
+    }
+  }
+  return {distanceMeters:lines?metres:null,segmentCount:segments,lineCount:lines,endpoints};
+}
+function cloudOverviewFormatDistance(distance){
+  if(!Number.isFinite(distance)||distance<0)return "keine Linienlänge";
+  if(distance>=1000)return (distance/1000).toLocaleString("de-DE",{maximumFractionDigits:2})+" km";
+  return Math.round(distance)+" m";
+}
 function closeCloudOverview(quiet=false){
   ++cloudOverviewGeneration;
   if(cloudOverviewController)cloudOverviewController.abort();
@@ -1269,9 +1303,12 @@ function fitCloudRoutes(entry=null){
 }
 function renderCloudOverview(){
   const list=$("cloud-overview-list");list.replaceChildren();
-  let loaded=0,failed=0,visible=0,points=0;
+  let loaded=0,failed=0,visible=0,points=0,totalLength=0,measured=0;
   for(const entry of cloudOverviewRoutes){
-    if(entry.state==="connected"){loaded++;points+=entry.pointCount;if(entry.visible)visible++;}
+    if(entry.state==="connected"){
+      loaded++;points+=entry.pointCount;if(entry.visible)visible++;
+      if(Number.isFinite(entry.distanceMeters)){totalLength+=entry.distanceMeters;measured++;}
+    }
     else if(entry.state!=="loading")failed++;
     const card=els("div","cloud-route-row");
     const label=els("label");
@@ -1299,11 +1336,19 @@ function renderCloudOverview(){
       ?entry.pointCount+" Punkte · "+entry.featureCount+" Geometrien"
       :entry.state==="loading"?"KMZ wird geladen…":"Nicht verfügbar: "+entry.state;
     card.appendChild(els("div","cloud-route-detail",detail));
+    if(entry.state==="connected"){
+      const metrics=els("div","cloud-route-metrics");
+      metrics.appendChild(els("span","",entry.lineCount+" Linien · "+entry.segmentCount+" Segmente"));
+      metrics.appendChild(els("span","","Horizontale Linienlänge: "+
+        cloudOverviewFormatDistance(entry.distanceMeters)));
+      card.appendChild(metrics);
+    }
     list.appendChild(card);
   }
   $("cloud-overview-fit").disabled=visible===0;
   $("cloud-overview-status").textContent=loaded+"/"+cloudOverviewRoutes.length+
     " Routen gelesen · "+visible+" sichtbar · "+points+" Punkte gelesen"+
+    (measured?" · Σ Linienlängen: "+cloudOverviewFormatDistance(totalLength):"")+
     (failed?" · "+failed+" nicht verfügbar":"")+".";
 }
 async function openCloudOverview(){
@@ -1334,7 +1379,7 @@ async function openCloudOverview(){
   cloudOverviewRoutes=routes.map((route,index)=>({
     id:route.wayline_id,name:route.name||"Unbenannte Route",
     color:CLOUD_OVERVIEW_COLORS[index],state:"loading",
-    pointCount:0,featureCount:0,visible:false,layer:null
+    pointCount:0,featureCount:0,distanceMeters:null,lineCount:0,segmentCount:0,visible:false,layer:null
   }));
   cloudOverviewLayer.clearLayers();cloudOverviewLayer.addTo(map);
   $("cloud-overview-panel").hidden=false;
@@ -1350,6 +1395,7 @@ async function openCloudOverview(){
       if(data.state!=="connected")throw new Error(clean(data.state));
       if(!Array.isArray(data.features)||!data.features.length||data.features.length>32)
         throw new Error("Keine darstellbare Geometrie");
+      const stats=cloudOverviewLineStats(data.features);
       const layer=L.featureGroup();
       for(const feature of data.features){
         if(!feature||!feature.geometry)throw new Error("Ungültige Kartengeometrie");
@@ -1360,6 +1406,16 @@ async function openCloudOverview(){
             color:entry.color,fillColor:entry.color,radius:6,interactive:false})
         }).addTo(layer);
       }
+      // Endpoint symbols describe WPML geometry segments, NOT takeoff or landing.
+      for(const [start,end] of stats.endpoints){
+        L.circleMarker([start[1],start[0]],{radius:5,color:entry.color,
+          fillColor:"#ffffff",fillOpacity:1,weight:2,interactive:false}).addTo(layer);
+        L.circleMarker([end[1],end[0]],{radius:7,color:entry.color,
+          fillColor:entry.color,fillOpacity:1,weight:2,interactive:false}).addTo(layer);
+      }
+      entry.distanceMeters=stats.distanceMeters;
+      entry.segmentCount=stats.segmentCount;
+      entry.lineCount=stats.lineCount;
       entry.layer=layer;
       entry.pointCount=Number.isInteger(data.point_count)?data.point_count:0;
       entry.featureCount=data.features.length;
