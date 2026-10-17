@@ -31,7 +31,7 @@ const els=(tag,cls,text)=>({tag,cls,textContent:text,value:""});
 const api=new Function("$","els","let terrainGrid=null,terrainGeo=null,"+
   "geoObjects=[],terrainProfile=null;"+logic+
   "\nreturn {terrainGeoBounds,terrainGridPoint,terrainHeightAt,terrainGeoFromGrid,"+
-  "terrainGeoPolyline,terrainPolylineProfile,terrainProjection,terrainDrawOverlays,"+
+  "terrainGeoPolyline,terrainDrapePolyline,terrainPolylineProfile,terrainProjection,terrainDrawOverlays,"+
   "terrainProbeAt,terrainRefreshProfileOptions,terrainGenerateProfile,"+
   "setState(g,meta,objects){terrainGrid=g;terrainGeo=meta;geoObjects=objects;}};"
 )($,els);
@@ -77,6 +77,22 @@ const outside={...line,vertices:[
   line.vertices[0],{latitude:49.18,longitude:8.6}]};
 assert.equal(api.terrainGeoPolyline(outside,grid,geo),null);
 assert.equal(api.terrainPolylineProfile(outside,grid,geo),null);
+const undraped=api.terrainGeoPolyline(line,grid,geo);
+const draped=api.terrainDrapePolyline(undraped,grid);
+assert.ok(draped.length>undraped.length,"overlay must add DEM samples");
+assert.ok(draped.length<=1025,"bound sampled segments");
+assert.ok(Math.abs(draped[0].elevation-100)<1e-5);
+assert.ok(Math.abs(draped[draped.length-1].elevation-100)<1e-5);
+assert.ok(Math.max(...draped.map(p=>p.elevation))>139.5,
+  "draped overlay should pass over mountain peak, not across a straight chord");
+assert.deepEqual(undraped,api.terrainGeoPolyline(line,grid,geo),
+  "draping must not modify original GeoObject vertices");
+const dense=[];
+for(let i=0;i<129;i++)dense.push({row:i%2?2:0,col:(i%3)*1,elevation:100});
+const bounded=api.terrainDrapePolyline(dense,grid);
+assert.ok(bounded&&bounded.length<=1025,
+  "many-segment overlays must remain bounded at 1024 segments");
+assert.equal(api.terrainDrapePolyline([],grid),null);
 
 const view={azimuth:35,tilt:45,zoom:1,exaggeration:2};
 const p=api.terrainProjection(grid,view,1000,590);
@@ -86,7 +102,8 @@ const drawn={strokes:0,coords:0,beginPath(){},
   arc(){this.coords++;},stroke(){this.strokes++;}};
 api.terrainDrawOverlays(drawn,p,grid,geo,[{object:line}],{geoOverlay:true});
 assert.equal(drawn.strokes,1);
-assert.equal(drawn.coords,2);
+assert.equal(drawn.coords,draped.length,
+  "drawn 3D overlay must include bilinear samples between vertices");
 api.terrainDrawOverlays(drawn,p,grid,null,[{object:line}],{geoOverlay:true});
 api.terrainDrawOverlays(drawn,p,grid,geo,[{object:outside}],{geoOverlay:true});
 api.terrainDrawOverlays(drawn,p,grid,geo,[{object:line}],{geoOverlay:false});
