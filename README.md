@@ -189,6 +189,19 @@ Als zusätzliche technische Referenz wurde das
 geprüft. Sein Kommandozeilenprogramm/MCP-Server wird **nicht**
 automatisch installiert oder mit DJI-Schreibberechtigungen gestartet.
 
+## DEM-Hangneigung im 3D-Geländeviewer (Phase 20)
+
+Im Mission Studio lässt sich das importierte, auf maximal 48×48 Stützpunkte
+resampelte Höhenmodell alternativ nach **lokaler Hangneigung** einfärben
+(0–8°, 8–15°, 15–30°, ab 30°). Zellmittel/Maximum und ein Klick-Neigungswert
+ergänzen die bestehenden WGS84-/Höhenprofilfunktionen. Die Berechnung
+verwendet die **Originalhöhen ohne visuelle Überhöhung** und die lokalen
+metrischen Rasterabstände. **Keine** DJI-Flugfreigabe, Hindernisprüfung
+oder Änderung an WPML, STL und den lesenden DJI-Datenquellen.
+
+Grenzen, Prüfungen und manuelle Pi-/Chrome-Abnahme:
+[Phase 20 – DEM-Hangneigung](docs/phase-20-terrain-slope.md).
+
 ## Running on the Pi (systemd + HTTPS)
 
 `deploy/pi/` contains a local-CA certificate script, a launcher that refuses
