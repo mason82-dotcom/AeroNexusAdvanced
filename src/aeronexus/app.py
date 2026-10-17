@@ -46,6 +46,7 @@ from .multispectral_page import render_multispectral_page
 from .thermal_flights import ThermalFlights, ThermalJobRunning
 from .media_sync import read_status as read_media_sync_status
 from .photo_catalog import PhotoCatalog
+from .cloud_stack import CloudStackHealth, fleet_view, overall as cloud_overall
 from .livestream import LiveError, LiveNotFound, LiveStreams, LiveUnavailable
 from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, MetashapePackageNotFound,
                                list_packages, package_path, prepare_package, remove_package)
@@ -211,6 +212,24 @@ async def status_summary(response: Response) -> dict:
     return app.state.status_runtime.summary()
 
 
+@app.get("/api/v1/cloud/stack")
+async def cloud_stack_status(request: Request, response: Response,
+                             authorization: str | None = Header(default=None)) -> dict:
+    """Reachability of the local DJI Cloud API stack and its connected devices."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    health = getattr(app.state, "cloud_stack_health", None)
+    if health is None:
+        try:
+            health = app.state.cloud_stack_health = CloudStackHealth()
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail="Cloud stack host not configured") from exc
+    services = await health.services()
+    runtime = app.state.status_runtime
+    fleet = fleet_view(runtime.device_views(), runtime.summary().get("live_feed"))
+    return {"overall": cloud_overall(services, fleet), "services": services, "fleet": fleet}
+
+
 @app.get("/api/v1/status/devices")
 async def status_devices(
     request: Request,
@@ -365,9 +384,9 @@ def _live_http_error(exc: Exception) -> HTTPException:
 
 def _device_names() -> dict[str, str]:
     runtime = getattr(app.state, "status_runtime", None)
-    try:
-        return {d.device_id: d.name for d in runtime.inventory.devices()} if runtime else {}
-    except AttributeError:
+    try:  # resolved names, e.g. the aircraft model detected from its camera payload
+        return {v["device_id"]: v["name"] for v in runtime.device_views()} if runtime else {}
+    except (AttributeError, KeyError, TypeError):
         return {}
 
 

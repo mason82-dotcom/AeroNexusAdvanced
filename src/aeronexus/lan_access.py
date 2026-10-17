@@ -1,7 +1,7 @@
 """Optional passwordless dashboard/studio access on one trusted LAN.
 
 The mode is opt-in, HTTPS-only, direct-to-Pi, and restricted to one IPv4
-subnet and a fixed Host. Proxy/X-Forwarded-For headers are NEVER trusted.
+subnet (``AERONEXUS_LAN_SUBNET``, default 192.168.178.0/24) and a fixed Host. Proxy/X-Forwarded-For headers are NEVER trusted.
 All web browsers on the local subnet can see device data and edit local
 studio files while the mode is on; DJI operations remain read-only.
 """
@@ -12,8 +12,26 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException, Request
 
 
-HOME_SUBNET = ipaddress.ip_network("192.168.178.0/24")
+HOME_SUBNET = ipaddress.ip_network("192.168.178.0/24")  # default home network
 ALLOWED_FETCH_SITES = frozenset(("same-origin", "none", ""))
+
+
+def home_subnet() -> ipaddress.IPv4Network | None:
+    """Trusted LAN: ``AERONEXUS_LAN_SUBNET`` or the default home network.
+
+    Only a private IPv4 network with a /16../30 prefix is accepted. An invalid
+    value fails closed (None), it never silently widens access to the default.
+    """
+    value = os.environ.get("AERONEXUS_LAN_SUBNET", "").strip()
+    if not value:
+        return HOME_SUBNET
+    try:
+        network = ipaddress.IPv4Network(value, strict=True)
+    except ValueError:
+        return None
+    if not network.is_private or network.is_loopback or not 16 <= network.prefixlen <= 30:
+        return None
+    return network
 
 
 def lan_mode_enabled() -> bool:
@@ -21,14 +39,15 @@ def lan_mode_enabled() -> bool:
 
 
 def lan_host() -> str | None:
-    """Configured Pi address: one private IPv4 inside HOME_SUBNET, else None."""
+    """Configured Pi address: one IPv4 host address inside the trusted LAN, else None."""
     host = os.environ.get("AERONEXUS_LAN_HOST", "").strip()
+    subnet = home_subnet()
     try:
         address = ipaddress.IPv4Address(host)
     except ValueError:
         return None
-    if address not in HOME_SUBNET or address in (HOME_SUBNET.network_address,
-                                                 HOME_SUBNET.broadcast_address):
+    if subnet is None or address not in subnet or address in (subnet.network_address,
+                                                               subnet.broadcast_address):
         return None
     return str(address)
 
@@ -43,7 +62,7 @@ def require_lan(request: Request) -> None:
     except ValueError as exc:
         raise HTTPException(status_code=403, detail="Only direct LAN clients allowed") from exc
     # Loopback is useful for local health checks and CLI use, never for proxies.
-    if not (peer in HOME_SUBNET or peer.is_loopback):
+    if not (peer in home_subnet() or peer.is_loopback):  # lan_host() ensured a valid subnet
         raise HTTPException(status_code=403, detail="Only direct LAN clients allowed")
     hostname = request.url.hostname
     if hostname not in {host, "localhost", "127.0.0.1"}:
