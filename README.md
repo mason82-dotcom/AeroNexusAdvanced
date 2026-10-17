@@ -161,8 +161,9 @@ Enable the Phase 14 HTTPS-LAN policy in `.env` before use.
   [Mission/wayline comparison and import checks](docs/mission-wayline-reconciliation.md)
   explain the metadata-only comparison and strict AeroNexus KMZ subset.
   The optional local Pilot-2 Cloud adapter is configured on the Pi with
-  `.venv/bin/python -m aeronexus.local_waylines --configure`; passwords are
-  prompted locally and not saved. It reads only loopback wayline metadata.
+  `.venv/bin/python -m aeronexus.local_waylines --configure`; this reuses an
+  existing Cloud browser session without a password prompt after the web
+  handoff helper is installed as described in the linked instructions.
 - Local private media library: upload, search, preview and delete
   JPEG/PNG/WebP/MP4 (25 MiB maximum per file).
 - Read-only fleet tab with optional map plotting of valid *fresh* GPS.

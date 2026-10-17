@@ -257,7 +257,7 @@ def test_cli_configuration_verifies_before_replacing_session(tmp_path, monkeypat
     lw.save_credentials(path, CREDENTIALS)
     original = path.read_bytes()
     monkeypatch.setenv("AERONEXUS_LOCAL_WAYLINES_FILE", str(path))
-    monkeypatch.setattr(sys, "argv", ["local_waylines", "--configure"])
+    monkeypatch.setattr(sys, "argv", ["local_waylines", "--login"])
     monkeypatch.setattr("builtins.input", lambda _: "operator")
     monkeypatch.setattr(lw, "getpass", lambda _: "never-save-this-password")
     replacement = lw.Credentials(WORKSPACE, "replacement-private-session-token")

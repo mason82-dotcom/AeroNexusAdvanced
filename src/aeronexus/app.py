@@ -61,6 +61,8 @@ from .lan_access import lan_host, lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
 from .mission_reconciliation import compare_missions
 from .local_waylines import LocalWaylineReader
+from .local_waylines import Credentials, LocalWaylineError
+from .local_session import LocalSessionHandoff, handoff_origin
 from .mission_csv import MAX_CSV_BYTES, MissionCsvError, preview_csv
 from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
@@ -74,6 +76,7 @@ async def lifespan(app: FastAPI):
     api2_settings = CloudApi2Settings.from_env()
     app.state.cloud_api2_bridge = CloudApi2Bridge(api2_settings) if api2_settings else None
     app.state.local_waylines = LocalWaylineReader()
+    app.state.local_session_handoff = LocalSessionHandoff()
     app.state.provider_configured = {
         Provider.public_v2: poll_settings is not None and poll_settings.config.kind == ProviderKind.PUBLIC_V2,
         Provider.onprem_v2: poll_settings is not None and poll_settings.config.kind == ProviderKind.ONPREM_V2,
@@ -634,6 +637,42 @@ async def studio_mission_reconciliation(request: Request, response: Response,
     local = await app.state.local_waylines.read()
     return compare_missions(workspace.list_missions(), runtime.catalog,
                             runtime.summary()["flighthub"]["catalog_updated_at"], local)
+
+
+@app.options("/api/v1/local-cloud/session", include_in_schema=False)
+def local_cloud_session_preflight(request: Request) -> Response:
+    origin = handoff_origin(request)
+    if (request.headers.get("access-control-request-method") != "POST"
+            or request.headers.get("access-control-request-headers", "").lower() != "content-type"):
+        raise HTTPException(403, "Unsupported session handoff request")
+    return Response(status_code=204, headers={
+        "Access-Control-Allow-Origin": origin, "Vary": "Origin", "Cache-Control": "no-store",
+        "Access-Control-Allow-Methods": "POST", "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "600"})
+
+
+@app.post("/api/v1/local-cloud/session", include_in_schema=False)
+async def local_cloud_session_handoff(request: Request) -> Response:
+    origin = handoff_origin(request)
+    headers = {"Access-Control-Allow-Origin": origin, "Vary": "Origin", "Cache-Control": "no-store"}
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+        return JSONResponse({"state": "invalid_session"}, status_code=415, headers=headers)
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > 16384:
+            return JSONResponse({"state": "invalid_session"}, status_code=413, headers=headers)
+        content.extend(chunk)
+    try:
+        import json
+        credentials = Credentials.parse(json.loads(content))
+        await app.state.local_session_handoff.accept(credentials)
+    except LocalWaylineError as exc:
+        return JSONResponse({"state": str(exc)}, status_code=409 if str(exc) == "workspace_conflict" else 403, headers=headers)
+    except (ValueError, UnicodeError, RecursionError):
+        return JSONResponse({"state": "invalid_session"}, status_code=400, headers=headers)
+    except (OSError, TimeoutError):
+        return JSONResponse({"state": "session_unavailable"}, status_code=503, headers=headers)
+    return Response(status_code=204, headers=headers)
 
 
 @app.post("/api/v1/studio/missions/preview.csv")

@@ -1,12 +1,42 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026 – `main` @ `a3e786c` einschließlich PR #38.
+**Stand:** 17. Oktober 2026 – `main` @ `42e05ac` einschließlich PR #39.
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
-## Laufender Änderungsstand: lokale Pilot-2-Cloud-Waylines
+## Laufender Änderungsstand: vorhandene Cloud-Sitzung ohne erneute Kontoabfrage
 
-Basis `main` @ `a3e786c`, Branch `feature/local-pilot-waylines-20261017`.
-Noch nicht auf dem Pi installiert oder mit echtem lokalem Konto angemeldet.
+Basis `main` @ `42e05ac`, Branch `fix/reuse-local-cloud-session-20261017`.
+Anwender wünscht ausdrücklich Übernahme der vorhandenen lokalen Anmeldung.
+
+- `local_waylines --configure` aktiviert nur die Sitzungsübergabe, ohne Eingabe-
+  oder Login-Aufruf. Bestehende private Tokens bleiben verwendbar; ohne Token
+  wird `awaiting_browser_session` gemeldet. Manuelle Anmeldung nur noch optional
+  und ausdrücklich über `--login`.
+- Hilfsskript in der migrierten lokalen Cloud-Weboberfläche liest deren bereits
+  vorhandene eigene Sitzung und übergibt sie alle 30 Sekunden im sichtbaren
+  Fenster an einen dedizierten HTTPS-Endpunkt. Keine Browserprofil-Suche,
+  Passwortübernahme oder automatische Kontoanmeldung.
+- Übergabe nur nach lokaler Aktivierung, im direkten LAN und mit exakter
+  Cloud-Origin. Serverseitige GET-Prüfung von Token, Workspace und Kontotyp;
+  bestehender Workspace bleibt gepinnt. Bestehende Studio-Auth bleibt unverändert.
+- Vorbereitungsskript ändert ausschließlich lokale Web-Quelldateien mit HTML-
+  Sicherung. Der Control-Container muss separat neu gebaut werden; kein
+  automatischer Containerstart oder Backendumbau.
+- Prüfung Python 3.12: **1082 bestanden, 1 bestehender GDAL-Test übersprungen,
+  1 bekannte Starlette/httpx-Warnung**. Zusätzliche Tests für ausbleibende
+  Kontoabfrage, servergeprüfte Übernahme, Workspacekonflikt, Opt-in, CORS/HTTPS,
+  private Speicherung, idempotente Web-Vorbereitung und JavaScript-Laufzeit.
+- Statischer UI-Audit ohne Befund. Echter Browser-/WebView- und Pi-Lauf dieses
+  neuen Übergabewegs noch offen; lokales Chromium weiterhin nicht verfügbar.
+
+Betriebsschritte und Grenzen: [Wayline-Abgleich](mission-wayline-reconciliation.md).
+
+## Gemergt und auf dem Pi installiert: lokale Pilot-2-Cloud-Waylines
+
+PR #39 gemergt in `main` @ `42e05ac`. Anwenderausgabe bestätigt Installation,
+**45 Tests bestanden**, Abhängigkeiten fehlerfrei und Dienst `active`.
+Es wurde noch kein lokales Konto für den Adapter angemeldet; anschließend
+wurde ausdrücklich die Übernahme einer vorhandenen Anmeldung gewünscht.
 
 - Optionaler Adapter für genau den lokalen Cloud-API-Server
   `http://127.0.0.1:6789`; ausschließlich Wayline-Metadaten per GET.
