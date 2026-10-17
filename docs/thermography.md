@@ -73,8 +73,7 @@ Das Skript arbeitet ohne root und außerhalb des Repositorys:
   pro Bild (Box64), gecacht 2 ms; Emissionsgrad-Override wirkt.
 - M4T-Aufnahme (1280×1024-Vorschau, Raster 640×512): 21,5–22,8 °C.
 - Temperaturraster per HTTPS: 1.310.720 Byte, 640×512.
-- Browser-UI: JavaScript per Node geprüft; manuelle Prüfung in Chrome/Android
-  steht noch aus.
+- Browser-UI: vom Anwender im Browser bestätigt (17.10.2026).
 
 ## Karte der Wärmebilder (Ansicht „Karte“)
 

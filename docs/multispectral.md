@@ -50,12 +50,33 @@ große Entfernungen – Nahaufnahmen zeigen Parallaxe zwischen den Bändern.
 - Bandtabelle mit Wellenlänge, Sonnenlichtsensor-Irradiance und Belichtung;
   Seriennummern werden nicht angezeigt.
 
+## Karte (Ansicht „Karte“)
+
+- Aufnahmepunkte, eingefärbt nach NDVI-Median (Rot–Gelb–Grün, grau = noch
+  nicht berechnet); Tooltip mit Zeit, NDVI, Höhe, Pitch und Bodenauflösung;
+  Klick wählt die Aufnahme.
+- Nadir-Aufnahmen (Pitch −75…−105°, Höhe > 1 m): Footprint und – optional –
+  das NDVI-Bild lagerichtig gedreht auf dem Footprint (Leaflet-Overlay,
+  max. 30 gleichzeitig). Schräg-/Bodenaufnahmen: Sichtkegel in Blickrichtung.
+- Sichtfeld aus der kalibrierten Brennweite im XMP (M3M 2170 px bei
+  2592×1944 → 61,7° × 48,3°, 73,5° diagonal); Bodenauflösung = Höhe / Brennweite.
+  Annahme: ebenes Gelände auf Startpunkthöhe.
+- NDVI-Übersichten werden als lokaler Cache im Katalog gespeichert, sobald
+  der NDVI einer Aufnahme berechnet wurde; ändern sich Bänder (ETag), wird der
+  Wert verworfen. Fehlende Übersichten: Schaltfläche „NDVI-Übersicht
+  berechnen“ oder auf dem Pi `.venv/bin/python -m aeronexus.multispectral --ndvi`.
+- Der Katalog versioniert seine Metadaten (`META_VERSION`); nach
+  Formaterweiterungen werden die Dateiköpfe beim nächsten Scan neu gelesen.
+- Live (17.10.2026): 3 Aufnahmen mit RTK-Position (Bodenaufnahmen, Kamera
+  horizontal → Sichtkegel), NDVI-Median 0,56–0,57; 1 Innenaufnahme ohne GNSS.
+
 ## API (Viewer-Zugriff wie Mission Studio)
 
 | Route | Inhalt |
 |---|---|
 | `GET /multispectral` | Web-UI-Tab |
 | `GET /api/v1/multispectral/captures` | Aufnahmen mit Bändern, Ebenen, Warnungen |
+| `GET /api/v1/multispectral/map` | Positionen, Footprints/Sichtkegel, NDVI-Übersicht |
 | `GET /api/v1/multispectral/captures/{uuid}/layers/{layer}?scale=` | Statistik, Formel, Methode |
 | `GET /api/v1/multispectral/captures/{uuid}/layers/{layer}/grid?scale=` | float32-LE-Raster (NaN = ungültig), `X-Grid-Width/Height` |
 
@@ -68,7 +89,7 @@ Abhängigkeit: optionales Extra `pip install -e '.[multispectral]'` (numpy).
   Erstberechnung inkl. MinIO-Lesen ca. 2 s, weitere Ebenen aus dem Cache < 1 s.
 - Sichtprüfung NDVI/CIR: Kanten der Bänder deckungsgleich, Vegetation hoch,
   Wand/Boden niedrig; leichte Farbsäume an nahen Ästen (Parallaxe).
-- Browser-UI: JavaScript per Node geprüft; manuelle Prüfung steht aus.
+- Browser-UI: vom Anwender im Browser bestätigt (Bildansicht); Kartenansicht per Node geprüft.
 
 ## Vorschläge
 

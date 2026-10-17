@@ -25,6 +25,7 @@ import argparse
 from collections import OrderedDict
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import PurePosixPath
 import re
@@ -61,6 +62,7 @@ HEADER_BYTES = 256 * 1024
 MAX_BAND_BYTES = 64 * 1024 * 1024
 MAX_SIDE = 8192
 DB_NAME = "multispectral.sqlite3"
+META_VERSION = "2"  # bump when band_metadata gains fields: forces a header re-read
 _UUID_RE = re.compile(r"[0-9a-f]{32}\Z")
 
 
@@ -184,6 +186,7 @@ def band_metadata(xmp: str | None) -> dict:
             "irradiance": _num(d("Irradiance"), 0, 1e7),
             "sunlight_sensor_status": _num(d("LS_status"), 0, 10),
             "vignetting": _floats(d("VignettingData"), 6),
+            "focal_length_px": _num(d("CalibratedFocalLength"), 1, 1e6),
             "center_x": _num(d("CalibratedOpticalCenterX"), 0, MAX_SIDE),
             "center_y": _num(d("CalibratedOpticalCenterY"), 0, MAX_SIDE),
             "dewarp": dewarp,
@@ -315,6 +318,19 @@ def layer_stats(layer: str, grid) -> dict:
     return stats
 
 
+def _ms_optics(cal: dict) -> dict | None:
+    """Field of view of the multispectral camera from its calibrated focal length
+    (M3M: 2170 px, 2592x1944 -> about 61.7 x 48.3 deg, 73.5 deg diagonal)."""
+    f = cal.get("focal_length_px")
+    cx, cy = cal.get("center_x"), cal.get("center_y")
+    if not f or not cx or not cy:
+        return None
+    width, height = 2 * cx, 2 * cy
+    return {"focal_length_px": f, "width": int(width), "height": int(height),
+            "hfov_deg": round(math.degrees(2 * math.atan(width / 2 / f)), 2),
+            "vfov_deg": round(math.degrees(2 * math.atan(height / 2 / f)), 2)}
+
+
 # ------------------------------------------------------------ catalogue ----
 
 class MultispectralCatalog:
@@ -344,6 +360,9 @@ class MultispectralCatalog:
                 kind TEXT, band TEXT, captured_at TEXT, meta TEXT)""")
             conn.execute("""CREATE TABLE IF NOT EXISTS ms_scan (id INTEGER PRIMARY KEY CHECK (id = 1),
                 completed_at TEXT NOT NULL, read INTEGER NOT NULL, failed INTEGER NOT NULL)""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS ms_summary (
+                capture_uuid TEXT PRIMARY KEY, source_key TEXT NOT NULL, layer TEXT NOT NULL,
+                stats TEXT NOT NULL, computed_at TEXT NOT NULL)""")
         return conn
 
     def scan(self, client, bucket: str) -> dict:
@@ -356,7 +375,8 @@ class MultispectralCatalog:
                 for stale in set(known) - {r["id"] for r in records}:
                     db.execute("DELETE FROM ms_items WHERE id=?", (stale,))
             for record in records:
-                if record["id"] in known and known[record["id"]] == record["etag"]:
+                version_key = f'{record["etag"]}#v{META_VERSION}'
+                if known.get(record["id"]) == version_key:
                     continue
                 try:
                     stream = client.get_object(bucket, record["object_key"], offset=0,
@@ -378,7 +398,7 @@ class MultispectralCatalog:
                         etag=excluded.etag, filename=excluded.filename,
                         capture_uuid=excluded.capture_uuid, kind=excluded.kind, band=excluded.band,
                         captured_at=excluded.captured_at, meta=excluded.meta""",
-                               (record["id"], record["etag"], record["filename"],
+                               (record["id"], version_key, record["filename"],
                                 meta and meta["capture_uuid"], meta and meta["kind"],
                                 meta and meta["band"], meta and meta["captured_at"],
                                 json.dumps(meta) if meta else None))
@@ -433,25 +453,54 @@ class MultispectralCatalog:
             raise MultispectralNotFound("Unknown capture")
         return self._capture(capture_uuid, rows)
 
+    def store_summary(self, capture_uuid: str, source_key: str, layer: str, stats: dict) -> None:
+        db = self._connect(write=True)
+        try:
+            with db:
+                db.execute("""INSERT INTO ms_summary (capture_uuid, source_key, layer, stats, computed_at)
+                    VALUES (?,?,?,?,?) ON CONFLICT(capture_uuid) DO UPDATE SET
+                    source_key=excluded.source_key, layer=excluded.layer, stats=excluded.stats,
+                    computed_at=excluded.computed_at""",
+                           (capture_uuid, source_key, layer, json.dumps(stats),
+                            datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")))
+        finally:
+            db.close()
+
+    def summaries(self) -> dict[str, tuple[str, dict]]:
+        db = self._connect(write=False)
+        if db is None:
+            return {}
+        try:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='ms_summary'").fetchone():
+                return {}
+            return {r["capture_uuid"]: (r["source_key"], json.loads(r["stats"]))
+                    for r in db.execute("SELECT * FROM ms_summary")}
+        finally:
+            db.close()
+
     @staticmethod
     def _capture(uuid: str, rows) -> dict:
-        bands, rgb, preview, meta0 = {}, None, None, None
+        bands, rgb, preview, band_meta, other_meta, optics = {}, None, None, None, None, None
+        sources = []
         for row in rows:
             meta = json.loads(row["meta"])
             if row["kind"] == "band" and row["band"] in BANDS and row["band"] not in bands:
                 cal = meta.get("calibration") or {}
+                sources.append(f'{row["band"]}:{row["id"]}:{row["etag"]}')
+                optics = optics or _ms_optics(cal)
                 bands[row["band"]] = {"id": row["id"], "name": row["filename"],
                                       "irradiance": cal.get("irradiance"),
                                       "sunlight_sensor_status": cal.get("sunlight_sensor_status"),
                                       "exposure_time_us": cal.get("exposure_time_us"),
                                       "sensor_gain": cal.get("sensor_gain"),
                                       "band_freq": meta.get("band_freq")}
-                meta0 = meta0 or meta
+                band_meta = band_meta or meta
             elif row["kind"] == "rgb" and rgb is None:
                 rgb = {"id": row["id"], "name": row["filename"]}
             elif row["kind"] == "preview" and preview is None:
                 preview = {"id": row["id"], "name": row["filename"]}
-            meta0 = meta0 or meta
+            other_meta = other_meta or meta
+        meta0 = band_meta or other_meta  # bands carry position/gimbal; RGB XMP may not
         layers = [k for k, (_, need, _) in INDICES.items() if all(b in bands for b in need)]
         layers += [f"band_{BAND_KEYS[b]}" for b in BANDS if b in bands]
         irr = [b["irradiance"] for b in bands.values() if b["irradiance"] is not None]
@@ -463,7 +512,8 @@ class MultispectralCatalog:
             warnings.append("Sonnenlichtsensor ohne Messwert (Irradiance ≤ 1, z. B. Innenaufnahme): "
                             "keine Einstrahlungskorrektur, Indizes nur eingeschränkt aussagekräftig.")
         return {
-            "capture_uuid": uuid, "captured_at": meta0 and meta0.get("captured_at"),
+            "capture_uuid": uuid, "source_key": "|".join(sorted(sources)), "optics": optics,
+            "captured_at": meta0 and meta0.get("captured_at"),
             "model": meta0 and meta0.get("model"), "position": meta0 and meta0.get("position"),
             "gimbal": meta0 and meta0.get("gimbal"),
             "bands": bands, "rgb": rgb, "preview": preview, "layers": layers, "warnings": warnings,
@@ -528,11 +578,17 @@ class MultispectralService:
     def analysis(self, capture_uuid: str, layer: str, *, scale: int = 2) -> dict:
         capture, grid = self.layer(capture_uuid, layer, scale=scale)
         label, _, formula = INDICES.get(layer, (None, None, None))
+        stats = layer_stats(layer, grid)
+        if layer == "ndvi":  # remembered for the map overview (local cache only)
+            try:
+                self.catalog.store_summary(capture_uuid, capture["source_key"], layer, stats)
+            except (DjiMediaError, OSError, sqlite3.Error):
+                pass
         return {
             "capture": capture, "layer": layer,
             "label": label or "Relative Reflexion " + layer[5:].upper(),
             "formula": formula, "width": int(grid.shape[1]), "height": int(grid.shape[0]),
-            "scale": scale, "stats": layer_stats(layer, grid),
+            "scale": scale, "stats": stats,
             "method": "DJI Mavic 3M Image Processing Guide v1.0: Schwarzwert, Gain, Belichtung, "
                       "Vignettierung, Entzerrung, HMatrix-Ausrichtung, Sonnenlichtsensor",
             "relative": "Reflexion relativ (gemeinsamer Faktor ρ_NIR unbekannt); "
@@ -540,10 +596,55 @@ class MultispectralService:
         }
 
 
+    def map_items(self) -> dict:
+        """Capture positions, footprints/view cones and cached NDVI summaries."""
+        from .thermal_geo import ground_footprint, view_cone
+        summaries = self.catalog.summaries()
+        items, missing = [], 0
+        for c in self.catalog.captures():
+            pos = c["position"]
+            if not pos:
+                missing += 1
+                continue
+            optics = c["optics"] or {}
+            hfov, vfov = optics.get("hfov_deg"), optics.get("vfov_deg")
+            foot = ground_footprint(pos, c["gimbal"], hfov, vfov) if hfov else None
+            height = pos.get("relative_altitude_m")
+            gsd = (height / optics["focal_length_px"] * 100
+                   if foot and optics.get("focal_length_px") else None)
+            cached = summaries.get(c["capture_uuid"])
+            ndvi = cached[1] if cached and cached[0] == c["source_key"] else None
+            items.append({
+                "capture_uuid": c["capture_uuid"], "captured_at": c["captured_at"],
+                "latitude": pos["latitude"], "longitude": pos["longitude"],
+                "relative_altitude_m": height, "gps_status": pos.get("gps_status"),
+                "gimbal_pitch_deg": (c["gimbal"] or {}).get("pitch_deg"),
+                "gimbal_yaw_deg": (c["gimbal"] or {}).get("yaw_deg"),
+                "footprint": foot,
+                "view_cone": None if foot or not hfov else view_cone(pos, c["gimbal"], hfov),
+                "ground_sample_cm": round(gsd, 2) if gsd else None,
+                "has_ndvi": "ndvi" in c["layers"],
+                "ndvi": None if ndvi is None else {k: ndvi.get(k) for k in
+                                                   ("median", "mean", "p05", "p95", "classes")},
+            })
+        return {"items": items, "without_position": missing,
+                "assumption": "Footprint nur bei Nadir-Aufnahmen; ebenes Gelände auf Startpunkthöhe"}
+
+    def compute_missing_summaries(self, *, scale: int = 4) -> int:
+        done = 0
+        for item in self.map_items()["items"]:
+            if item["has_ndvi"] and item["ndvi"] is None:
+                self.analysis(item["capture_uuid"], "ndvi", scale=scale)
+                done += 1
+        return done
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Read-only M3M multispectral catalogue (range-reads headers, no MinIO writes)")
     parser.add_argument("--env-file", default=".env")
+    parser.add_argument("--ndvi", action="store_true",
+                        help="also compute missing NDVI summaries for the map (reads band files)")
     args = parser.parse_args(argv)
     try:
         from dotenv import load_dotenv
@@ -552,6 +653,8 @@ def main(argv: list[str] | None = None) -> int:
             load_dotenv(args.env_file, override=False)
         settings = MinioMediaSettings.from_env()
         report = MultispectralCatalog(DjiMediaIndex()).scan(minio_client(settings), settings.bucket)
+        if args.ndvi:
+            report["ndvi_summaries"] = MultispectralService(DjiMediaIndex()).compute_missing_summaries()
         print(json.dumps(report))
         return 0
     except (DjiMediaError, OSError, sqlite3.Error) as exc:

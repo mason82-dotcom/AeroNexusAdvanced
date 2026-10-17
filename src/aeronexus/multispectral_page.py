@@ -13,6 +13,7 @@ HTML = r"""<!doctype html>
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
 <title>AeroNexusAdvanced · Multispektral</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
 :root{font:14px/1.45 system-ui,"Segoe UI",sans-serif;color-scheme:dark;--bg:#0b1323;--pane:#122139;--line:#334e69;--ink:#eaf4ff;--sub:#a9bfd8;--mint:#75e3bd;--amber:#e4bd78;--red:#ff9ba8}
 *{box-sizing:border-box}
@@ -51,6 +52,11 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .stack canvas{position:absolute;inset:0;width:100%;height:100%}
 #overlay{cursor:crosshair;touch-action:none}
 .empty{color:var(--sub);text-align:center;padding:30px}
+.views{display:flex;gap:6px;margin:0 0 9px}
+#ms-map{position:absolute;inset:0;display:none;background:#23374f}
+.map-state{position:absolute;z-index:500;left:10px;bottom:10px;max-width:min(560px,88%);background:#112137e8;border-radius:8px;padding:7px 9px;font-size:11px;color:#c8dbed}
+.map-legend{position:absolute;z-index:500;right:10px;bottom:22px;background:#112137e8;border-radius:8px;padding:7px 9px;font-size:11px;color:#c8dbed;display:none}
+.map-legend canvas{display:block;width:140px;height:10px;margin:4px 0;border-radius:3px}
 .readout{position:absolute;left:10px;bottom:10px;background:#0f1d31e6;border:1px solid #35536f;border-radius:8px;padding:5px 9px;font:12px ui-monospace,Consolas,monospace;pointer-events:none}
 .colorbar{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px}
 .colorbar canvas{flex:1;height:14px;border-radius:4px;border:1px solid #3a5876}
@@ -93,7 +99,14 @@ th{color:var(--sub);font-weight:600}
 
 <section class="panel" aria-labelledby="viewer-title">
 <div class="row" style="justify-content:space-between"><h2 id="viewer-title">Keine Aufnahme gewählt</h2><span id="viewer-badge"></span></div>
-<div class="toolbar" role="toolbar" aria-label="Darstellung">
+<div class="views" role="tablist" aria-label="Ansicht">
+<button type="button" role="tab" id="view-image" class="active" aria-selected="true">Bild</button>
+<button type="button" role="tab" id="view-map" aria-selected="false">Karte</button>
+<span class="grow"></span>
+<button type="button" id="map-compute" hidden title="NDVI aller Aufnahmen ohne Übersicht berechnen">NDVI-Übersicht berechnen</button>
+<label class="sub" id="map-overlay-label" hidden><input type="checkbox" id="map-overlay" checked> NDVI-Bilder auf Footprints</label>
+</div>
+<div class="toolbar" role="toolbar" aria-label="Darstellung" id="image-tools">
 <label>Ebene <select id="layer">
 <option value="ndvi">NDVI</option><option value="gndvi">GNDVI</option><option value="ndre">NDRE</option><option value="lci">LCI</option>
 <option value="cir">Falschfarben CIR (NIR/R/G)</option>
@@ -110,6 +123,9 @@ th{color:var(--sub);font-weight:600}
 <div class="empty" id="empty">Aufnahme links wählen.<br>Berechnung nach DJI Mavic 3M Image Processing Guide auf dem Server.</div>
 <div class="stack" id="stack" hidden><canvas id="image"></canvas><canvas id="overlay" aria-label="Indexkarte, klicken zum Messen"></canvas></div>
 <div class="readout" id="readout" hidden></div>
+<div id="ms-map" aria-label="Karte der Multispektral-Aufnahmen"></div>
+<div class="map-state" id="map-state" hidden>Lade Karte…</div>
+<div class="map-legend" id="map-legend">NDVI (Median)<canvas id="map-legend-bar" width="140" height="1"></canvas><span>0</span><span style="float:right">1</span></div>
 </div>
 <div class="colorbar" id="colorbar-row"><span id="cb-low">–</span><canvas id="colorbar" width="256" height="1"></canvas><span id="cb-high">–</span></div>
 <div class="row" style="margin-top:9px">
@@ -147,6 +163,7 @@ th{color:var(--sub);font-weight:600}
 <div class="note" id="method">Verarbeitung: Schwarzwert, Gain und Belichtungszeit (Gl. 9), Vignettierung (Gl. 7/8), Objektiv-Entzerrung, Bandausrichtung per Calibrated HMatrix, Sonnenlichtsensor (Gl. 4–6). Reflexionswerte sind relativ (Faktor ρ_NIR ohne Referenztafel unbekannt); NDVI, GNDVI, NDRE und LCI sind davon unabhängig. Bei Nahaufnahmen bleibt Parallaxe zwischen den Bändern. Seriennummern werden nicht angezeigt.</div>
 </aside>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
@@ -200,7 +217,7 @@ function select(c){
   $("open-preview").hidden=!c.preview;if(c.preview)$("open-preview").href=`/api/v1/studio/dji-media/${c.preview.id}/file`;
   for(const o of $("layer").options)o.disabled=o.value==="cir"?!["band_nir","band_r","band_g"].every(l=>c.layers.includes(l)):!c.layers.includes(o.value);
   if($("layer").selectedOptions[0].disabled){const ok=[...$("layer").options].find(o=>!o.disabled);if(ok)$("layer").value=ok.value;}
-  renderMeta(c);load();
+  renderMeta(c);load();if(typeof highlight==="function")highlight();
 }
 
 async function grid(layer,scale){
@@ -270,6 +287,7 @@ function range(){
   return s?[s.p02,s.p98]:[0,1];
 }
 function show(){
+  if(view==="map")return;
   $("empty").hidden=true;const c=$("image"),o=$("overlay");c.width=o.width=W;c.height=H;$("stack").hidden=false;fit();draw();
 }
 function fit(){const v=$("viewer"),s=$("stack");if(!W)return;const k=Math.min(v.clientWidth/W,v.clientHeight/H);s.style.width=Math.floor(W*k)+"px";s.style.height=Math.floor(H*k)+"px";}
@@ -341,6 +359,87 @@ $("scale").addEventListener("change",()=>{spots=[];renderSpots();load();});
 for(const id of ["cmap","range-low","range-high"])$(id).addEventListener("input",()=>{if(data)draw();});
 $("range-mode").addEventListener("change",()=>{const m=$("range-mode").value==="manual";$("manual-range").hidden=!m;
   if(m&&data&&$("range-low").value===""){$("range-low").value=data.stats.p02.toFixed(2);$("range-high").value=data.stats.p98.toFixed(2);}if(data)draw();});
+
+/* ----------------------------------------------------------------- map --- */
+let view="image",map=null,mapLayer=null,overlayLayer=null,mapItems=[],selectedMark=null;
+function ndviColor(v){if(typeof v!=="number")return "#8aa0b8";const pal=lut("rdylgn");let k=Math.round(Math.max(0,Math.min(1,v))*255);return `rgb(${pal[k*3]},${pal[k*3+1]},${pal[k*3+2]})`;}
+function setView(v){
+  view=v;
+  for(const [id,name] of [["view-image","image"],["view-map","map"]]){$(id).classList.toggle("active",v===name);$(id).setAttribute("aria-selected",String(v===name));}
+  const isMap=v==="map";
+  $("image-tools").hidden=isMap;$("colorbar-row").hidden=isMap||!!cir;$("ms-map").style.display=isMap?"block":"none";
+  $("map-state").hidden=!isMap;$("map-legend").style.display=isMap?"block":"none";
+  $("map-compute").hidden=!isMap;$("map-overlay-label").hidden=!isMap;
+  if(isMap){$("stack").hidden=true;$("empty").hidden=true;$("readout").hidden=true;initMap();}
+  else if(data||cir)show();else $("empty").hidden=false;
+}
+function initMap(){
+  if(typeof L==="undefined"){$("map-state").textContent="Kartenbibliothek (Leaflet) konnte nicht geladen werden.";return;}
+  if(!map){
+    map=L.map("ms-map",{preferCanvas:true}).setView([51.1,10.4],6);
+    const sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:22,maxNativeZoom:19,attribution:"Esri World Imagery"});
+    const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:19,attribution:"© OpenStreetMap"});
+    sat.addTo(map);L.control.layers({"Satellit":sat,"Straßenkarte":osm}).addTo(map);
+    mapLayer=L.layerGroup().addTo(map);overlayLayer=L.layerGroup().addTo(map);
+    const bar=$("map-legend-bar").getContext("2d"),img=bar.createImageData(140,1),pal=lut("rdylgn");
+    for(let i=0;i<140;i++){const k=Math.round(i/139*255);img.data.set([pal[k*3],pal[k*3+1],pal[k*3+2],255],i*4);}bar.putImageData(img,0,0);
+  }
+  setTimeout(()=>map.invalidateSize(),50);loadMap(true);
+}
+async function loadMap(fit){
+  try{
+    const r=await api("/api/v1/multispectral/map");mapItems=r.items||[];
+    mapLayer.clearLayers();overlayLayer.clearLayers();
+    for(const it of mapItems){
+      const color=ndviColor(it.ndvi&&it.ndvi.median);
+      const tip=`${it.captured_at?new Date(it.captured_at).toLocaleString("de-DE"):""}<br>NDVI-Median ${it.ndvi?fmt(it.ndvi.median,2):"noch nicht berechnet"} · Höhe ${fmt(it.relative_altitude_m,1)} m · Pitch ${fmt(it.gimbal_pitch_deg,0)}°`+(it.ground_sample_cm?` · ${fmt(it.ground_sample_cm,1)} cm/px`:"");
+      if(it.footprint)mapLayer.addLayer(L.polygon(it.footprint,{color,weight:2,fillOpacity:.12,interactive:false}));
+      if(it.view_cone)mapLayer.addLayer(L.polygon(it.view_cone,{color,weight:1,fillColor:color,fillOpacity:.25,interactive:false}));
+      const mk=L.circleMarker([it.latitude,it.longitude],{radius:7,color:"#0b1323",weight:2,fillColor:color,fillOpacity:1});
+      mk.bindTooltip(tip);mk.on("click",()=>{const c=captures.find(x=>x.capture_uuid===it.capture_uuid);if(c)select(c);});mapLayer.addLayer(mk);
+    }
+    const missing=mapItems.filter(i=>i.has_ndvi&&!i.ndvi).length;
+    $("map-compute").disabled=!missing;
+    $("map-state").textContent=mapItems.length?`${mapItems.length} Aufnahmen mit Position · ${r.without_position} ohne GNSS · ${missing?missing+" ohne NDVI-Übersicht":"NDVI vollständig"} · Footprints nur bei Nadir-Aufnahmen (sonst Sichtkegel), ebenes Gelände angenommen`:"Keine Aufnahmen mit Position.";
+    if(fit&&mapItems.length)map.fitBounds(L.latLngBounds(mapItems.map(i=>[i.latitude,i.longitude])),{padding:[40,40],maxZoom:19});
+    if($("map-overlay").checked)drawOverlays();
+    highlight();
+  }catch(e){$("map-state").textContent="Karte nicht verfügbar: "+e.message;}
+}
+function highlight(){
+  if(!map)return;if(selectedMark){map.removeLayer(selectedMark);selectedMark=null;}
+  const it=current&&mapItems.find(i=>i.capture_uuid===current.capture_uuid);
+  if(it)selectedMark=L.circleMarker([it.latitude,it.longitude],{radius:12,color:"#75e3bd",weight:3,fill:false,interactive:false}).addTo(map);
+}
+async function drawOverlays(){
+  overlayLayer.clearLayers();
+  for(const it of mapItems.filter(i=>i.footprint&&i.has_ndvi).slice(0,30)){
+    try{
+      const res=await api(`/api/v1/multispectral/captures/${it.capture_uuid}/layers/ndvi/grid?scale=4`,true);
+      const w=+res.headers.get("X-Grid-Width"),h=+res.headers.get("X-Grid-Height"),g=new Float32Array(await res.arrayBuffer());
+      const src=document.createElement("canvas");src.width=w;src.height=h;const sc=src.getContext("2d"),im=sc.createImageData(w,h),pal=lut("rdylgn");
+      for(let i=0;i<g.length;i++){const v=g[i];if(!Number.isFinite(v))continue;const k=Math.round(Math.max(0,Math.min(1,v))*255);im.data.set([pal[k*3],pal[k*3+1],pal[k*3+2],235],i*4);}
+      sc.putImageData(im,0,0);
+      const lats=it.footprint.map(p=>p[0]),lons=it.footprint.map(p=>p[1]);
+      const n=Math.max(...lats),s=Math.min(...lats),e=Math.max(...lons),wv=Math.min(...lons);
+      const cw=768,ch=Math.max(1,Math.round(cw*(n-s)/((e-wv)*Math.cos(n*Math.PI/180))));
+      const px=p=>[(p[1]-wv)/(e-wv)*cw,(n-p[0])/(n-s)*ch];
+      const [tl,tr,,bl]=it.footprint.map(px);
+      const out=document.createElement("canvas");out.width=cw;out.height=ch;const oc=out.getContext("2d");
+      oc.setTransform((tr[0]-tl[0])/w,(tr[1]-tl[1])/w,(bl[0]-tl[0])/h,(bl[1]-tl[1])/h,tl[0],tl[1]);oc.drawImage(src,0,0);
+      overlayLayer.addLayer(L.imageOverlay(out.toDataURL("image/png"),[[s,wv],[n,e]],{opacity:.85,interactive:false}));
+    }catch(e){/* single overlay failures do not block the map */}
+  }
+}
+$("view-image").addEventListener("click",()=>setView("image"));
+$("view-map").addEventListener("click",()=>setView("map"));
+$("map-overlay").addEventListener("change",()=>{if($("map-overlay").checked)drawOverlays();else overlayLayer.clearLayers();});
+$("map-compute").addEventListener("click",async()=>{
+  const todo=mapItems.filter(i=>i.has_ndvi&&!i.ndvi);$("map-compute").disabled=true;
+  for(const [n,it] of todo.entries()){$("map-state").textContent=`Berechne NDVI-Übersicht ${n+1}/${todo.length}…`;
+    try{await api(`/api/v1/multispectral/captures/${it.capture_uuid}/layers/ndvi?scale=4`);}catch(e){}}
+  loadMap(false);
+});
 window.addEventListener("resize",fit);
 $("range-mode").value="veg";
 loadCaptures();
