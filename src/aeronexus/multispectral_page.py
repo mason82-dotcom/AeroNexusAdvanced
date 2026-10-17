@@ -156,6 +156,14 @@ th{color:var(--sub);font-weight:600}
 <div id="warnings"></div>
 <h3>Messungen</h3>
 <table><thead><tr><th>#</th><th>Art</th><th>Wert</th><th></th></tr></thead><tbody id="spots"></tbody></table>
+<h3>4-Band-GeoTIFF für QGIS</h3>
+<div class="sub">Bandfolge NIR, Grün, Rot, RedEdge; Entzerrung, HMatrix und optional Feinausrichtung (Phasenkorrelation). Georeferenz nur bei Nadir-Aufnahmen (näherungsweise).</div>
+<div class="row" style="margin:6px 0">
+<label class="sub">Produkt <select id="stack-product"><option value="reflectance">Relative Reflexion (float32)</option><option value="dn">DN (uint16, wie m3m-image-stacking)</option></select></label>
+<label class="sub">Auflösung <select id="stack-scale"><option value="1">voll</option><option value="2">halb</option></select></label>
+<label class="sub"><input type="checkbox" id="stack-refine" checked> Feinausrichtung</label>
+</div>
+<div class="row"><a id="stack-download" class="badge" href="#" download hidden>GeoTIFF herunterladen</a><span class="sub" id="stack-note"></span></div>
 <h3>Bänder</h3>
 <table><thead><tr><th>Band</th><th>Wellenlänge</th><th>Irradiance</th><th>Belichtung</th></tr></thead><tbody id="bands"></tbody></table>
 <h3>Aufnahme</h3>
@@ -217,7 +225,7 @@ function select(c){
   $("open-preview").hidden=!c.preview;if(c.preview)$("open-preview").href=`/api/v1/studio/dji-media/${c.preview.id}/file`;
   for(const o of $("layer").options)o.disabled=o.value==="cir"?!["band_nir","band_r","band_g"].every(l=>c.layers.includes(l)):!c.layers.includes(o.value);
   if($("layer").selectedOptions[0].disabled){const ok=[...$("layer").options].find(o=>!o.disabled);if(ok)$("layer").value=ok.value;}
-  renderMeta(c);renderWarnings();load();if(typeof highlight==="function")highlight();
+  renderMeta(c);renderWarnings();updateStackLink();load();if(typeof highlight==="function")highlight();
 }
 
 async function grid(layer,scale,capture=current){
@@ -478,6 +486,17 @@ $("map-compute").addEventListener("click",async()=>{
     try{await api(`/api/v1/multispectral/captures/${it.capture_uuid}/layers/ndvi?scale=4`);}catch(e){}}
   loadMap(false);
 });
+function updateStackLink(){
+  const a=$("stack-download"),c=current;
+  const complete=!!c&&["Green","Red","RedEdge","NIR"].every(b=>c.bands[b]);
+  a.hidden=!complete;
+  $("stack-note").textContent=c&&!complete?"Nicht alle vier Bänder vorhanden.":
+    complete?"Volle Auflösung: ca. 15–30 s, 30–60 MB.":"";
+  if(!complete)return;
+  const q=new URLSearchParams({product:$("stack-product").value,scale:$("stack-scale").value,refine:String($("stack-refine").checked)});
+  a.href=`/api/v1/multispectral/captures/${c.capture_uuid}/stack.tif?${q}`;
+}
+for(const id of ["stack-product","stack-scale","stack-refine"])$(id).addEventListener("change",updateStackLink);
 window.addEventListener("resize",fit);
 $("range-mode").value="veg";
 loadCaptures();

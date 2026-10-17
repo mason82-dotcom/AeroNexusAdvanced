@@ -231,7 +231,10 @@ Eigener Web-UI-Tab für M3M-Bänder (Grün, Rot, RedEdge, NIR) aus dem
 MinIO-Index, über die CaptureUUID zu Aufnahmen gruppiert. Verarbeitung nach
 DJIs *Mavic 3M Image Processing Guide* (Schwarzwert, Gain, Belichtung,
 Vignettierung, Entzerrung, HMatrix-Ausrichtung, Sonnenlichtsensor); NDVI,
-GNDVI, NDRE, LCI, CIR-Falschfarben, Messwerkzeuge und Export. Katalog:
+GNDVI, NDRE, LCI, CIR-Falschfarben, Messwerkzeuge und Export; 4-Band-GeoTIFF
+für QGIS (NIR, G, R, RE; nach mirrormapper/m3m-image-stacking, plus
+Feinausrichtung und Nadir-Georeferenz), auch für lokale Ordner:
+`python -m aeronexus.m3m_stack ORDNER -o AUSGABE`. Katalog:
 `.venv/bin/python -m aeronexus.multispectral`; Abhängigkeit
 `pip install -e '.[multispectral]'`. Details: [docs/multispectral.md](docs/multispectral.md).
 

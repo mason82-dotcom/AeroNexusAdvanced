@@ -1096,6 +1096,30 @@ def multispectral_layer(capture_uuid: str, layer: str, request: Request, respons
         raise _ms_http_error(exc) from exc
 
 
+@app.get("/api/v1/multispectral/captures/{capture_uuid}/stack.tif")
+def multispectral_stack(capture_uuid: str, request: Request,
+                        product: str = Query(default="reflectance", pattern="^(reflectance|dn)$"),
+                        scale: int = Query(default=1, ge=1, le=4),
+                        refine: bool = Query(default=True), georef: bool = Query(default=True),
+                        authorization: str | None = Header(default=None)) -> Response:
+    """4-band GeoTIFF for QGIS (band order NIR, Green, Red, RedEdge)."""
+    service = _ms_service(request, authorization)
+    if scale not in (1, 2, 4):
+        raise HTTPException(status_code=422, detail="scale must be 1, 2 or 4")
+    try:
+        data, info = service.stack_geotiff(capture_uuid, product=product, scale=scale,
+                                           refine=refine, georef=georef)
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+    name = f"m3m_{info['capture_uuid'][:8]}_{product}_aligned.tif"
+    shifts = ";".join(f"{b}:{s['dy_px']},{s['dx_px']}{'' if s['applied'] else '(n/a)'}"
+                      for b, s in info["shifts"].items())
+    return Response(content=data, media_type="image/tiff", headers={
+        "Content-Disposition": f'attachment; filename="{name}"',
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer", "X-M3M-Residual-Shifts": shifts or "not computed"})
+
+
 @app.get("/api/v1/multispectral/captures/{capture_uuid}/layers/{layer}/grid")
 def multispectral_grid(capture_uuid: str, layer: str, request: Request,
                        scale: int = Query(default=2, ge=1, le=4),
