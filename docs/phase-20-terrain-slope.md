@@ -1,6 +1,6 @@
 # Phase 20 – Lokale DEM-Hangneigungsanalyse im Mission Studio
 
-**Stand: 17. Oktober 2026.** Implementierung im separaten Entwicklungsbranch,
+**Stand: 17. Oktober 2026.** Umsetzung über GitHub-PR #16;
 noch nicht auf Raspberry Pi 5 / Chrome live validiert.
 
 ## Funktion
