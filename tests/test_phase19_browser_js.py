@@ -31,7 +31,7 @@ const els=(tag,cls,text)=>({tag,cls,textContent:text,value:""});
 const api=new Function("$","els","let terrainGrid=null,terrainGeo=null,"+
   "geoObjects=[],terrainProfile=null;"+logic+
   "\nreturn {terrainGeoBounds,terrainGridPoint,terrainHeightAt,terrainGeoFromGrid,"+
-  "terrainGeoPolyline,terrainPolylineProfile,terrainProjection,"+
+  "terrainGeoPolyline,terrainPolylineProfile,terrainProjection,terrainDrawOverlays,"+
   "terrainProbeAt,terrainRefreshProfileOptions,terrainGenerateProfile,"+
   "setState(g,meta,objects){terrainGrid=g;terrainGeo=meta;geoObjects=objects;}};"
 )($,els);
@@ -81,6 +81,16 @@ assert.equal(api.terrainPolylineProfile(outside,grid,geo),null);
 const view={azimuth:35,tilt:45,zoom:1,exaggeration:2};
 const p=api.terrainProjection(grid,view,1000,590);
 assert.equal(p.cells.length,4);
+const drawn={strokes:0,coords:0,beginPath(){},
+  moveTo(){this.coords++;},lineTo(){this.coords++;},
+  arc(){this.coords++;},stroke(){this.strokes++;}};
+api.terrainDrawOverlays(drawn,p,grid,geo,[{object:line}],{geoOverlay:true});
+assert.equal(drawn.strokes,1);
+assert.equal(drawn.coords,2);
+api.terrainDrawOverlays(drawn,p,grid,null,[{object:line}],{geoOverlay:true});
+api.terrainDrawOverlays(drawn,p,grid,geo,[{object:outside}],{geoOverlay:true});
+api.terrainDrawOverlays(drawn,p,grid,geo,[{object:line}],{geoOverlay:false});
+assert.equal(drawn.strokes,1,"invalid or disabled overlays must never draw");
 const sample=p.project(1,1,140);
 const hit=api.terrainProbeAt(grid,view,sample.x,sample.y,1000,590);
 assert.ok(hit&&Number.isFinite(hit.elevation));
