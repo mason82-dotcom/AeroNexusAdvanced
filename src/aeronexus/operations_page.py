@@ -125,6 +125,7 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <span class="active">FlightHub 2 Übersicht</span>
 <a href="/studio">Mission Studio ↗</a>
 <a href="/status">Live-Status ↗</a>
+<a href="/media">DJI Medien ↗</a>
 </nav>
 <span class="header-state" id="connection" role="status" aria-live="polite">Lade lokalen FlightHub-Status…</span>
 </header>
