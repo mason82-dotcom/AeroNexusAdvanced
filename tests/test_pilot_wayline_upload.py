@@ -101,7 +101,7 @@ def test_upload_is_single_post_and_verified(monkeypatch):
     monkeypatch.setenv("AERONEXUS_PILOT_WAYLINE_UPLOAD_ENABLED", "1")
     calls = []
     result = asyncio.run(upload(
-        plan(), CREDS, transport=httpx.MockTransport(handler_factory(calls))))
+        plan(), CREDS, expected_model="mavic3m", transport=httpx.MockTransport(handler_factory(calls))))
     assert result == {"state": "registered", "name": plan().filename[:-4],
                       "verified": True}
     assert [m for m, _ in calls] == ["GET", "GET", "POST", "GET"]
@@ -114,7 +114,7 @@ def test_failed_session_must_never_upload(monkeypatch):
     calls = []
     with pytest.raises(UploadError, match="preflight_unavailable"):
         asyncio.run(upload(
-            plan(), CREDS, transport=httpx.MockTransport(
+            plan(), CREDS, expected_model="mavic3m", transport=httpx.MockTransport(
                 handler_factory(calls, invalid_session=True))))
     assert [m for m, _ in calls] == ["GET"]
 
