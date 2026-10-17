@@ -50,7 +50,8 @@ Ein Scan ist auch per CLI möglich (dieselben Umgebungsvariablen exportieren):
 - Gespeicherter Bandfaktor und Offset werden auf die Werte angewendet.
 - Index-Dateinamen starten mit −1 bis 1. Andere Einzelbänder starten mit einem
   ungefähren P2–P98-Kontrast aus höchstens 256 × 256 Stichproben. Dieser Kontrast
-  verändert keine Messwerte. Extremwerte können visuell abgeschnitten erscheinen.
+  verändert keine Messwerte. Bei konstanten Stichproben wird nur der Anzeigebereich
+  erweitert; die Perzentilwerte bleiben unverändert. Extremwerte können visuell abgeschnitten erscheinen.
 - NoData, interne Masken, Alpha und nicht endliche Werte sind transparent.
   Gültige Nullwerte bleiben sichtbar. Externe `.msk`, `.ovr` und `.aux.xml`-Dateien
   werden absichtlich nicht eingelesen: Masken und Übersichten intern bereitstellen.
