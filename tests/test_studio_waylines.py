@@ -15,7 +15,8 @@ def test_cloud_library_is_accessible_read_only_and_separate_from_editor():
     assert 'data-tab="waylines-pane"' in page
     assert 'for="wayline-search"' in page and 'for="wayline-source"' in page
     assert "Der offene Studio-Entwurf bleibt unverändert" in page
-    assert "noch nicht auf der Karte geöffnet oder bearbeitet" in page
+    assert "Keine Bearbeitung und keine Flugfreigabe" in page
+    assert "Vorschau auf Karte (nur lesen)" in page
     logic = page[page.index("// Read-only library:"):page.index("function switchTab(id)")]
     assert "innerHTML" not in logic
     assert "saveMission" not in logic and "importMission" not in logic
