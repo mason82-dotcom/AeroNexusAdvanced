@@ -152,7 +152,7 @@ th{color:var(--sub);font-weight:600}
 <div class="stat"><span>P95</span><b id="s-p95">–</b></div>
 </div>
 <div id="classes"></div>
-<div class="note error" id="error" hidden></div>
+<div class="note error" id="error" role="alert" hidden></div>
 <div id="warnings"></div>
 <h3>Messungen</h3>
 <table><thead><tr><th>#</th><th>Art</th><th>Wert</th><th></th></tr></thead><tbody id="spots"></tbody></table>
@@ -217,11 +217,11 @@ function select(c){
   $("open-preview").hidden=!c.preview;if(c.preview)$("open-preview").href=`/api/v1/studio/dji-media/${c.preview.id}/file`;
   for(const o of $("layer").options)o.disabled=o.value==="cir"?!["band_nir","band_r","band_g"].every(l=>c.layers.includes(l)):!c.layers.includes(o.value);
   if($("layer").selectedOptions[0].disabled){const ok=[...$("layer").options].find(o=>!o.disabled);if(ok)$("layer").value=ok.value;}
-  renderMeta(c);load();if(typeof highlight==="function")highlight();
+  renderMeta(c);renderWarnings();load();if(typeof highlight==="function")highlight();
 }
 
-async function grid(layer,scale){
-  const res=await api(`/api/v1/multispectral/captures/${current.capture_uuid}/layers/${layer}/grid?scale=${scale}`,true);
+async function grid(layer,scale,capture=current){
+  const res=await api(`/api/v1/multispectral/captures/${capture.capture_uuid}/layers/${layer}/grid?scale=${scale}`,true);
   const w=+res.headers.get("X-Grid-Width"),h=+res.headers.get("X-Grid-Height"),buf=await res.arrayBuffer();
   if(!(w>0&&h>0&&buf.byteLength===w*h*4))throw new Error("Unerwartetes Raster");
   return {w,h,g:new Float32Array(buf)};
@@ -229,17 +229,22 @@ async function grid(layer,scale){
 
 async function load(){
   if(!current)return;
-  const token=++busy,layer=$("layer").value,scale=$("scale").value;
+  const token=++busy,capture=current,layer=$("layer").value,scale=$("scale").value;
+  data=null;cir=null;W=H=0;spots=[];drag=null;renderSpots();renderStats(null);
+  $("stack").hidden=true;$("readout").hidden=true;$("colorbar-row").hidden=true;
+  $("empty").textContent="Aufnahme wird berechnet…";$("empty").hidden=view==="map";
+  $("viewer").setAttribute("aria-busy","true");
   $("viewer-badge").innerHTML='<span class="badge">Berechne…</span>';$("error").hidden=true;
   try{
     if(layer==="cir"){
-      const parts=[];for(const l of ["band_nir","band_r","band_g"])parts.push(await grid(l,scale));
+      const parts=[];for(const l of ["band_nir","band_r","band_g"]){parts.push(await grid(l,scale,capture));if(token!==busy)return;}
       if(token!==busy)return;
+      if(!parts.every(p=>p.w===parts[0].w&&p.h===parts[0].h))throw new Error("Bandrastergrößen stimmen nicht überein");
       cir=parts;data=null;W=parts[0].w;H=parts[0].h;
       $("layer-title").textContent="Falschfarben CIR";$("formula").textContent="Rot = NIR, Grün = Rot, Blau = Grün (je P99 skaliert): vitale Vegetation erscheint rot.";
       renderStats(null);
     }else{
-      const [a,g]=await Promise.all([api(`/api/v1/multispectral/captures/${current.capture_uuid}/layers/${layer}?scale=${scale}`),grid(layer,scale)]);
+      const [a,g]=await Promise.all([api(`/api/v1/multispectral/captures/${capture.capture_uuid}/layers/${layer}?scale=${scale}`),grid(layer,scale,capture)]);
       if(token!==busy)return;
       data={...a,grid:g.g};cir=null;W=g.w;H=g.h;
       $("layer-title").textContent=a.label;$("formula").textContent=a.formula||a.relative;
@@ -247,8 +252,8 @@ async function load(){
     }
     $("viewer-badge").innerHTML='<span class="badge good">DJI-M3M-Kalibrierung</span>';
     show();
-  }catch(e){if(token!==busy)return;$("error").textContent="Berechnung fehlgeschlagen: "+e.message;$("error").hidden=false;$("viewer-badge").innerHTML='<span class="badge bad">Fehler</span>';}
-  finally{exportState();}
+  }catch(e){if(token!==busy)return;data=null;cir=null;W=H=0;$("stack").hidden=true;$("empty").textContent="Keine gültigen Bilddaten. Andere Aufnahme wählen oder erneut versuchen.";$("error").textContent="Berechnung fehlgeschlagen: "+e.message;$("error").hidden=false;$("viewer-badge").innerHTML='<span class="badge bad">Fehler</span>';}
+  finally{if(token===busy){$("viewer").setAttribute("aria-busy","false");exportState();}}
 }
 
 function renderStats(s){
@@ -263,6 +268,9 @@ function renderStats(s){
     s.classes.forEach((c,i)=>{const tr=el("tr");const sw=el("td","■");sw.style.color=CLASS_COLORS[i];tr.append(sw,el("td",`${fmt(c.from,1)} … ${fmt(c.to,1)}`),el("td",c.label),el("td",(c.share*100).toFixed(1).replace(".",",")+" %"));tb.append(tr);});
     box.append(t);
   }
+  renderWarnings();
+}
+function renderWarnings(){
   const warn=$("warnings");warn.replaceChildren();
   for(const w of (current&&current.warnings)||[])warn.append(el("div",w,"warnbox"));
 }
@@ -361,13 +369,13 @@ $("range-mode").addEventListener("change",()=>{const m=$("range-mode").value==="
   if(m&&data&&$("range-low").value===""){$("range-low").value=data.stats.p02.toFixed(2);$("range-high").value=data.stats.p98.toFixed(2);}if(data)draw();});
 
 /* ----------------------------------------------------------------- map --- */
-let view="image",map=null,mapLayer=null,overlayLayer=null,mapItems=[],selectedMark=null;
+let view="image",map=null,mapLayer=null,overlayLayer=null,mapItems=[],selectedMark=null,overlayGeneration=0;
 function ndviColor(v){if(typeof v!=="number")return "#8aa0b8";const pal=lut("rdylgn");let k=Math.round(Math.max(0,Math.min(1,v))*255);return `rgb(${pal[k*3]},${pal[k*3+1]},${pal[k*3+2]})`;}
 function setView(v){
   view=v;
   for(const [id,name] of [["view-image","image"],["view-map","map"]]){$(id).classList.toggle("active",v===name);$(id).setAttribute("aria-selected",String(v===name));}
   const isMap=v==="map";
-  $("image-tools").hidden=isMap;$("colorbar-row").hidden=isMap||!!cir;$("ms-map").style.display=isMap?"block":"none";
+  $("image-tools").hidden=isMap;$("colorbar-row").hidden=isMap||!!cir||!data;$("ms-map").style.display=isMap?"block":"none";
   $("map-state").hidden=!isMap;$("map-legend").style.display=isMap?"block":"none";
   $("map-compute").hidden=!isMap;$("map-overlay-label").hidden=!isMap;
   if(isMap){$("stack").hidden=true;$("empty").hidden=true;$("readout").hidden=true;initMap();}
@@ -389,7 +397,7 @@ function initMap(){
 async function loadMap(fit){
   try{
     const r=await api("/api/v1/multispectral/map");mapItems=r.items||[];
-    mapLayer.clearLayers();overlayLayer.clearLayers();
+    mapLayer.clearLayers();overlayGeneration++;overlayLayer.clearLayers();
     for(const it of mapItems){
       const color=ndviColor(it.ndvi&&it.ndvi.median);
       const tip=`${it.captured_at?new Date(it.captured_at).toLocaleString("de-DE"):""}<br>NDVI-Median ${it.ndvi?fmt(it.ndvi.median,2):"noch nicht berechnet"} · Höhe ${fmt(it.relative_altitude_m,1)} m · Pitch ${fmt(it.gimbal_pitch_deg,0)}°`+(it.ground_sample_cm?` · ${fmt(it.ground_sample_cm,1)} cm/px`:"");
@@ -411,12 +419,43 @@ function highlight(){
   const it=current&&mapItems.find(i=>i.capture_uuid===current.capture_uuid);
   if(it)selectedMark=L.circleMarker([it.latitude,it.longitude],{radius:12,color:"#75e3bd",weight:3,fill:false,interactive:false}).addTo(map);
 }
+// Project the raster onto all four ground corners. A small triangle mesh also
+// handles the trapezoid of a tilted camera; one affine transform cannot do so.
+function quadPoint(q,u,v){
+  const [a,b,c,d]=q,dx1=b[0]-c[0],dx2=d[0]-c[0],dx3=a[0]-b[0]+c[0]-d[0];
+  const dy1=b[1]-c[1],dy2=d[1]-c[1],dy3=a[1]-b[1]+c[1]-d[1];
+  const det=dx1*dy2-dx2*dy1;
+  if(Math.abs(det)<1e-12)throw new Error("Ungültiger Footprint");
+  const g=(dx3*dy2-dx2*dy3)/det,h=(dx1*dy3-dx3*dy1)/det,z=g*u+h*v+1;
+  return [((b[0]-a[0]+g*b[0])*u+(d[0]-a[0]+h*d[0])*v+a[0])/z,
+          ((b[1]-a[1]+g*b[1])*u+(d[1]-a[1]+h*d[1])*v+a[1])/z];
+}
+function drawTriangle(ctx,src,s,t){
+  const [a,b,c]=s,det=(b[0]-a[0])*(c[1]-a[1])-(c[0]-a[0])*(b[1]-a[1]);
+  const coeff=axis=>{const d1=t[1][axis]-t[0][axis],d2=t[2][axis]-t[0][axis];
+    const x=(d1*(c[1]-a[1])-d2*(b[1]-a[1]))/det,y=((b[0]-a[0])*d2-(c[0]-a[0])*d1)/det;
+    return [x,y,t[0][axis]-x*a[0]-y*a[1]];};
+  const x=coeff(0),y=coeff(1);
+  ctx.save();ctx.beginPath();ctx.moveTo(...t[0]);ctx.lineTo(...t[1]);ctx.lineTo(...t[2]);ctx.closePath();ctx.clip();
+  ctx.setTransform(x[0],y[0],x[1],y[1],x[2],y[2]);ctx.drawImage(src,0,0);ctx.restore();
+}
+function warpQuad(ctx,src,q){
+  const n=16;
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    const uv=[[x/n,y/n],[(x+1)/n,y/n],[(x+1)/n,(y+1)/n],[x/n,(y+1)/n]];
+    const s=uv.map(([u,v])=>[u*src.width,v*src.height]),t=uv.map(([u,v])=>quadPoint(q,u,v));
+    for(const ids of [[0,1,2],[0,2,3]])drawTriangle(ctx,src,ids.map(i=>s[i]),ids.map(i=>t[i]));
+  }
+}
 async function drawOverlays(){
+  const generation=++overlayGeneration;
   overlayLayer.clearLayers();
   for(const it of mapItems.filter(i=>i.footprint&&i.has_ndvi).slice(0,30)){
     try{
       const res=await api(`/api/v1/multispectral/captures/${it.capture_uuid}/layers/ndvi/grid?scale=4`,true);
       const w=+res.headers.get("X-Grid-Width"),h=+res.headers.get("X-Grid-Height"),g=new Float32Array(await res.arrayBuffer());
+      if(generation!==overlayGeneration||!$("map-overlay").checked)return;
+      if(!(w>0&&h>0&&g.length===w*h))throw new Error("Unerwartetes Raster");
       const src=document.createElement("canvas");src.width=w;src.height=h;const sc=src.getContext("2d"),im=sc.createImageData(w,h),pal=lut("rdylgn");
       for(let i=0;i<g.length;i++){const v=g[i];if(!Number.isFinite(v))continue;const k=Math.round(Math.max(0,Math.min(1,v))*255);im.data.set([pal[k*3],pal[k*3+1],pal[k*3+2],235],i*4);}
       sc.putImageData(im,0,0);
@@ -424,16 +463,15 @@ async function drawOverlays(){
       const n=Math.max(...lats),s=Math.min(...lats),e=Math.max(...lons),wv=Math.min(...lons);
       const cw=768,ch=Math.max(1,Math.round(cw*(n-s)/((e-wv)*Math.cos(n*Math.PI/180))));
       const px=p=>[(p[1]-wv)/(e-wv)*cw,(n-p[0])/(n-s)*ch];
-      const [tl,tr,,bl]=it.footprint.map(px);
       const out=document.createElement("canvas");out.width=cw;out.height=ch;const oc=out.getContext("2d");
-      oc.setTransform((tr[0]-tl[0])/w,(tr[1]-tl[1])/w,(bl[0]-tl[0])/h,(bl[1]-tl[1])/h,tl[0],tl[1]);oc.drawImage(src,0,0);
+      warpQuad(oc,src,it.footprint.map(px));
       overlayLayer.addLayer(L.imageOverlay(out.toDataURL("image/png"),[[s,wv],[n,e]],{opacity:.85,interactive:false}));
     }catch(e){/* single overlay failures do not block the map */}
   }
 }
 $("view-image").addEventListener("click",()=>setView("image"));
 $("view-map").addEventListener("click",()=>setView("map"));
-$("map-overlay").addEventListener("change",()=>{if($("map-overlay").checked)drawOverlays();else overlayLayer.clearLayers();});
+$("map-overlay").addEventListener("change",()=>{if($("map-overlay").checked)drawOverlays();else{overlayGeneration++;if(overlayLayer)overlayLayer.clearLayers();}});
 $("map-compute").addEventListener("click",async()=>{
   const todo=mapItems.filter(i=>i.has_ndvi&&!i.ndvi);$("map-compute").disabled=true;
   for(const [n,it] of todo.entries()){$("map-state").textContent=`Berechne NDVI-Übersicht ${n+1}/${todo.length}…`;
@@ -451,3 +489,4 @@ loadCaptures();
 
 def render_multispectral_page() -> str:
     return HTML
+

@@ -88,9 +88,13 @@ def _offset(lat0: float, lon0: float, north: float, east: float) -> list[float]:
 
 
 def ground_footprint(position: dict | None, gimbal: dict | None, hfov_deg: float,
-                     vfov_deg: float) -> list[list[float]] | None:
+                     vfov_deg: float, *, account_for_pitch: bool = False) -> list[list[float]] | None:
     """Ground corners [[lat, lon] x4] (image top-left, top-right, bottom-right,
-    bottom-left) of a near-nadir image over flat terrain, else None."""
+    bottom-left) of a near-nadir image over flat terrain, else None.
+
+    ``account_for_pitch`` intersects tilted camera rays with the ground plane.
+    The default preserves the legacy rectangle used by the thermal viewer.
+    """
     gimbal = gimbal or {}
     if not position:
         return None
@@ -99,13 +103,23 @@ def ground_footprint(position: dict | None, gimbal: dict | None, hfov_deg: float
     if (not isinstance(height, (int, float)) or height <= 1 or not isinstance(pitch, (int, float))
             or abs(pitch + 90) > NADIR_TOLERANCE_DEG or not isinstance(yaw, (int, float))):
         return None
-    half_r = height * math.tan(math.radians(hfov_deg) / 2)  # image x (right)
-    half_f = height * math.tan(math.radians(vfov_deg) / 2)  # image up = flight forward
+    half_r = math.tan(math.radians(hfov_deg) / 2)  # image x (right)
+    half_f = math.tan(math.radians(vfov_deg) / 2)  # image up
+    tilt = math.radians(pitch + 90) if account_for_pitch else 0.0
+    st, ct = math.sin(tilt), math.cos(tilt)
     y = math.radians(yaw)
     fwd, right = (math.cos(y), math.sin(y)), (-math.sin(y), math.cos(y))  # (north, east)
-    return [_offset(position["latitude"], position["longitude"],
-                    f * fwd[0] + r * right[0], f * fwd[1] + r * right[1])
-            for f, r in ((half_f, -half_r), (half_f, half_r), (-half_f, half_r), (-half_f, -half_r))]
+    corners = []
+    for f, r in ((half_f, -half_r), (half_f, half_r), (-half_f, half_r), (-half_f, -half_r)):
+        down = ct - f * st
+        if down <= 0:
+            return None  # a ray reaches the horizon, not the ground plane
+        distance = height / down
+        forward = st + f * ct
+        corners.append(_offset(position["latitude"], position["longitude"],
+                               distance * (forward * fwd[0] + r * right[0]),
+                               distance * (forward * fwd[1] + r * right[1])))
+    return corners
 
 
 def view_cone(position: dict | None, gimbal: dict | None, hfov_deg: float, *,
@@ -273,4 +287,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
