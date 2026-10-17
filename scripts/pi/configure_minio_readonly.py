@@ -50,7 +50,7 @@ def configure(root: Path, mc_binary: str) -> str:
         raise RuntimeError("Expected MinIO administrator credentials and dji-cloud bucket missing")
 
     # Unique names eliminate accidental overwrite of existing MinIO IAM data.
-    username = "anxmedia" + secrets.token_hex(9)
+    username = "anxmedia" + secrets.token_hex(6)
     password = secrets.token_urlsafe(40)
     policy_name = "anx-dji-read-" + secrets.token_hex(7)
     policy = {
