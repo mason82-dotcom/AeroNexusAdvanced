@@ -4,9 +4,10 @@ Pilot 2 uploads land in the MinIO bucket via the local DJI Cloud API server.
 This watcher keeps every AeroNexusAdvanced catalogue current:
 
 1. media index (``minio_media_index``)            – full listing, incremental
-2. thermal geo index (``thermal_geo``)            – header range reads of new images
-3. multispectral catalogue + NDVI summaries       – header reads, NDVI for new captures
-4. thermal flight measurements (optional)         – DJI Thermal SDK for new images
+2. photo catalogue (``photo_catalog``)           – model/camera of every JPEG (M3E, M3T, ...)
+3. thermal geo index (``thermal_geo``)            – header range reads of new images
+4. multispectral catalogue + NDVI summaries       – header reads, NDVI for new captures
+5. thermal flight measurements (optional)         – DJI Thermal SDK for new images
 
 Change detection:
 * ``events`` mode when the reader may subscribe to bucket notifications
@@ -98,6 +99,7 @@ class MediaSync:
     def run(self, *, reason: str) -> dict:
         """One catalogue pass. Each step is isolated; one failure does not stop the rest."""
         from .multispectral import MultispectralCatalog, MultispectralService
+        from .photo_catalog import PhotoCatalog
         from .thermal_geo import ThermalGeoIndex
         started = time.monotonic()
         self.set(state="running", current_reason=reason, run_started_at=_now())
@@ -118,6 +120,9 @@ class MediaSync:
         bucket = self.settings.bucket
         step("media_index", lambda: _pick(self.index.scan(self.client, bucket),
                                           "indexed", "added", "updated", "removed_from_index"))
+        # Before thermal_geo: FlightHub IR uploads (org_*.jpg) are recognised by metadata.
+        step("photo_catalog", lambda: _pick(PhotoCatalog(self.index).scan(self.client, bucket),
+                                            "indexed", "read", "failed"))
         step("thermal_geo", lambda: _pick(ThermalGeoIndex(self.index).scan(self.client, bucket),
                                           "indexed", "read", "failed"))
         step("multispectral", lambda: _pick(MultispectralCatalog(self.index).scan(self.client, bucket),

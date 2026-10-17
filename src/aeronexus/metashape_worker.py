@@ -12,7 +12,6 @@ from contextlib import redirect_stderr, redirect_stdout
 import hashlib
 import importlib
 import json
-import logging
 from pathlib import Path
 import re
 import sys

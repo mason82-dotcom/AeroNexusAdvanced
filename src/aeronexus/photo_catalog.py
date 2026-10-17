@@ -31,6 +31,7 @@ DB_NAME = "photo_catalog.sqlite3"
 META_VERSION = "1"
 HEADER_BYTES = 256 * 1024
 FULL_FRAME_DIAGONAL_MM = 43.2666
+OUTLIER_KM = 20.0  # from the flight's median position
 MODEL_NAMES = {"M3E": "Mavic 3 Enterprise", "M3T": "Mavic 3 Thermal", "M3M": "Mavic 3 Multispectral",
                "M4T": "Matrice 4T", "M4E": "Matrice 4E", "M30T": "Matrice 30T", "M30": "Matrice 30"}
 CAMERA_NAMES = {"WideCamera": "Weitwinkel", "ZoomCamera": "Zoom/Tele", "InfraredCamera": "Infrarot",
@@ -108,6 +109,39 @@ def photo_geometry(meta: dict) -> dict:
     return {"hfov_deg": round(view[0], 2) if view else None,
             "vfov_deg": round(view[1], 2) if view else None,
             "footprint": foot, "ground_sample_cm": round(gsd, 2) if gsd else None}
+
+
+def _distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    (la1, lo1), (la2, lo2) = (map(math.radians, a)), (map(math.radians, b))
+    h = (math.sin((la2 - la1) / 2) ** 2
+         + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2)
+    return 2 * 6371.0 * math.asin(min(1.0, math.sqrt(h)))
+
+
+def mark_position_outliers(items: list[dict]) -> int:
+    """Flag positions far from their flight's median position.
+
+    DJI sometimes writes a stale or uninitialised fix (even with status RTK)
+    into the first images after power-on. Such points are kept but flagged,
+    so maps do not zoom out to a continent. Flights with fewer than three
+    positioned images are not judged."""
+    by_flight: dict = {}
+    for item in items:
+        by_flight.setdefault(item.get("flight"), []).append(item)
+    flagged = 0
+    for group in by_flight.values():
+        if len(group) < 3:
+            for item in group:
+                item["position_outlier"] = False
+            continue
+        lats = sorted(i["latitude"] for i in group)
+        lons = sorted(i["longitude"] for i in group)
+        centre = (lats[len(lats) // 2], lons[len(lons) // 2])
+        for item in group:
+            item["position_outlier"] = (
+                _distance_km(centre, (item["latitude"], item["longitude"])) > OUTLIER_KM)
+            flagged += item["position_outlier"]
+    return flagged
 
 
 class PhotoCatalog:
@@ -227,6 +261,14 @@ class PhotoCatalog:
             args.append(camera)
         return self._rows(where, tuple(args))
 
+    def _flight_rows(self, model, camera, flight) -> list[dict]:
+        rows = [dict(r) for r in self._filtered(model, camera)]
+        if flight:
+            from .thermal_flights import group_flights
+            match = next((f for f in group_flights(rows) if f["id"] == flight), None)
+            rows = match["images"] if match else []
+        return rows
+
     def flights(self, *, model: str | None = None, camera: str | None = None) -> list[dict]:
         from .thermal_flights import group_flights
         rows = [dict(r) for r in self._filtered(model, camera)]
@@ -245,11 +287,7 @@ class PhotoCatalog:
     def list(self, *, model=None, camera=None, flight=None, limit=50, offset=0) -> dict:
         if not 1 <= limit <= 200 or not 0 <= offset <= 1_000_000:
             raise DjiMediaError("Invalid photo catalogue pagination")
-        rows = [dict(r) for r in self._filtered(model, camera)]
-        if flight:
-            from .thermal_flights import group_flights
-            match = next((f for f in group_flights(rows) if f["id"] == flight), None)
-            rows = match["images"] if match else []
+        rows = self._flight_rows(model, camera, flight)
         rows.sort(key=lambda r: (r["captured_at"] or "", r["filename"]), reverse=True)
         records = self.media.get_many([r["id"] for r in rows[offset:offset + limit]])
         items = []
@@ -265,8 +303,10 @@ class PhotoCatalog:
                           "has_position": bool(pos)})
         return {"items": items, "total": len(rows), "limit": limit, "offset": offset}
 
-    def map_items(self, *, model=None, camera=None, limit: int = 10000) -> dict:
-        rows = self._filtered(model, camera)
+    def map_items(self, *, model=None, camera=None, flight=None, limit: int = 10000) -> dict:
+        from .thermal_flights import group_flights
+        rows = self._flight_rows(model, camera, flight)
+        flight_of = {image["id"]: f["id"] for f in group_flights(rows) for image in f["images"]}
         items, missing = [], 0
         for r in rows[:limit]:
             meta = json.loads(r["meta"])
@@ -279,8 +319,10 @@ class PhotoCatalog:
                           "captured_at": r["captured_at"], "latitude": pos["latitude"],
                           "longitude": pos["longitude"], "relative_altitude_m": pos.get("relative_altitude_m"),
                           "gimbal_pitch_deg": (meta.get("gimbal") or {}).get("pitch_deg"),
-                          **geo})
-        return {"items": items, "without_position": missing,
+                          "flight": flight_of.get(r["id"]), **geo})
+        outliers = mark_position_outliers(items)
+        return {"items": items, "without_position": missing, "position_outliers": outliers,
+                "total": len(rows),
                 "assumption": "Footprint nur bei Nadir-Aufnahmen (±15°), ebenes Gelände auf Startpunkthöhe"}
 
 
