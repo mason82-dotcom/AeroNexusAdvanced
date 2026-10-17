@@ -164,6 +164,8 @@ Enable the Phase 14 HTTPS-LAN policy in `.env` before use.
   `.venv/bin/python -m aeronexus.local_waylines --configure`; this reuses an
   existing Cloud browser session without a password prompt after the web
   handoff helper is installed as described in the linked instructions.
+  The Studio **Cloud-Routen** tab displays the read-only library with search,
+  source filtering, pagination and explicit metadata verification states.
 - Local private media library: upload, search, preview and delete
   JPEG/PNG/WebP/MP4 (25 MiB maximum per file).
 - Read-only fleet tab with optional map plotting of valid *fresh* GPS.

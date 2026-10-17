@@ -191,3 +191,13 @@ history remain the behavior owners. See `UX-CONTRACT.md` for the CSV workflow.
 - Render file-derived content through text nodes; never interpolate CSV into HTML.
 - Keep route import reversible and persistence explicit.
 - Do not add DJI commands or change unrelated screens as part of CSV import.
+
+## Cloud-Routen im Mission Studio
+
+Der lesende Bibliotheksbereich verwendet dieselben Studio-Tokens und das
+bestehende Tab-/Sidebar-/Pane-Muster. Native beschriftete Such- und Quellenfelder,
+9px-Karten mit `--pane` und `--line`, 12px Abstand und 14px Innenabstand folgen
+der vorhandenen technischen Dichte. Karten sind ausdrücklich keine klickbaren
+Editoren. Lange Namen/Workspace-IDs umbrechen, statt Nachbarspalten zu verbreitern.
+Unter schmalen Breiten bleibt eine Kartenspalte; höchstens zwölf Karten je Seite.
+Die vorhandenen Scrollbereiche bleiben erhalten. Keine neuen Farben oder Fonts.

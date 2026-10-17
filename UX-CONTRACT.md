@@ -129,7 +129,40 @@ Vergleichbares Steuerelement ist die Auswahl „Mission beenden“ im selben Pan
 | Toast | Bestehende `notice` / `errorMessage` | Studio-Statusregion | Fehler bei nicht darstellbaren KMZ-Dateien | API-Rejection-/Persistenztests |
 | CRUD | Bestehende Missions-API / `Workspace` | `app.py`, `studio_workspace.py` | Explizites lokales Speichern, keine DJI-Uploads | Speichern/Laden/Export/Re-Import für M3-Profile |
 
-Der neue Metadatenbericht ist API-only; keine neue UI-Lade-/Navigationslogik.
+Der Metadatenbericht ist zusätzlich im lesenden Bereich „Cloud-Routen“ sichtbar.
 Namensgleichheit darf keine bestätigte Identität, Synchronisation oder
 Flugauftragszuordnung anzeigen. Die Browserauswahl mit Tastatur und im schmalen
 Viewport ist noch nicht real geprüft; keine umfassende UI-Zertifizierung.
+
+# Mission Studio: Cloud-Routen-Bibliothek
+
+Fachliche Quelle: `docs/mission-wayline-reconciliation.md`; vorhandene
+geschützte GET-API `/api/v1/studio/missions/reconciliation`. Kein neuer Zugriff,
+kein Import, Speichern, Flugkommando oder automatisches Verknüpfen.
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+|---|---|---|---|---|
+| Select/Listbox | Native Studio-select | `wayline-source` | Plattform-Popup wie „Mission beenden“ | HTML-Vertrag, JS-Filtertest |
+| Form | Beschriftete Suche / Filter | In-Memory-Bibliothekszustand | Keine URLs oder Speicherung privater Suchnamen | JS-Filter-/Paginationtest |
+| Toast | Studio `.status` | `wayline-state` / `errorMessage` | Eigene persistente Lade-/Fehlerregion, keine Dialoge | JS-Fehler-/Retrytest |
+| CRUD | Bestehende Missions-API | Editor-/Workspace-Vertrag | Bibliothek hat ausschließlich GET | Test auf fehlende Editor-Mutationen |
+
+Öffnen des Tabs lädt einmalig; „Routen aktualisieren“ lädt explizit erneut.
+Während des Abrufs ist die Aktion gesperrt; maximal 20 Sekunden mit sichtbarem
+Fehler und Wiederholung. Vorherige Daten verschwinden beim Refresh/Fehler;
+überholte Antworten können den neueren Stand nicht ersetzen. Erfolgreiches
+Laden zeigt Quellenstatus, lokalen Abrufzeitpunkt und alle Inhaltsprüfgrenzen.
+Nicht lesbare Quellen werden von einer erfolgreich leeren Liste unterschieden.
+
+Suche und Quellenfilter wirken lokal auf den geladenen Bestand und setzen die
+Seite zurück. Zwölf Routen pro Seite, Refresh erhält eine noch gültige Seite
+und begrenzt sie nach schrumpfendem Bestand. Suche löschen stellt Fokus zurück.
+Filter bleiben bewusst nur im Speicher dieses Tabs, weil Routennamen und
+Workspace-Bezüge nicht in teilbaren URLs oder Browser-Persistenz landen sollen.
+Kein anderer Filter oder offener Missionsentwurf wird geändert.
+
+Routenname, Modell, Typ, Quelle, Scope und Zeit werden über Textknoten ausgegeben.
+Namenszuordnungen bleiben unbestätigt, Modellkonflikte werden benannt und die
+Begrenzung der Kandidatenliste wird berücksichtigt. Codes 4/5 werden numerisch
+angezeigt; keine erfundene Bearbeitungs- oder Kartenvorschau-Aktion.
+Reale Tastatur-/Popup-/Narrow-Viewport-Prüfung im Browser steht separat aus.

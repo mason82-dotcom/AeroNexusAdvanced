@@ -1,9 +1,32 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026 – `main` @ `42e05ac` einschließlich PR #39.
+**Stand:** 17. Oktober 2026 – `main` @ `fafa4f0` einschließlich PR #40.
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
-## Laufender Änderungsstand: vorhandene Cloud-Sitzung ohne erneute Kontoabfrage
+## Laufender Änderungsstand: sichtbare Cloud-Routen im Studio
+
+Basis `main` @ `fafa4f0`, Branch `feature/studio-wayline-library-20261017`.
+Neuer lesender Studio-Bereich mit eigener Sidebar und paginierten Routenkarten:
+Name, Modell, Typ, Quelle/Scope, Änderungszeit und unbestätigter Namensabgleich.
+Suche, Quellenfilter, Leer-/Fehler-/Teilbestandszustände und expliziter Refresh.
+Keine Editor-Änderung, Karten-/Importfunktion oder zusätzliche API-Berechtigung.
+Zahlen-/Zeitformate berücksichtigen lokale Millisekunden und FlightHub-Sekunden.
+Neue JS-Prüfungen: Filter/Paging, Scope-/Modellkonflikte, begrenzte Kandidaten,
+Textausgabe, Fehlerbereinigung und Reihenfolge verspäteter Antworten.
+Lokal **1084 bestanden, 1 bestehender GDAL-Test übersprungen**, bekannte
+Starlette/httpx-Warnung. Statischer UI-Audit ohne Befund; reale Browser-/Pi-
+Darstellung dieser neuen Bibliothek noch nicht abgenommen.
+
+## Gemergt und live bestätigt: bestehende lokale Cloud-Sitzung
+
+PR #40 gemergt in `main` @ `fafa4f0`. Anwenderausgaben vom 17.10.2026,
+21:36 MESZ, bestätigen automatische Sitzungsübernahme und erfolgreichen Abruf
+über CLI und geschützte HTTPS-Abgleichs-API: **7 M3E-Waylines**, davon fünf
+`mapping_2d` und zwei Geometrie-Template-Codes 4/5, Pagination vollständig.
+Eine gespeicherte M4T-Studio-Mission mit vier Punkten hat keinen Namenskandidaten.
+FlightHub-Cache weiterhin ungeladen, Routeninhalt und Task-Verbindung ungeprüft.
+
+## Implementierung PR #40: vorhandene Cloud-Sitzung ohne erneute Kontoabfrage
 
 Basis `main` @ `42e05ac`, Branch `fix/reuse-local-cloud-session-20261017`.
 Anwender wünscht ausdrücklich Übernahme der vorhandenen lokalen Anmeldung.
