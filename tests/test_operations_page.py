@@ -156,7 +156,7 @@ def test_cockpit_uses_only_normalized_drone_metrics():
     assert "Flugzeit gesamt" in page
     assert "Flugstarts gesamt" in page
     assert "Distanz zum Homepoint" in page
-    assert "Höhe über Start" in page
+    assert "DJI elevation (Bezug ungeprüft)" in page
     assert "Akkuspannung" in page
     assert "Akkutemperatur" in page
     assert "RTK-Satelliten" in page
