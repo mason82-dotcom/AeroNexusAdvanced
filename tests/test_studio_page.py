@@ -262,3 +262,33 @@ def test_phase18_3d_viewer_controls_keep_local_read_only_terrain():
     assert 'localStorage' not in page
     assert "three.min.js" not in page
     assert 'getContext("webgl")' not in page
+
+
+def test_phase19_wgs84_terrain_overlay_profile_and_map_controls():
+    page=render_studio()
+    for element_id in (
+        "terrain-show-map", "terrain-georef-info", "terrain-geo-overlay",
+        "terrain-coordinate-probe","terrain-profile-object",
+        "terrain-profile-generate","terrain-profile-canvas",
+        "terrain-profile-message",
+    ):
+        assert 'id="'+element_id+'"' in page
+    for snippet in (
+        "function terrainGeoBounds(grid,geo)",
+        "function terrainGridPoint(grid,geo,location)",
+        "function terrainHeightAt(grid,row,col)",
+        "function terrainGeoPolyline(obj,grid,geo)",
+        "function terrainPolylineProfile(obj,grid,geo)",
+        "function terrainProbeAt(grid,view,x,y,width,height)",
+        "function terrainDrawOverlays(",
+        "function terrainShowOnMap()",
+        "function terrainGenerateProfile()",
+        "terrainGeo=data.geo||null",
+        '"/api/v1/studio/terrain/geotiff"',
+        '"/api/v1/studio/terrain/export.stl"',
+    ):
+        assert snippet in page
+    assert "Vertikaler Höhenbezug" in page or "vertikaler Höhenbezug" in page
+    assert "innerHTML" not in page
+    assert "localStorage" not in page
+    assert "/api/v1/flight/command" not in page
