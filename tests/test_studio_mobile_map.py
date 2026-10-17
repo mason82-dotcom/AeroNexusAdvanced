@@ -25,7 +25,6 @@ def test_mobile_layout_preserves_cloud_readonly_layers_and_map_controls():
     assert 'function setCloudOverviewMinimized(minimized)' in page
     assert 'setMapInfoExpanded(!window.matchMedia("(max-width:700px)").matches)' in page
     assert 'map.invalidateSize({pan:false})' in page
-    # The cloud layer and all WPML previews are always non-interactive.
     assert "interactive:false" in page
     segment = page[page.index("function setCloudOverviewMinimized("):
                    page.index("function closeCloudOverview(")]
@@ -63,42 +62,11 @@ let frames=[],resized=0,visited=[];
 const requestAnimationFrame=callback=>frames.push(callback);
 const map={invalidateSize(opts){assert.equal(opts.pan,false);resized++}};
 const switchTab=id=>visited.push(id);
-const methods=new Function(' {setCloudOverviewMinimized,setMapToolsExpanded,setMapInfoExpanded,setMapFocus};')(
- $,document,map,requestAnimationFrame,switchTab,message=>String(message));
-const flush=()=>{while(frames.length)frames.shift()()};
-methods.setMapToolsExpanded(false);
-assert.equal($('map-toolbar').dataset.compact,'true');
-assert.equal($('map-tools-toggle').attrs['aria-expanded'],'false');
-methods.setMapToolsExpanded(true);
-assert.equal($('map-toolbar').dataset.compact,'false');
-assert.equal($('map-tools-toggle').attrs['aria-expanded'],'true');
-methods.setMapInfoExpanded(false);
-assert.equal($('map-info').dataset.minimized,'true');
-methods.setMapInfoExpanded(true);
-assert.equal($('map-info').dataset.minimized,'false');
-methods.setCloudOverviewMinimized(true);
-assert.equal($('cloud-overview-panel').dataset.minimized,'true');
-assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'false');
-methods.setCloudOverviewMinimized(false);
-assert.equal($('cloud-overview-panel').dataset.minimized,'false');
-assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'true');
-methods.setMapFocus(true);flush();
-assert.equal(active.has('map-focus-active'),true);
-assert.equal($('map-focus-toggle').attrs['aria-pressed'],'true');
-assert.equal(resized,1);
-assert.deepEqual(visited,[]);
-methods.setMapFocus(false);flush();
-assert.equal(active.has('map-focus-active'),false);
-assert.equal($('map-focus-toggle').attrs['aria-pressed'],'false');
-assert.equal(resized,2);
-console.log('Mobile map focus controls passed');
-"""
-    result = subprocess.run([node, "-e", program], input=source,
-                            capture_output=True, text=True, timeout=15)
-    assert result.returncode == 0, result.stderr
-,'document','map','requestAnimationFrame','switchTab','mapStatusSummary',code+
+const mapStatusSummary=message=>String(message).split('.')[0];
+const methods=new Function('$','document','map','requestAnimationFrame',
+ 'switchTab','mapStatusSummary',code+
  '\nreturn {setCloudOverviewMinimized,setMapToolsExpanded,setMapInfoExpanded,setMapFocus};')(
- $,document,map,requestAnimationFrame,switchTab);
+ $,document,map,requestAnimationFrame,switchTab,mapStatusSummary);
 const flush=()=>{while(frames.length)frames.shift()()};
 methods.setMapToolsExpanded(false);
 assert.equal($('map-toolbar').dataset.compact,'true');
@@ -108,76 +76,10 @@ assert.equal($('map-toolbar').dataset.compact,'false');
 assert.equal($('map-tools-toggle').attrs['aria-expanded'],'true');
 methods.setMapInfoExpanded(false);
 assert.equal($('map-info').dataset.minimized,'true');
+assert.equal($('map-info-chip').attrs['aria-expanded'],'false');
 methods.setMapInfoExpanded(true);
 assert.equal($('map-info').dataset.minimized,'false');
-methods.setCloudOverviewMinimized(true);
-assert.equal($('cloud-overview-panel').dataset.minimized,'true');
-assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'false');
-methods.setCloudOverviewMinimized(false);
-assert.equal($('cloud-overview-panel').dataset.minimized,'false');
-assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'true');
-methods.setMapFocus(true);flush();
-assert.equal(active.has('map-focus-active'),true);
-assert.equal($('map-focus-toggle').attrs['aria-pressed'],'true');
-assert.equal(resized,1);
-assert.deepEqual(visited,[]);
-methods.setMapFocus(false);flush();
-assert.equal(active.has('map-focus-active'),false);
-assert.equal($('map-focus-toggle').attrs['aria-pressed'],'false');
-assert.equal(resized,2);
-console.log('Mobile map focus controls passed');
-"""
-    result = subprocess.run([node, "-e", program], input=source,
-                            capture_output=True, text=True, timeout=15)
-    assert result.returncode == 0, result.stderr
-,'document','map','requestAnimationFrame','switchTab','mapStatusSummary',code+
- '\nreturn {setCloudOverviewMinimized,setMapToolsExpanded,setMapInfoExpanded,setMapFocus};')(
- $,document,map,requestAnimationFrame,switchTab,message=>String(message));
-const flush=()=>{while(frames.length)frames.shift()()};
-methods.setMapToolsExpanded(false);
-assert.equal($('map-toolbar').dataset.compact,'true');
-assert.equal($('map-tools-toggle').attrs['aria-expanded'],'false');
-methods.setMapToolsExpanded(true);
-assert.equal($('map-toolbar').dataset.compact,'false');
-assert.equal($('map-tools-toggle').attrs['aria-expanded'],'true');
-methods.setMapInfoExpanded(false);
-assert.equal($('map-info').dataset.minimized,'true');
-methods.setMapInfoExpanded(true);
-assert.equal($('map-info').dataset.minimized,'false');
-methods.setCloudOverviewMinimized(true);
-assert.equal($('cloud-overview-panel').dataset.minimized,'true');
-assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'false');
-methods.setCloudOverviewMinimized(false);
-assert.equal($('cloud-overview-panel').dataset.minimized,'false');
-assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'true');
-methods.setMapFocus(true);flush();
-assert.equal(active.has('map-focus-active'),true);
-assert.equal($('map-focus-toggle').attrs['aria-pressed'],'true');
-assert.equal(resized,1);
-assert.deepEqual(visited,[]);
-methods.setMapFocus(false);flush();
-assert.equal(active.has('map-focus-active'),false);
-assert.equal($('map-focus-toggle').attrs['aria-pressed'],'false');
-assert.equal(resized,2);
-console.log('Mobile map focus controls passed');
-"""
-    result = subprocess.run([node, "-e", program], input=source,
-                            capture_output=True, text=True, timeout=15)
-    assert result.returncode == 0, result.stderr
-,'document','map','requestAnimationFrame','switchTab','mapStatusSummary',code+
- '\nreturn {setCloudOverviewMinimized,setMapToolsExpanded,setMapInfoExpanded,setMapFocus};')(
- $,document,map,requestAnimationFrame,switchTab);
-const flush=()=>{while(frames.length)frames.shift()()};
-methods.setMapToolsExpanded(false);
-assert.equal($('map-toolbar').dataset.compact,'true');
-assert.equal($('map-tools-toggle').attrs['aria-expanded'],'false');
-methods.setMapToolsExpanded(true);
-assert.equal($('map-toolbar').dataset.compact,'false');
-assert.equal($('map-tools-toggle').attrs['aria-expanded'],'true');
-methods.setMapInfoExpanded(false);
-assert.equal($('map-info').dataset.minimized,'true');
-methods.setMapInfoExpanded(true);
-assert.equal($('map-info').dataset.minimized,'false');
+assert.equal($('map-info-chip').attrs['aria-expanded'],'true');
 methods.setCloudOverviewMinimized(true);
 assert.equal($('cloud-overview-panel').dataset.minimized,'true');
 assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'false');
