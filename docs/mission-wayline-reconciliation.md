@@ -116,9 +116,11 @@ gleicher Name wird niemals als verifizierter Inhalt dargestellt. Lokale
 Millisekunden- und FlightHub-Sekunden-Zeitstempel werden korrekt in Berliner
 Zeit angezeigt. Unbekannte geometrische Template-Codes bleiben sichtbar.
 
-Die Ansicht liest nur Metadaten. Keine Routenänderung, Übernahme in den Editor,
-Kartenvorschau, KMZ-Übertragung oder Flugausführung. Ein offener Entwurf bleibt
-unverändert. Daten aus nicht lesbaren Quellen werden nicht als erfolgreich
+Die Bibliothek liest zunächst nur Metadaten. Auf expliziten Klick kann für
+inventarisierte lokale Pilot-2-Waylines eine streng begrenzte, rein lesende
+KMZ-Geometrievorschau auf einer separaten Kartenebene geladen werden.
+Keine Routenänderung, Übernahme in den Editor, KMZ-Übertragung zur Drohne oder
+Flugausführung. Ein offener Entwurf bleibt unverändert. Daten aus nicht lesbaren Quellen werden nicht als erfolgreich
 leer ausgegeben. Fehler/Timeouts entfernen den alten Anzeigestand und erlauben
 erneutes Laden. Suchbegriffe und Filter werden nicht in URLs oder persistenten
 Browser-Speicher geschrieben.

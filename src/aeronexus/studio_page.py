@@ -261,7 +261,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <p class="note">Vorhandene Flugrouten aus der lokalen Pilot-2-Cloud und dem geladenen FlightHub-Katalog.</p>
 <p>Die Liste ist schreibgeschützt. Der offene Studio-Entwurf bleibt unverändert.</p>
 <p class="note">Gleiche Namen sind nur Hinweise. Eine Übereinstimmung des Routeninhalts ist noch nicht geprüft.</p>
-<p class="note">Flächen- und Geometrierouten können hier noch nicht auf der Karte geöffnet oder bearbeitet werden.</p>
+<p class="note">Lokale Pilot-2-KMZ lassen sich bei unterstützter Geometrie schreibgeschützt auf der Karte betrachten. Keine Bearbeitung und keine Flugfreigabe.</p>
 </aside>
 <aside class="side" id="media-panel" hidden>
 <h1>Medienimport</h1><p class="note">Bilder und Videos werden ausschließlich im privaten Pi-Arbeitsbereich gespeichert. Maximal 25 MiB je Datei.</p>
@@ -1173,6 +1173,8 @@ function clearCloudWaylinePreview(){
 }
 async function previewCloudWayline(route,button){
   const request=++waylinePreviewRequest;
+  if(waylinePreviewLayer){waylinePreviewLayer.clearLayers();if(map)map.removeLayer(waylinePreviewLayer);}
+  $("wayline-preview-clear").hidden=true;
   button.disabled=true;
   $("wayline-state").className="status";
   $("wayline-state").textContent="KMZ-Vorschau wird schreibgeschützt gelesen…";
