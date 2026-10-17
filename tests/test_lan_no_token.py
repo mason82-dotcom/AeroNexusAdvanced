@@ -166,3 +166,27 @@ def test_studio_csp_socket_origin_follows_configuration(lan, monkeypatch):
     assert r.status_code == 200
     assert "wss://192.168.178.20:8443 " in r.headers["content-security-policy"]
     assert "192.168.178.63" not in r.headers["content-security-policy"]
+
+
+def test_configurable_lan_subnet(lan, monkeypatch):
+    from aeronexus.lan_access import HOME_SUBNET, home_subnet, lan_host
+    assert home_subnet() == HOME_SUBNET and lan_host() == "192.168.178.63"
+    monkeypatch.setenv("AERONEXUS_LAN_SUBNET", "10.20.0.0/16")
+    monkeypatch.setenv("AERONEXUS_LAN_HOST", "10.20.1.5")
+    assert lan_host() == "10.20.1.5"
+    other = "https://10.20.1.5:8000"
+    assert send("GET", "/api/v1/status/devices", ip="10.20.7.9", base=other).status_code == 200
+    assert send("GET", "/api/v1/status/devices", ip="192.168.178.44", base=other).status_code == 403
+    # Host outside the subnet: LAN mode stays closed
+    monkeypatch.setenv("AERONEXUS_LAN_HOST", "192.168.178.63")
+    assert lan_host() is None
+    assert send("GET", "/api/v1/status/devices").status_code == 503
+
+
+@pytest.mark.parametrize("value", ["0.0.0.0/0", "8.8.8.0/24", "10.0.0.0/8", "192.168.178.1/24",
+                                   "127.0.0.0/16", "192.168.178.0/31", "fd00::/64", "garbage"])
+def test_invalid_lan_subnet_fails_closed(lan, monkeypatch, value):
+    from aeronexus.lan_access import home_subnet, lan_host
+    monkeypatch.setenv("AERONEXUS_LAN_SUBNET", value)
+    assert home_subnet() is None and lan_host() is None
+    assert send("GET", "/api/v1/status/devices").status_code == 503

@@ -5,7 +5,7 @@ times may introduce disjoint partial properties; conflicting equal-time writes
 are ignored. Arrays are one versioned property, dictionaries merge by leaf.
 """
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import timezone
 
 
 def leaves(values, prefix=''):

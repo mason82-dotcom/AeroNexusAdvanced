@@ -6,7 +6,7 @@ import time
 from fastapi import HTTPException, Request
 import httpx
 
-from .lan_access import HOME_SUBNET, lan_host, lan_mode_enabled
+from .lan_access import home_subnet, lan_host, lan_mode_enabled
 from .local_waylines import (ORIGIN, Credentials, LocalWaylineError, _json_response,
                              credentials_path, load_credentials, save_credentials, handoff_enabled)
 
@@ -22,7 +22,7 @@ def handoff_origin(request: Request) -> str:
     if (not lan_mode_enabled() or host is None or request.url.scheme != "https"
             or request.url.hostname != host
             or request.url.port != 8000
-            or not (peer in HOME_SUBNET or peer.is_loopback)
+            or not (peer in (home_subnet() or ()) or peer.is_loopback)
             or origin != f"http://{host}:8085" or not handoff_enabled()):
         raise HTTPException(403, "Local Cloud session origin required")
     return origin

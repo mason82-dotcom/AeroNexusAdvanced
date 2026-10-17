@@ -107,6 +107,12 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <div class="metric"><span>Fehlende/unklare Daten</span><b id="unknown">–</b></div>
 <div class="metric"><span>HMS-Warnungen</span><b id="health">–</b></div>
 </section>
+<section class="panel" id="cloud-panel">
+<h2>Lokaler DJI-Cloud-Server</h2>
+<p class="subtle" id="cloud-overall" role="status">Prüfe Dienste…</p>
+<div class="grid" id="cloud-services" aria-label="Dienste des lokalen Cloud-Servers"></div>
+<p class="subtle" id="cloud-fleet">Verbundene Geräte werden geladen…</p>
+</section>
 <section class="panel">
 <h2>Lokaler Flottenzugriff</h2>
 <p class="subtle">Geräte, Telemetrie und Projektbibliothek werden im freigegebenen HTTPS-Heimnetz automatisch geladen. Keine Token-Eingabe erforderlich.</p>
@@ -463,6 +469,32 @@ async function updateSummary() {
       (feed.state==="disabled"?"":" · "+feed.accepted+" ok / "+feed.rejected+" verworfen");
   } catch (_) {byId("timestamp").textContent="Status-API nicht erreichbar";byId("poll-health").textContent="DJI-Polling-Status nicht erreichbar";}
 }
+async function updateCloud() {
+  try {
+    const r=await fetch("/api/v1/cloud/stack",{cache:"no-store"});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const data=await r.json();
+    const box=byId("cloud-services");box.replaceChildren();
+    const names={up:"erreichbar",down:"nicht erreichbar",error:"Fehler"};
+    for(const [key,svc] of Object.entries(data.services||{})){
+      const card=document.createElement("div");card.className="metric";
+      const label=document.createElement("span");label.textContent=svc.label;
+      const value=document.createElement("b");value.style.fontSize="17px";
+      value.textContent=(svc.state==="up"?"● ":"○ ")+(names[svc.state]||svc.state)+
+        (key==="mediamtx"&&svc.state==="up"?" · "+svc.streams+" Stream(s)":"");
+      value.style.color=svc.state==="up"?"#83e5ba":key==="mediamtx"?"#f1ca82":"#ffb0bb";
+      card.append(label,value);box.appendChild(card);
+    }
+    const fleet=data.fleet||{devices:[]};
+    const online=fleet.devices.filter(d=>d.online);
+    byId("cloud-overall").textContent=(data.overall==="ok"?"Alle Kerndienste erreichbar":"Mindestens ein Kerndienst gestört")+
+      " · MQTT-Feed: "+(feedStates[fleet.feed_state]||fleet.feed_state);
+    byId("cloud-fleet").textContent=online.length?"Verbunden: "+online.map(d=>
+      (d.kind==="controller"?"Fernsteuerung ":"Fluggerät ")+d.name).join(" · "):
+      "Keine Fernsteuerung verbunden"+(fleet.devices.length?" (bekannt: "+fleet.devices.length+", zuletzt "+
+      (fleet.last_message_at||"–")+")":"");
+  } catch (error) {byId("cloud-overall").textContent="Cloud-Server-Status nicht abrufbar: "+error.message;}
+}
 async function updateDevices() {
   const epoch=sessionEpoch,request=++devicesRequest;
   try {
@@ -511,6 +543,7 @@ updateDevices();
 updateCatalog();
 updateSummary();
 setInterval(()=>{updateSummary();updateDevices();},intervalMs);
+updateCloud();setInterval(updateCloud,15000);
 setInterval(updateCatalog,60000);
 </script>
 </body>
