@@ -74,7 +74,14 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .map-bar select{width:auto;max-width:160px}
 .map-bar [hidden]{display:none!important}
 .map-bar .map-primary{font-weight:650}
-#map-info[data-minimized="true"]{max-width:min(330px,calc(100% - 24px));overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#map-info[data-minimized="true"]{max-width:min(340px,calc(100% - 24px))}
+#map-info[data-minimized="true"] #map-info-detail{display:none}
+#map-info-chip{display:block;width:100%;max-width:100%;padding:0;border:0;background:transparent;color:inherit;box-shadow:none;font:inherit;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5;cursor:pointer}
+#map-info-chip:hover{background:transparent}
+#map-info-detail{display:block;max-height:31dvh;overflow-y:auto;margin-top:6px;line-height:1.45;overflow-wrap:anywhere}
+#map-info-detail[hidden]{display:none}
+#map-info:not([data-minimized="true"]){max-width:min(460px,calc(100% - 20px))}
+@media(min-width:701px){#map-info-chip{display:none}}
 #cloud-overview-panel[data-minimized="true"] #cloud-overview-list,
 #cloud-overview-panel[data-minimized="true"] .cloud-overview-help{display:none}
 body.map-focus-active{overflow:hidden}
@@ -89,13 +96,13 @@ body.map-focus-active #map{height:100%;min-height:0}
   .map-bar #wayline-preview-fit{max-width:48vw}
   #cloud-overview-panel{top:auto;right:9px;bottom:90px;width:min(355px,calc(100% - 18px));max-height:50dvh}
   #cloud-overview-panel[data-minimized="true"]{max-height:140px}
-  .map-info{left:9px;bottom:14px;max-width:calc(100% - 18px);font-size:11px;padding:7px 9px}
-  #map-info[data-minimized="true"]{-webkit-line-clamp:1}
+  .map-info{left:9px;bottom:calc(39px + env(safe-area-inset-bottom));max-width:calc(100% - 18px);font-size:12px;padding:8px 10px}
+  #map-info[data-minimized="true"]{max-width:min(320px,calc(100% - 18px))}
   body.map-focus-active .map-bar{top:calc(9px + env(safe-area-inset-top))}
   body.map-focus-active #cloud-overview-panel{bottom:calc(75px + env(safe-area-inset-bottom))}
-  body.map-focus-active .map-info{bottom:calc(8px + env(safe-area-inset-bottom))}
+  body.map-focus-active .map-info{bottom:calc(39px + env(safe-area-inset-bottom))}
 }
-.map-info{position:absolute;z-index:500;bottom:34px;left:12px;max-width:min(480px,80%);padding:9px 12px;border-radius:9px;background:#101d2ce8;color:#dceaff;font-size:12px;pointer-events:none}
+.map-info{position:absolute;z-index:500;bottom:calc(39px + env(safe-area-inset-bottom));left:12px;max-width:min(480px,80%);padding:9px 12px;border-radius:9px;background:#101d2ce8;color:#dceaff;font-size:12px;pointer-events:auto;box-shadow:0 3px 16px #0007}
 .map-info.warning{border:1px solid #a87548;color:#ffe3b0;background:#34251de8}
 .point-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 7px;border-radius:9px;border:1px solid #314961;margin:7px 0;background:#16263d}
 .point-row.selected{border-color:#53acf3;background:#1b3954}
@@ -356,7 +363,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
   <div id="cloud-overview-list" aria-label="Routen ein- oder ausblenden"></div>
   <p class="note cloud-overview-help">Linienlänge = horizontale WGS84-Segmentstrecke, keine Flugdistanz. Weiße Kreise: Linienanfang, farbige Kreise: Linienende. Keine Flugfreigabe oder Missionsänderung.</p>
 </section>
-<div class="map-info" id="map-info" role="status" aria-live="polite" data-minimized="false">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
+<div class="map-info" id="map-info" role="status" aria-live="polite" data-minimized="false"><button id="map-info-chip" type="button" aria-expanded="false" aria-controls="map-info-detail">Karte · Hinweis anzeigen</button><span id="map-info-detail">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</span></div>
 </section>
 <section class="pane" id="terrain-pane">
 <div class="terrain-stage">
@@ -715,10 +722,27 @@ function getMap(){
     selected=mission.waypoints.length-1;redraw();historyRecord();
   });
 }
-function mapWarning(text){
+function mapStatusSummary(text){
+  const message=String(text);
+  const routePrefix="Schreibgeschützte Cloud-Vorschau: ";
+  if(message.startsWith(routePrefix)){
+    const name=message.slice(routePrefix.length).split(" · ")[0];
+    return "Cloud-Vorschau: "+name;
+  }
+  if(message.includes("Cloud-Waylines in der Kartenübersicht"))return message.split(".")[0];
+  return message.split(".")[0];
+}
+function mapInfoMessage(text,warning=false){
+  // Keep full accessible details without a line-clamped box over Leaflet attribution.
+  const message=String(text);
   const banner=$("map-info");
-  banner.textContent=text;
-  banner.classList.add("warning");
+  $("map-info-detail").textContent=message;
+  $("map-info-chip").textContent="ℹ "+mapStatusSummary(message)+
+    (banner.dataset.minimized==="true"?" · Details":" · Weniger");
+  banner.classList.toggle("warning",warning);
+}
+function mapWarning(text){
+  mapInfoMessage(text,true);
 }
 function setMapLayer(kind){
   if(!map||!mapTiles[kind])return;
@@ -726,11 +750,9 @@ function setMapLayer(kind){
   streetTileErrors=0;
   mapTile=mapTiles[kind].addTo(map);
   $("map-layer").value=kind;
-  const banner=$("map-info");
-  banner.classList.remove("warning");
-  banner.textContent=kind==="satellite"
+  mapInfoMessage(kind==="satellite"
     ?"Startpunkt: 76694 Forst (Baden) · Satellitenbilder © Esri und Datenanbieter. Es werden ausschließlich sichtbare Kartenkacheln geladen."
-    :"Startpunkt: 76694 Forst (Baden) · Straßenkarte © OpenStreetMap-Mitwirkende. Nur die Seitenherkunft wird an den Kartenserver übertragen.";
+    :"Startpunkt: 76694 Forst (Baden) · Straßenkarte © OpenStreetMap-Mitwirkende. Nur die Seitenherkunft wird an den Kartenserver übertragen.",false);
 }
 async function togglePilot2MapLayer(){
   if(!map||!pilot2MapLayer)throw new Error("Karte nicht verfügbar");
@@ -1351,6 +1373,10 @@ function setMapToolsExpanded(expanded){
 }
 function setMapInfoExpanded(expanded){
   $("map-info").dataset.minimized=String(!expanded);
+  $("map-info-detail").hidden=!expanded;
+  $("map-info-chip").setAttribute("aria-expanded",String(expanded));
+  $("map-info-chip").textContent="ℹ "+mapStatusSummary($("map-info-detail").textContent)+
+    (expanded?" · Weniger":" · Details");
   $("map-info-toggle").setAttribute("aria-expanded",String(expanded));
   $("map-info-toggle").textContent=expanded?"Hinweis kürzen":"Hinweis zeigen";
 }
@@ -2547,6 +2573,8 @@ function wire(){
   $("map-tools-toggle").addEventListener("click",()=>setMapToolsExpanded(
     $("map-toolbar").dataset.compact==="true"));
   $("map-info-toggle").addEventListener("click",()=>setMapInfoExpanded(
+    $("map-info").dataset.minimized==="true"));
+  $("map-info-chip").addEventListener("click",()=>setMapInfoExpanded(
     $("map-info").dataset.minimized==="true"));
   $("map-focus-toggle").addEventListener("click",()=>setMapFocus(
     !document.body.classList.contains("map-focus-active")));
