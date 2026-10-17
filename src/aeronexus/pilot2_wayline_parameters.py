@@ -119,10 +119,15 @@ def parse_parameter_audit(kmz: bytes) -> dict:
                 raise LocalWaylineError("unsupported_geometry")
             # Validate values, but coordinates are NEVER returned in the audit.
             _coordinate(coords.text)
+            action_nodes = place.findall(".//" + W + "action")
             actions = [
                 item.text.strip() if item.text else None
                 for item in place.findall(".//" + W + "actionActuatorFunc")
             ]
+            action_structure_unknown = (
+                len(action_nodes) != len(actions)
+                or (bool(place.findall(".//" + W + "actionGroup")) and not action_nodes)
+            )
             photo_count += actions.count("takePhoto")
             other_action_count += len(actions) - actions.count("takePhoto")
             waypoints.append({
@@ -131,6 +136,7 @@ def parse_parameter_audit(kmz: bytes) -> dict:
                 "photo_only": actions == ["takePhoto"],
                 "no_actions": len(actions) == 0,
                 "action_count": len(actions),
+                "action_structure_unknown": action_structure_unknown,
             })
         mode = _child_text(folder, "executeHeightMode")
         route_info.append({
@@ -182,7 +188,7 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
     }
     # Don't compare route-specific properties to a partial or multi-folder match.
     if (len(routes) != 1 or geometry.get("geometry_result") != "coordinates_equal"
-            or not routes[0]["waypoints"]):
+            or wpml_model != expected_model or not routes[0]["waypoints"]):
         return output
     route = routes[0]
     globals_expected = {
@@ -222,7 +228,8 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
     )
     expected_actions = [wp.take_photo for wp in waypoints_for_export(mission)]
     if (route["other_action_count"] or route["start_actions_present"]
-            or any(wp["action_count"] > 1 for wp in route["waypoints"])):
+            or any(wp["action_count"] > 1 or wp["action_structure_unknown"]
+                   for wp in route["waypoints"])):
         comparisons["takePhotoPositions"] = None
     else:
         comparisons["takePhotoPositions"] = [
