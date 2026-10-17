@@ -28,7 +28,7 @@ def test_telemetry_fields_and_freshness_are_labeled():
         "GPS-Satelliten", "RTK-Satelliten", "RTK-Status",
         "Akkutemperatur", "Akkuspannung", "Flugmodus",
         "Position (GPS)", "Empfangsalter unbekannt",
-        "Online-Zustand nicht aktuell", "Letzter erfolgreicher Abruf",
+        "Online-Zustand nicht aktuell", "Letzte gültige Nachricht",
         "zuletzt gemeldete Meldung(en)",
     ):
         assert label in page
