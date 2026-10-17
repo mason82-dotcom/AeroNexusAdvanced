@@ -4,6 +4,7 @@ DJI flight operations are not exposed. Detailed telemetry is inaccessible
 unless an independent dashboard bearer token is configured.
 """
 import asyncio
+import httpx
 from io import BytesIO
 from urllib.parse import unquote
 from contextlib import asynccontextmanager

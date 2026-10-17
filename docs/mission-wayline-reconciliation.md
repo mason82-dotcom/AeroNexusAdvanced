@@ -259,3 +259,35 @@ der erweiterten Geräteauswahl und Pi-/Pilot-2-Abnahme stehen aus.
 Lokaler Adapter zusätzlich mit HTTP-Mocks geprüft: GET-/Workspace-Begrenzung,
 Pagination, Fehler, Limits, Cache, Tokenwechsel, Auth-Schutz und Dateirechte.
 Die echte lokale Anmeldung und der Pi-Routenbestand sind noch nicht abgenommen.
+
+
+## Schreibgeschützte Cloud-KMZ-Vorschau
+
+Nur bereits gelistete Wayline-UUIDs aus einem vollständig geladenen
+lokalen Pilot-2-Inventar sind auswählbar. Der GET-Endpunkt
+/api/v1/local-cloud/waylines/{wayline_id}/preview prüft den bisherigen
+Viewer-Zugriff, die Sitzung und den Workspace.
+
+DJI GET /wayline/api/v1/workspaces/{workspace_id}/waylines/{id}/url
+liefert einen signierten 302-Speicherlink. Der Server folgt der
+Weiterleitung ausdrücklich nicht: Es werden ausschließlich HTTP-Links
+für einen privaten/Loopback-Host auf Port 9000 und das konfigurierte
+MinIO-Bucket akzeptiert. Das tatsächliche Ziel bleibt
+127.0.0.1:9000; zur AWS-Signaturprüfung bleibt der ursprüngliche
+Host-Header erhalten. Das DJI-Token wird nicht an MinIO gesendet.
+
+Maximal 4 MiB komprimierte KMZ-Daten, 20 ZIP-Mitglieder, 2 MiB pro
+Mitglied, 1000 Koordinaten und 32 GeoJSON-Geometrien. Die Vorschau
+extrahiert nur WGS84-Koordinaten aus wpmz/waylines.wpml, alternativ
+aus wpmz/template.kml. Keine XML-Metadaten, DJI-Kommandos,
+Flugaktionen, signierten URLs oder KMZ-Rohdaten im Browser.
+
+Die separate Leaflet-Kartenebene bleibt nicht-interaktiv. Solange
+sie sichtbar ist, führen Kartenklicks nicht zu neuen Missions- oder
+Geo-Punkten. "Cloud-Vorschau schließen" leert die Ebene. Es gibt
+keine automatische Bearbeitung, Speicherung oder Flugfreigabe.
+
+Wichtig: Das lokale Backend muss MinIO signierte Links zur
+gewünschten Wayline liefern. Andere Storage-Origins werden bewusst
+verweigert, nicht automatisch freigeschaltet. Der Pi-Liveabruf
+muss separat bestätigt werden.
