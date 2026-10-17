@@ -189,6 +189,19 @@ Als zusätzliche technische Referenz wurde das
 geprüft. Sein Kommandozeilenprogramm/MCP-Server wird **nicht**
 automatisch installiert oder mit DJI-Schreibberechtigungen gestartet.
 
+## DJI-MinIO-Medienkatalog (Phase 21)
+
+DJI-Medien aus dem lokalen MinIO-Bucket `dji-cloud` lassen sich ohne
+Kopieren, Löschen oder DJI-Steuerbefehle **schreibgeschützt indizieren**.
+Der transaktionale Metadatenkatalog erscheint separat in der
+Mission-Studio-Medienbibliothek; JPEG/PNG/WebP sind bis 32 MiB als
+Vorschau abrufbar, große DNG/Videoobjekte bleiben als Download verfügbar.
+
+Einlesen auf dem Pi: `python -m aeronexus.minio_media_index` (manuell,
+optional mit `--dry-run`). Erfordert einen eigenen MinIO-Lesezugang
+und das optionale Paket-Extra `minio`.
+Details: [Phase 21 – DJI-MinIO-Medien](docs/phase-21-dji-minio-media.md).
+
 ## DEM-Hangneigung im 3D-Geländeviewer (Phase 20)
 
 Im Mission Studio lässt sich das importierte, auf maximal 48×48 Stützpunkte
