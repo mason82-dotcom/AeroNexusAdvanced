@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from secrets import token_hex
+from contextlib import nullcontext
 from math import cos, isfinite, radians, sqrt
 import struct
 
@@ -113,84 +114,100 @@ def geotiff_preview(content: bytes, *, max_bytes: int=8*1024*1024,
         from osgeo import gdal  # type: ignore
     except ImportError as exc:
         raise TerrainUnavailable("GDAL Python bindings are not installed") from exc
-    # Concurrent requests must never share a GDAL /vsimem path.
-    path="/vsimem/aeronexus-"+token_hex(16)+".tif"
-    ds=None
-    try:
-        # GDAL may raise; never leave a shared in-memory file behind.
-        gdal.FileFromMemBuffer(path,content)
-        ds=gdal.OpenEx(path,gdal.OF_RASTER|gdal.OF_READONLY,allowed_drivers=["GTiff"])
-        if (ds is None or ds.RasterCount!=1 or
-                not 2<=ds.RasterXSize<=4096 or not 2<=ds.RasterYSize<=4096 or
-                ds.RasterXSize*ds.RasterYSize>4_000_000):
-            raise ValueError("Invalid or oversized single-band GeoTIFF (maximum 4 million pixels)")
-        spatial=ds.GetSpatialRef()
-        if spatial is None:
-            raise ValueError("GeoTIFF requires a declared spatial reference")
-        gt=ds.GetGeoTransform()
-        # The UI/STL preview uses a north-up, axis-aligned sampling grid.
-        # Rotated or skewed rasters cannot be represented faithfully.
-        if (len(gt)!=6 or not all(isfinite(v) for v in gt) or
-                abs(gt[2])>1e-12 or abs(gt[4])>1e-12 or
-                gt[1]<=0 or gt[5]>=0):
-            raise ValueError("Only north-up, non-rotated rasters are supported")
-        xdist=gt[1]
-        ydist=-gt[5]
-        if spatial.IsGeographic():
-            # Do not silently call a non-WGS84 angular datum WGS84 metres.
-            if str(spatial.GetAuthorityCode(None))!="4326":
-                raise ValueError("Geographic DEM must use EPSG:4326 WGS84")
-            lat=gt[3]+(ds.RasterYSize/2)*gt[5]
-            if abs(lat)>85:
-                raise ValueError("Geographic DEM is too close to the poles")
-            xdist*=111320*cos(radians(lat))
-            ydist*=111132
-        elif spatial.IsProjected():
-            factor=float(spatial.GetLinearUnits())
-            xdist*=factor; ydist*=factor
-        else:
-            raise ValueError("Unsupported GeoTIFF spatial reference")
-        if not all(isfinite(v) and v>0 for v in (xdist,ydist)):
-            raise ValueError("Invalid raster pixel resolution")
-        width=min(48,ds.RasterXSize)
-        height=min(48,ds.RasterYSize)
-        band=ds.GetRasterBand(1)
-        try:
-            data=band.ReadAsArray(buf_xsize=width,buf_ysize=height)
-        except ImportError as exc:
-            raise TerrainUnavailable("GDAL needs NumPy in the same Python environment") from exc
-        if data is None:
-            raise ValueError("Could not sample DEM")
-        nodata=band.GetNoDataValue()
-        values=[[float(v) for v in row] for row in data]
-        if nodata is not None and any(v==nodata for row in values for v in row):
-            raise ValueError("DEM contains NoData; clip to a complete region first")
-        grid=TerrainGrid(heights_m=values,
-                         # GDAL resamples pixel-centre values; the sampled
-                         # centres are W/width and H/height pixels apart.
-                         x_step_m=xdist*ds.RasterXSize/width,
-                         y_step_m=ydist*ds.RasterYSize/height)
-        if geo_info is not None:
-            geo_info.clear()
-            # Only return literal WGS84 positions if the bounded local
-            # tangent-plane model is meaningful and centres stay in range.
-            # Projected CRS needs a separate verified coordinate transform.
-            if spatial.IsGeographic():
-                lon_step=gt[1]*ds.RasterXSize/width
-                lat_step=gt[5]*ds.RasterYSize/height
-                west=gt[0]+gt[1]*ds.RasterXSize/(2*width)
-                north=gt[3]+gt[5]*ds.RasterYSize/(2*height)
-                east=west+(width-1)*lon_step
-                south=north+(height-1)*lat_step
-                if (all(isfinite(v) for v in (west,north,east,south)) and
-                        -180<=west<=east<=180 and -90<=south<=north<=90 and
-                        east-west<=0.45 and north-south<=0.45):
-                    geo_info.update({"crs":"EPSG:4326","reference":"sample-centres",
-                                     "west_lon":west,"north_lat":north,
-                                     "lon_step_deg":lon_step,"lat_step_deg":lat_step,
-                                     "horizontal_units":"WGS84 degrees",
-                                     "vertical_reference":"unspecified"})
-        return grid
-    finally:
+    # Explicit, scoped exception mode (GDAL 4 default) instead of the global
+    # legacy mode, which also silences GDAL's FutureWarning in the service log.
+    manager=getattr(gdal,"ExceptionMgr",None)
+    if manager is None:  # GDAL < 3.7 or a minimal test double
+        if hasattr(gdal,"UseExceptions"):
+            gdal.UseExceptions()
+        manager=lambda **_: nullcontext()  # noqa: E731
+    with manager(useExceptions=True):
+        # Concurrent requests must never share a GDAL /vsimem path.
+        path="/vsimem/aeronexus-"+token_hex(16)+".tif"
         ds=None
-        gdal.Unlink(path)
+        try:
+            # GDAL may raise; never leave a shared in-memory file behind.
+            gdal.FileFromMemBuffer(path,content)
+            ds=gdal.OpenEx(path,gdal.OF_RASTER|gdal.OF_READONLY,allowed_drivers=["GTiff"])
+            if (ds is None or ds.RasterCount!=1 or
+                    not 2<=ds.RasterXSize<=4096 or not 2<=ds.RasterYSize<=4096 or
+                    ds.RasterXSize*ds.RasterYSize>4_000_000):
+                raise ValueError("Invalid or oversized single-band GeoTIFF (maximum 4 million pixels)")
+            spatial=ds.GetSpatialRef()
+            if spatial is None:
+                raise ValueError("GeoTIFF requires a declared spatial reference")
+            gt=ds.GetGeoTransform()
+            # The UI/STL preview uses a north-up, axis-aligned sampling grid.
+            # Rotated or skewed rasters cannot be represented faithfully.
+            if (len(gt)!=6 or not all(isfinite(v) for v in gt) or
+                    abs(gt[2])>1e-12 or abs(gt[4])>1e-12 or
+                    gt[1]<=0 or gt[5]>=0):
+                raise ValueError("Only north-up, non-rotated rasters are supported")
+            xdist=gt[1]
+            ydist=-gt[5]
+            if spatial.IsGeographic():
+                # Do not silently call a non-WGS84 angular datum WGS84 metres.
+                if str(spatial.GetAuthorityCode(None))!="4326":
+                    raise ValueError("Geographic DEM must use EPSG:4326 WGS84")
+                lat=gt[3]+(ds.RasterYSize/2)*gt[5]
+                if abs(lat)>85:
+                    raise ValueError("Geographic DEM is too close to the poles")
+                xdist*=111320*cos(radians(lat))
+                ydist*=111132
+            elif spatial.IsProjected():
+                factor=float(spatial.GetLinearUnits())
+                xdist*=factor; ydist*=factor
+            else:
+                raise ValueError("Unsupported GeoTIFF spatial reference")
+            if not all(isfinite(v) and v>0 for v in (xdist,ydist)):
+                raise ValueError("Invalid raster pixel resolution")
+            width=min(48,ds.RasterXSize)
+            height=min(48,ds.RasterYSize)
+            band=ds.GetRasterBand(1)
+            try:
+                data=band.ReadAsArray(buf_xsize=width,buf_ysize=height)
+            except ImportError as exc:
+                raise TerrainUnavailable("GDAL needs NumPy in the same Python environment") from exc
+            if data is None:
+                raise ValueError("Could not sample DEM")
+            nodata=band.GetNoDataValue()
+            values=[[float(v) for v in row] for row in data]
+            if nodata is not None and any(v==nodata for row in values for v in row):
+                raise ValueError("DEM contains NoData; clip to a complete region first")
+            grid=TerrainGrid(heights_m=values,
+                             # GDAL resamples pixel-centre values; the sampled
+                             # centres are W/width and H/height pixels apart.
+                             x_step_m=xdist*ds.RasterXSize/width,
+                             y_step_m=ydist*ds.RasterYSize/height)
+            if geo_info is not None:
+                geo_info.clear()
+                # Only return literal WGS84 positions if the bounded local
+                # tangent-plane model is meaningful and centres stay in range.
+                # Projected CRS needs a separate verified coordinate transform.
+                if spatial.IsGeographic():
+                    lon_step=gt[1]*ds.RasterXSize/width
+                    lat_step=gt[5]*ds.RasterYSize/height
+                    west=gt[0]+gt[1]*ds.RasterXSize/(2*width)
+                    north=gt[3]+gt[5]*ds.RasterYSize/(2*height)
+                    east=west+(width-1)*lon_step
+                    south=north+(height-1)*lat_step
+                    if (all(isfinite(v) for v in (west,north,east,south)) and
+                            -180<=west<=east<=180 and -90<=south<=north<=90 and
+                            east-west<=0.45 and north-south<=0.45):
+                        geo_info.update({"crs":"EPSG:4326","reference":"sample-centres",
+                                         "west_lon":west,"north_lat":north,
+                                         "lon_step_deg":lon_step,"lat_step_deg":lat_step,
+                                         "horizontal_units":"WGS84 degrees",
+                                         "vertical_reference":"unspecified"})
+            return grid
+        except TerrainUnavailable:
+            raise
+        except RuntimeError as exc:
+            # Scoped GDAL exceptions: corrupt/unsupported files become a clean 422.
+            raise ValueError("Invalid or unreadable GeoTIFF") from exc
+        finally:
+            ds=None
+            try:
+                gdal.Unlink(path)
+            except RuntimeError:
+                pass

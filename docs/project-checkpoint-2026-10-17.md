@@ -1,4 +1,6 @@
-# AeroNexusAdvanced – Projekt-Checkpoint vom 17.10.2026
+# AeroNexusAdvanced – Projekt-Checkpoint vom 17.10.2026 (historisch)
+
+> **Überholt:** Dieser Checkpoint beschreibt den Stand vor dem Merge. Phase 21 (PR #18) ist über die Konsolidierung #19/#20 in `main` eingegangen. Aktueller Stand: [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 > **Status:** Phase 21 (DJI-Medien aus MinIO) ist auf dem Raspberry Pi 5 praktisch getestet und funktionsfähig. **Der Code ist noch nicht in `main` gemergt.** Dieser Checkpoint dokumentiert den bestätigten Stand; er ist weder eine automatische Sicherung der MinIO-Medien noch ein Ersatz für ein Pi-Backup.
 

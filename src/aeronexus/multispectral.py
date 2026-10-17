@@ -46,6 +46,10 @@ class MultispectralNotFound(MultispectralError):
     pass
 
 
+class MultispectralBusy(MultispectralError):
+    """Another band is being processed; retry later (bounded RAM on the Pi)."""
+
+
 BANDS = ("Green", "Red", "RedEdge", "NIR")
 BAND_KEYS = {"Green": "g", "Red": "r", "RedEdge": "re", "NIR": "nir"}
 INDICES = {
@@ -555,6 +559,7 @@ class MultispectralCatalog:
 
 class MultispectralService:
     CACHE_BANDS = 8
+    COMPUTE_WAIT_SECONDS = 60
 
     def __init__(self, media_index: DjiMediaIndex, *, settings_factory=None, client_factory=None):
         from .minio_media_index import MinioMediaSettings, minio_client
@@ -563,6 +568,9 @@ class MultispectralService:
         self._settings_factory = settings_factory or MinioMediaSettings.from_env
         self._client_factory = client_factory or minio_client
         self._lock = threading.Lock()
+        # One band decode/rectification at a time: a full-resolution band needs
+        # a few hundred MB of temporary arrays; parallel requests could exhaust RAM.
+        self._compute = threading.BoundedSemaphore(1)
         self._bands: OrderedDict = OrderedDict()
         self.summary_failures: list[str] = []
 
@@ -571,27 +579,41 @@ class MultispectralService:
         if record is None:
             raise MultispectralNotFound("Band not indexed")
         key = (record["id"], record["etag"], scale)
-        with self._lock:
-            if key in self._bands:
-                self._bands.move_to_end(key)
-                return self._bands[key]
-        from .minio_media_index import read_indexed_object
+        cached = self._cached(key)
+        if cached is not None:
+            return cached
+        if not self._compute.acquire(timeout=self.COMPUTE_WAIT_SECONDS):
+            raise MultispectralBusy("Multispectral processing busy; retry shortly")
         try:
-            settings = self._settings_factory()
-            data = read_indexed_object(record, settings, self._client_factory(settings),
-                                       max_bytes=MAX_BAND_BYTES)
-        except DjiMediaError:
-            raise
-        except Exception as exc:
-            raise DjiMediaError("MinIO object unavailable") from exc
-        dn, info = read_band(data)
-        cal = (band_metadata(info["xmp"]).get("calibration") or {})
-        grid = rectify(relative_reflectance(dn, info, cal), cal, scale=scale)
+            cached = self._cached(key)  # filled by the request we waited for
+            if cached is not None:
+                return cached
+            from .minio_media_index import read_indexed_object
+            try:
+                settings = self._settings_factory()
+                data = read_indexed_object(record, settings, self._client_factory(settings),
+                                           max_bytes=MAX_BAND_BYTES)
+            except DjiMediaError:
+                raise
+            except Exception as exc:
+                raise DjiMediaError("MinIO object unavailable") from exc
+            dn, info = read_band(data)
+            cal = (band_metadata(info["xmp"]).get("calibration") or {})
+            grid = rectify(relative_reflectance(dn, info, cal), cal, scale=scale)
+        finally:
+            self._compute.release()
         with self._lock:
             self._bands[key] = grid
             while len(self._bands) > self.CACHE_BANDS:
                 self._bands.popitem(last=False)
         return grid
+
+    def _cached(self, key):
+        with self._lock:
+            if key in self._bands:
+                self._bands.move_to_end(key)
+                return self._bands[key]
+        return None
 
     def layer(self, capture_uuid: str, layer: str, *, scale: int = 2):
         if layer not in LAYERS:

@@ -138,9 +138,11 @@ def view_cone(position: dict | None, gimbal: dict | None, hfov_deg: float, *,
 
 
 def footprint(meta: dict) -> list[list[float]] | None:
-    """Thermal image footprint (see ground_footprint)."""
+    """Thermal image footprint (see ground_footprint), with the same tilted-ray
+    projection as the multispectral map so both maps agree for −75…−105°."""
     view = _thermal_fov(meta)
-    return None if view is None else ground_footprint(meta.get("position"), meta.get("gimbal"), *view)
+    return None if view is None else ground_footprint(meta.get("position"), meta.get("gimbal"),
+                                                      *view, account_for_pitch=True)
 
 
 def geometry(meta: dict) -> dict:
