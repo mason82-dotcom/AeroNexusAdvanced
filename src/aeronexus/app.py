@@ -36,7 +36,7 @@ from .minio_media_index import (DjiMediaChanged, DjiMediaIndex, DjiMediaError, M
 from .geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
 from .thermal import ThermalChanged, ThermalError, ThermalNotFound, ThermalService
 from .thermal_page import render_thermal_page
-from .multispectral import (LAYERS, MultispectralError, MultispectralNotFound,
+from .multispectral import (LAYERS, MultispectralBusy, MultispectralError, MultispectralNotFound,
                             MultispectralService)
 from .multispectral_page import render_multispectral_page
 from .thermal_geo import ThermalGeoIndex
@@ -950,6 +950,9 @@ def _ms_http_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=404, detail="Multispectral capture or band not indexed")
     if isinstance(exc, DjiMediaChanged):
         return HTTPException(status_code=409, detail="DJI media changed; reindex required")
+    if isinstance(exc, MultispectralBusy):
+        return HTTPException(status_code=503, detail="Multispectral processing busy",
+                             headers={"Retry-After": "10"})
     if isinstance(exc, MultispectralError):
         return HTTPException(status_code=422, detail=str(exc))
     return HTTPException(status_code=503, detail="DJI media unavailable")
