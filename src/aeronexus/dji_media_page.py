@@ -67,6 +67,7 @@ nicht aus Datei-Inhalten ausgewertet. „Upload“ bezeichnet den Zeitstempel de
 <div class="metric"><span>Medienobjekte</span><b id="index-total">–</b></div>
 <div class="metric"><span>Gesamtvolumen</span><b id="index-bytes">–</b></div>
 <div class="metric"><span>Letzter Scan</span><b id="index-scanned" style="font-size:15px">–</b></div>
+<div class="metric"><span>Auto-Sync (Pilot 2 Uploads)</span><b id="sync-state" style="font-size:15px">–</b></div>
 </div>
 <div class="sub" id="kind-counts" aria-live="polite">Metadaten werden geladen…</div>
 </section>
@@ -150,6 +151,14 @@ async function refresh(){
     $("index-total").textContent=String(summary.total??0);
     $("index-bytes").textContent=fmtBytes(summary.total_bytes);
     $("index-scanned").textContent=fmtTime(summary.scanned_at);
+    getJSON("/api/v1/media/sync").then(sync=>{
+      const labels={idle:"Bereit",running:"Aktualisiert…",upload_in_progress:"Upload läuft…",
+        starting:"Startet…",not_running:"Nicht aktiv",unreadable:"Unbekannt"};
+      const mode=sync.mode==="events"?"Ereignisse":sync.mode==="poll"?"Abfrage alle 2 min":"";
+      const last=sync.last_run&&sync.last_run.finished_at?" · zuletzt "+fmtTime(sync.last_run.finished_at):"";
+      $("sync-state").textContent=(labels[sync.state]||sync.state)+(mode?" · "+mode:"")+last;
+      $("sync-state").className=sync.state==="not_running"?"warn":(sync.last_run&&sync.last_run.ok===false?"error":"ok");
+    }).catch(()=>{$("sync-state").textContent="–";});
     $("kind-counts").textContent=Object.entries(summary.kinds||{}).map(
       ([kind,count])=>labelKind(kind)+": "+count).join(" · ")||"Keine Mediendateien indiziert";
     total=Number(data.total)||0;

@@ -23,9 +23,8 @@
   `AERONEXUS_FH_POLL_ENABLED=0` – FlightHub-Abfrage aus, DJI-Cloud-API-MQTT-Feed
   an (bisher ohne empfangene Nachrichten). Dashboard zeigt dadurch keine
   FlightHub-Geräte.
-- Kataloge werden **manuell** aktualisiert (kein Timer):
-  `python -m aeronexus.minio_media_index`, `python -m aeronexus.thermal_geo`,
-  `python -m aeronexus.multispectral --ndvi`.
+- Kataloge aktualisiert der Dienst `aeronexusadvanced-media-sync`
+  automatisch nach Pilot-2-Uploads (siehe [media-auto-sync.md](media-auto-sync.md)).
 
 ### Analyse 17.10.2026 – umgesetzte Befunde
 
@@ -41,7 +40,7 @@
 ### Offen
 
 - FlightHub-Abfrage vs. MQTT-Feed: gewünschten Betrieb bestätigen.
-- Scan-Timer (`systemd --user`) für Medien-, Geo- und Multispektral-Katalog.
+- Optional: Ereignis-Modus des Medien-Syncs freischalten (`scripts/pi/grant_minio_listen.py`).
 - Draft-PRs #1, #5 (Cloud API 2) und #24 (CSV-Import Studio) entscheiden;
   nicht gemergte Branches aufräumen.
 - Fest verdrahtetes Heimnetz `192.168.178.0/24` konfigurierbar machen.

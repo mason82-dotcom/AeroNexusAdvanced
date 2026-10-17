@@ -40,6 +40,7 @@ from .multispectral import (LAYERS, MultispectralBusy, MultispectralError, Multi
                             MultispectralService)
 from .multispectral_page import render_multispectral_page
 from .thermal_flights import ThermalFlights, ThermalJobRunning
+from .media_sync import read_status as read_media_sync_status
 from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
 from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
@@ -209,6 +210,15 @@ def dji_media_summary(request: Request, response: Response,
         return index_summary()
     except (OSError, sqlite3.Error, WorkspaceError, MediaIndexError) as exc:
         raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
+
+
+@app.get("/api/v1/media/sync")
+def media_sync_status(request: Request, response: Response,
+                      authorization: str | None = Header(default=None)) -> dict:
+    """State of the automatic catalogue sync after Pilot 2 uploads (read-only)."""
+    workspace = _studio_workspace(request, authorization)
+    _no_cache(response)
+    return read_media_sync_status(workspace.root)
 
 
 @app.get("/api/v1/dji/media")
