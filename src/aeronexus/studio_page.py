@@ -1155,7 +1155,7 @@ function renderWaylines(){
       card.appendChild(els("p","",value));
     if(route.provider==="pilot2-local-cloud"&&route.wayline_id){
       const button=els("button","","Vorschau auf Karte (nur lesen)");
-      button.addEventListener("click",()=>previewCloudWayline(route,button));
+      button.onclick=()=>previewCloudWayline(route,button);
       card.appendChild(button);
     }
     grid.appendChild(card);

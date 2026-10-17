@@ -202,7 +202,7 @@ async def read_preview(credentials: Credentials, wayline_id: str, *, transport=N
             if length > MAX_KMZ:
                 raise LocalWaylineError("invalid_archive")
             content = bytearray()
-            async for chunk in response.aiter_raw():
+            async for chunk in response.aiter_bytes():
                 if len(content) + len(chunk) > MAX_KMZ:
                     raise LocalWaylineError("invalid_archive")
                 content.extend(chunk)
