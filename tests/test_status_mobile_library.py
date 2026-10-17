@@ -20,7 +20,7 @@ class _Tags(HTMLParser):
         self.tags.append((tag, dict(attrs)))
 
 
-def test_catalog_is_hidden_until_authenticated_fetch():
+def test_local_cloud_library_is_hidden_until_authenticated_fetch():
     page = render_page(5)
     parser = _Tags()
     parser.feed(page)
@@ -28,32 +28,37 @@ def test_catalog_is_hidden_until_authenticated_fetch():
               if tag == "section" and attrs.get("id") == "catalog-panel"]
     assert len(panels) == 1 and "hidden" in panels[0]
     assert 'byId("catalog-panel").hidden=false' in page
-    assert "if(!Array.isArray(data.projects))throw" in page
+    assert "/api/v1/local-cloud/waylines" in page
+    assert "/api/v1/flighthub/catalog" not in page
+    assert "FlightHub-Bibliothek" not in page
 
 
-def test_three_mobile_library_grids_and_collapsed_technical_tables():
+def test_local_waylines_mobile_cards_and_collapsed_technical_table():
     page = render_page(5)
-    for resource in ("wayline", "model", "task"):
-        assert f'id="{resource}-cards"' in page
-        assert f'id="{resource}-count"' in page
+    assert 'id="wayline-cards"' in page
+    assert 'id="wayline-count"' in page
+    assert 'id="waylines"' in page
     assert 'class="catalog-grid"' in page
-    assert page.count('class="catalog-raw"') == 3
-    assert "renderCatalogCards(p,cards,counts)" in page
+    assert page.count('class="catalog-raw"') == 1
+    assert 'id="model-cards"' not in page
+    assert 'id="task-cards"' not in page
+    assert "renderLocalWaylines(data)" in page
     assert "repeat(auto-fit,minmax(min(100%,300px),1fr))" in page
 
 
-def test_catalog_cards_preserve_read_only_metadata_and_on_demand_tracks():
+def test_local_wayline_cards_preserve_read_only_metadata_and_states():
     page = render_page(5)
-    assert 'catalogTag(card,"Fluggerät"' in page
-    assert 'catalogTag(card,"Typ"' in page
-    assert 'catalogTag(card,"Geändert"' in page
-    assert 'catalogTag(card,"Status"' in page
-    assert 'catalogTag(card,"Wegpunkte"' in page
-    assert 'cardEl(card,"button","","Flugspur als GeoJSON")' in page
-    assert 'button.addEventListener("click",()=>downloadTrack(' in page
+    assert 'catalogTag(card,"Typ",kinds)' in page
+    assert 'catalogTag(card,"Geändert",changed)' in page
+    assert 'const model=modelNames[route.device_model_key]' in page
+    assert "data.pagination_complete===false" in page
+    assert "authentication_required" in page
+    assert "awaiting_browser_session" in page
+    assert 'downloadTrack(' not in page
+    assert "/api/v1/flighthub/projects/" not in page
 
 
-def test_lan_catalog_auto_load_and_ignores_superseded_fetches():
+def test_local_cloud_auto_load_and_ignores_superseded_fetches():
     page = render_page(5)
     assert "epoch!==sessionEpoch||request!==catalogRequest" in page
     assert "epoch!==sessionEpoch||request!==devicesRequest" in page
@@ -61,8 +66,6 @@ def test_lan_catalog_auto_load_and_ignores_superseded_fetches():
     assert "updateCatalog();" in page
     assert "updateDevices();" in page
     assert 'id="token"' not in page
-    for resource in ("wayline-cards", "model-cards", "task-cards"):
-        assert f'"{resource}"' in page
 
 
 def test_hms_unknown_code_has_no_fabricated_diagnosis():
@@ -94,5 +97,5 @@ def test_anonymous_page_stays_read_only_and_privacy_safe(monkeypatch):
         assert "innerHTML" not in page.text
         assert "localStorage" not in page.text[page.text.index("<script>"):]
         assert page.headers["cache-control"] == "no-store"
-        assert client.get("/api/v1/flighthub/catalog").status_code == 401
+        assert client.get("/api/v1/local-cloud/waylines").status_code == 401
         assert client.post("/api/v1/flight/command").status_code == 403
