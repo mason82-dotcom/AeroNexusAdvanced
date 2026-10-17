@@ -93,3 +93,23 @@ zeichnet validierte GeoJSON-Geometrien nicht-interaktiv (kein versehentliches
 Einfügen eines Flug-Wegpunkts) und entfernt die Ebene jederzeit wieder.
 Die Ansicht bleibt getrennt von editierbaren Studio-Missionen, lokalen
 Geo-Objekten und Telemetrie; keine Speicherung oder Rückübertragung.
+
+## Authentifizierte, rein lesende Pilot-2-API-Diagnose
+
+`GET /api/v1/local-cloud/diagnostics` prüft über die gespeicherte Sitzung
+vier dokumentierte **GET**-Pfade (Sitzung, Wayline-Liste, Kartenelemente,
+Geräte-Topologie). Ergebnisse enthalten ausschließlich `http_status`,
+den ganzzahligen `api_code` und einen abstrakten Fehlerstatus, **keine**
+Upstream-Meldung, Antwortdaten, Tokens oder Namen. Im Gegensatz zu HTTP-Status
+200 kennzeichnet `api_code=-1` ausdrücklich `business_error`.
+Das Diagnose-GET ruft weder STS (POST) noch Upload, Callback oder
+Flugsteuerungs-Operationen auf.
+
+```bash
+curl --fail --show-error --cacert config/pki/ca.crt \
+  https://192.168.178.63:8000/api/v1/local-cloud/diagnostics \
+  | .venv/bin/python -m json.tool
+```
+
+So lässt sich die zuletzt beobachtete Diskrepanz HTTP 200 / DJI `code=-1`
+lokal eingrenzen, ohne vertrauliche Originalantworten weiterzugeben.

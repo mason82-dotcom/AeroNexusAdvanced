@@ -472,6 +472,15 @@ async def local_cloud_topology(request: Request, response: Response,
     return await app.state.local_pilot_reader.device_topology()
 
 
+@app.get("/api/v1/local-cloud/diagnostics")
+async def local_cloud_diagnostics(request: Request, response: Response,
+                                  authorization: str | None = Header(default=None)) -> dict:
+    """Safe Pilot 2 GET probe: HTTP and DJI business codes, never body content."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    return await app.state.local_pilot_reader.diagnostics()
+
+
 @app.get("/api/v1/flighthub/catalog")
 async def flighthub_catalog(request: Request, response: Response,
                             authorization: str | None = Header(default=None)) -> dict:

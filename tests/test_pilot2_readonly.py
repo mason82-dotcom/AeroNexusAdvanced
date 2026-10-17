@@ -111,3 +111,26 @@ def test_endpoints_require_viewer_access_before_local_cloud_calls(monkeypatch):
             assert response.headers["cache-control"] == "no-store"
         assert seen == ["map", "topology"]
         assert client.post("/api/v1/flight/command", headers={"Authorization": "Bearer " + token}).status_code == 403
+
+
+def test_diagnostics_only_get_and_keep_business_codes_not_messages():
+    names = []
+    def handler(request):
+        assert request.method == "GET"
+        assert str(request.url).startswith(p2.ORIGIN + "/")
+        assert request.headers["x-auth-token"] == CREDS.access_token
+        names.append(request.url.path)
+        return httpx.Response(200, json={"code": -1, "message": "secret internal error",
+                                          "data": {"secret": "private"}})
+    result = _get(p2.read_diagnostics, handler)
+    assert len(names) == 4 and len(set(names)) == 4
+    assert result["all_ok"] is False
+    assert result["checks"]["waylines"] == {
+        "http_status": 200, "api_code": -1, "state": "business_error"}
+    assert "secret" not in json.dumps(result)
+
+
+def test_diagnostics_invalid_response_is_not_ok():
+    result = _get(p2.read_diagnostics, httpx.Response(200, text="not-json"))
+    assert result["all_ok"] is False
+    assert all(value["state"] == "invalid_response" for value in result["checks"].values())

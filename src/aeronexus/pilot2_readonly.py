@@ -210,6 +210,51 @@ async def read_device_topology(credentials, *, transport=None):
     return _topology_payload(data)
 
 
+async def _probe(credentials, path, *, params=None, transport=None):
+    """One fixed-origin GET; expose HTTP/code only, never error messages or data."""
+    async with httpx.AsyncClient(base_url=ORIGIN, timeout=5, trust_env=False,
+                                 follow_redirects=False, transport=transport) as client:
+        async with client.stream("GET", path, params=params,
+                                 headers={"x-auth-token": credentials.access_token}) as response:
+            status = response.status_code
+            if status != 200:
+                return {"http_status": status, "state": (
+                    "authentication_required" if status in (401, 403) else "upstream_error")}
+            content = bytearray()
+            async for chunk in response.aiter_bytes():
+                if len(content) + len(chunk) > MAX_BODY:
+                    return {"http_status": status, "state": "invalid_response"}
+                content.extend(chunk)
+    try:
+        value = json.loads(content)
+    except (ValueError, UnicodeError, RecursionError):
+        return {"http_status": status, "state": "invalid_response"}
+    if not isinstance(value, dict) or type(value.get("code")) is not int:
+        return {"http_status": status, "state": "invalid_response"}
+    code = value["code"]
+    return {"http_status": status, "api_code": code,
+            "state": "ok" if code == 0 else "business_error"}
+
+
+async def read_diagnostics(credentials, *, transport=None):
+    """Probe ONLY documented safe GET endpoints; no STS, callback, upload or write."""
+    workspace = credentials.workspace_id
+    endpoints = {
+        "session": ("/manage/api/v1/users/current", None),
+        "waylines": (f"/wayline/api/v1/workspaces/{workspace}/waylines",
+                     {"page": 1, "page_size": 1}),
+        "map_elements": (f"/map/api/v1/workspaces/{workspace}/element-groups", None),
+        "topology": (f"/manage/api/v1/workspaces/{workspace}/devices/topologies", None),
+    }
+    checks = {}
+    for name, (path, params) in endpoints.items():
+        try:
+            checks[name] = await _probe(credentials, path, params=params, transport=transport)
+        except (httpx.HTTPError, OSError, TimeoutError):
+            checks[name] = {"state": "unavailable"}
+    return {"checks": checks, "all_ok": all(v["state"] == "ok" for v in checks.values())}
+
+
 class Pilot2ReadOnlyReader:
     """Independent 20s caches; an error clears last good data, no stale success."""
     def __init__(self):
@@ -239,6 +284,9 @@ class Pilot2ReadOnlyReader:
                 result = {"state": "unavailable"}
             self._cached[key] = (credentials, time.monotonic() + CACHE_SECONDS, result)
             return result
+
+    async def diagnostics(self):
+        return await self._read("diagnostics", read_diagnostics)
 
     async def map_elements(self):
         return await self._read("map", read_map_elements)
