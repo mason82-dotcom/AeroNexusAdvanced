@@ -34,6 +34,17 @@ numpy umgesetzt (kein OpenCV nötig). Ausgabe in 1296×972 (Standard),
 
 ### Gültigkeit und Fehlerbehandlung
 
+Einzelbildstatistiken, Binärraster und 4-Band-GeoTIFF-Exporte prüfen vor und
+nach der Berechnung, ob die Bandversionen im Medienindex und der aktuelle
+Multispektralkatalog noch zur verwendeten Aufnahme passen. Das gilt auch
+bei gefülltem Band-Cache und während Statistikberechnung oder TIFF-Encoding.
+Andernfalls liefern die Datenrouten HTTP 409: Katalogabgleich abschließen
+und die Aufnahme erneut laden. Veraltete NDVI-Statistiken werden nach einer
+erkannten Quellenänderung nicht neu gespeichert. Die Prüfung ist eine
+Versionsprüfung anhand der indizierten ETags, keine gemeinsame Transaktion
+mit MinIO; unerkannte Änderungen außerhalb des Medienindex bleiben von
+dessen nächstem Scan abhängig.
+
 - Sonnenlichtsensor: ausschließlich `LS_status=1` oder `2` und eine
   `Irradiance > 1` werden zur Reflexionsberechnung zugelassen. Fehlende,
   ungültige oder Platzhalterwerte sperren die betroffenen Bänder mit HTTP 422;
@@ -171,6 +182,15 @@ eingebetteten Viewer-JavaScript regressionsgetestet. Nach dem Update auf dem Pi
 den Katalog mit `.venv/bin/python -m aeronexus.multispectral --ndvi` aktualisieren,
 um gespeicherte Übersichten nach den neuen Regeln neu zu berechnen.
 
+## Optionale Orthomosaik-Verarbeitung
+
+Unter „Orthomosaik mit Metashape“ können markierte Aufnahmen für einen externen
+Arbeitsrechner verpackt werden. Der Pi erstellt ausschließlich Arbeitskopien.
+RGB-Orthomosaike und vier unabhängige MS-Rohbandmosaike sind vorgesehen; letztere
+sind keine kalibrierten, pixelgleich registrierten NDVI-Produkte.
+Voraussetzungen, Grenzen und Bedienung stehen in
+[Metashape-Anbindung](metashape-integration.md).
+
 ## Vorschläge
 
 - Reflexions-Referenztafel (Kalibrierpanel) zur absoluten Reflexion.
@@ -178,3 +198,80 @@ um gespeicherte Übersichten nach den neuen Regeln neu zu berechnen.
   auf der Operations-Karte.
 - Zonierung (Applikationskarten) aus NDVI-Klassen mit Export als Shapefile/GeoJSON.
 
+
+## Serienbericht (17.10.2026)
+
+Unter Bild/Karte steht ein separater Serienbericht. 1–20 Aufnahmen bewusst
+in der Mehrfachauswahl auswählen; die Auswahl wird nicht automatisch als
+zusammenhängender Flug interpretiert. NDVI, NDRE, GNDVI und LCI sind unabhängig
+wählbar. Standard: Maßstab 4 (648×486); optional 2 oder 1. Es kommen keine
+zusätzlichen Python-Abhängigkeiten hinzu.
+
+Optional werden nur Pixel mit endlichem NDVI ab einer einstellbaren Schwelle
+(Standard 0,2) ausgewertet. Pro Ebene zählt zusätzlich deren eigene
+Gültigkeitsmaske. Ergebnis je Aufnahme/Index: gesamte Rasterpixel, gültige
+Pixel, ausgewählte Pixel, Anteil ausgewählter an gültigen Pixeln, Minimum,
+Maximum, Mittel, **Populationsstandardabweichung**, P5/P10/Median/P90/P95.
+Ein leeres Ergebnis hat null ausgewählte Pixel und `null` für die Statistik,
+keine künstlichen Nullen. Statistiken beziehen sich auf die ausgewählte
+Auflösung und sind weder Feldflächen noch Krankheitsdiagnosen.
+
+Das Histogramm hat 32 Klassen im jeweiligen tatsächlichen Wertebereich;
+auch LCI-Werte außerhalb −1…1 bleiben erhalten. Die letzte Klasse schließt
+die Obergrenze ein. Für konstante Werte wird der Bereich symmetrisch erweitert.
+Klassenränder und Häufigkeiten sind zusätzlich als Tabelle zugänglich und
+im JSON enthalten. Histogramme verschiedener Aufnahmen haben gegebenenfalls
+unterschiedliche Klassenränder und dürfen nicht direkt nach Balken verglichen werden.
+
+Der Browser verarbeitet eine Aufnahme nach der anderen mit sichtbarem
+Fortschritt. „Nach aktueller Aufnahme stoppen“ lässt den aktuellen Abruf
+fertig werden und erhält einen eindeutig bezeichneten Teilbericht. Ein
+Transportfehler stoppt die Serie, fachliche Fehler einzelner Ebenen stehen
+in Ergebniszeilen. Geänderte Einstellungen sperren alte Exporte. Server und
+Browser lesen ausschließlich über den vorhandenen DJI-Layer-Service; keine
+neue radiometrische Normalisierung, kein MinIO-Schreiben.
+
+CSV (UTF-8 mit BOM, Semikolon, Dezimalpunkt) enthält eine Zeile pro Aufnahme
+und Index einschließlich Status, Maßstab und Maskenschwelle. JSON enthält
+zusätzlich Histogramme, Warnungen, Verarbeitungsstand, Zeitstempel sowie bei
+Browser-Teilberichten die angeforderte und die tatsächlich verarbeitete Auswahl.
+CSV-Textzellen werden gegen Tabellenformeln abgesichert.
+
+### API
+
+`POST /api/v1/multispectral/reports` mit dem bestehenden Viewer-Zugriff:
+
+```json
+{
+  "capture_uuids": ["c0b53d9a3dd045db9c77bf6c744608d7"],
+  "layers": ["ndvi", "ndre", "gndvi", "lci"],
+  "scale": 4,
+  "ndvi_threshold": 0.2
+}
+```
+
+`ndvi_threshold: null` schaltet die Maske ab. `?format=csv` gibt denselben
+Bericht als Download zurück. Pro Request 1–20 eindeutige UUIDs und 1–4
+eindeutige Indizes; zusätzliche Felder werden abgewiesen. Pro Serverprozess
+ist eine Berichtsanfrage gleichzeitig zugelassen (sonst HTTP 429 und
+`Retry-After`). Die vorhandene Begrenzung paralleler Bandverarbeitung gilt
+weiterhin. Bei geänderten Quelldaten werden alle Ergebniszeilen der betroffenen
+Aufnahme verworfen und als Fehler markiert. Vor und nach der Berechnung werden
+zusätzlich die Bandversionen des Medienindex mit dem Multispektralkatalog
+abgeglichen; ein noch ausstehender Header-Scan kann dadurch keine neuen Raster
+mit alten Aufnahmemetadaten vermischen. Fehlertexte enthalten keine
+MinIO-Schlüssel oder privaten Anbieterinformationen.
+
+Die Erweiterung wurde eigenständig implementiert, ohne Code aus dem
+AGPL-lizenzierten MACHARODRIGO-Toolkit zu übernehmen.
+
+### Verifikation
+
+- `PYTHONPATH=src python -m pytest -q`: gesamter Projekt-Testbestand.
+- Node-Regression in `tests/test_multispectral_series_js.py`: tatsächliches
+  eingebettetes JavaScript, Stoppen, Doppelklick, Teilfehler, leere Masken,
+  Invalidierung und CSV-Zellenschutz.
+- Optionaler echter Browser-Smoke mit installiertem Playwright/Chromium:
+  `PYTHONPATH=src python -c 'from aeronexus.multispectral_page import render_multispectral_page; print(render_multispectral_page())' | node tests/browser/multispectral_series.cjs`.
+  Er arbeitet mit simulierten API-Antworten und prüft CSV/JSON-Downloads,
+  Validierung, Status, Stoppen, Keyboard-Fokus und die 390px-Darstellung.

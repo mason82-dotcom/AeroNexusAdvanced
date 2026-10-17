@@ -5,6 +5,11 @@ computed by the local API (DJI M3M processing guide); the browser never
 contacts MinIO and never sees object keys.
 """
 
+import json
+
+from .multispectral_report import CSV_FIELDS
+
+
 HTML = r"""<!doctype html>
 <html lang="de">
 <head>
@@ -16,11 +21,16 @@ HTML = r"""<!doctype html>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
 :root{font:14px/1.45 system-ui,"Segoe UI",sans-serif;color-scheme:dark;--bg:#0b1323;--pane:#122139;--line:#334e69;--ink:#eaf4ff;--sub:#a9bfd8;--mint:#75e3bd;--amber:#e4bd78;--red:#ff9ba8}
-*{box-sizing:border-box}
+*{box-sizing:border-box;scrollbar-color:var(--line) var(--bg);scrollbar-width:auto}
+::-webkit-scrollbar{width:12px;height:12px}::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--line);border:2px solid var(--bg);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:var(--sub)}
+@media(forced-colors:active){*{scrollbar-color:auto}}
 body{margin:0;background:var(--bg);color:var(--ink)}
 a{color:#9dd5ff}
 button,select,input{font:inherit;color:#eef7ff;background:#213d5e;border:1px solid #426487;border-radius:8px;padding:7px 10px}
 button{cursor:pointer}button:hover{background:#2a517a}button:disabled{opacity:.5;cursor:not-allowed}
+button:active:not(:disabled){border-color:var(--mint)}
 button.active{border-color:var(--mint);background:#245a55}
 input{min-width:0}
 :focus-visible{outline:2px solid var(--mint);outline-offset:2px}
@@ -40,6 +50,11 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .item{display:block;width:100%;text-align:left;margin:6px 0;background:#142842;border:1px solid #33506d;border-radius:9px;padding:9px}
 .item:hover,.item.active{border-color:#76bfff;background:#214362}
 .item b{display:block;font-size:13px}.item small{display:block;color:#b5cae1;font-size:11px;margin-top:3px}
+.capture-row{display:flex;align-items:center;gap:8px}.capture-row .item{flex:1;min-width:0}
+.capture-choice{display:flex;align-items:center;justify-content:center;min-width:32px;min-height:40px}
+.package-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px}
+.ortho-controls{flex:none;margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.ortho-controls summary{cursor:pointer;font-weight:600}.ortho-body{max-height:340px;overflow-y:auto;padding-top:8px}
 .band{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;margin-right:3px;border:1px solid #4e6a84}
 .band.on{color:#0b1323;background:var(--mint);border-color:var(--mint)}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border:1px solid #486d8b;border-radius:999px}
@@ -59,7 +74,7 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .map-legend canvas{display:block;width:140px;height:10px;margin:4px 0;border-radius:3px}
 .readout{position:absolute;left:10px;bottom:10px;background:#0f1d31e6;border:1px solid #35536f;border-radius:8px;padding:5px 9px;font:12px ui-monospace,Consolas,monospace;pointer-events:none}
 .colorbar{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px}
-.colorbar canvas{flex:1;height:14px;border-radius:4px;border:1px solid #3a5876}
+.colorbar canvas{flex:1;min-width:0;width:0;height:14px;border-radius:4px;border:1px solid #3a5876}
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .stat{background:#0e2137;border:1px solid #2c465e;border-radius:8px;padding:7px;min-width:0}
 .stat span{display:block;font-size:10px;color:var(--sub)}.stat b{font-size:16px}
@@ -73,7 +88,19 @@ th{color:var(--sub);font-weight:600}
 .warnbox{font-size:12px;color:#ffd0a4;border-left:3px solid #d6a862;background:#2a2a2a55;padding:6px 8px;margin:6px 0}
 .error{color:var(--red)}
 @media(max-width:1200px){.layout{grid-template-columns:270px minmax(0,1fr)}.side-right{grid-column:1/-1}}
-@media(max-width:760px){.layout{display:flex;flex-direction:column;height:auto}.panel{overflow:visible}.scroll{max-height:340px}.viewer{min-height:320px}.header-state{margin-left:0}}
+@media(max-width:760px){.layout{display:flex;flex-direction:column;height:auto}.panel{overflow:visible}.scroll{max-height:340px}.side-right.scroll{max-height:none}.layout>.panel{flex-shrink:0}.viewer{min-height:320px}.header-state{margin-left:0}}
+.series{margin:12px;height:auto;overflow:visible}
+.series fieldset{border:0;margin:0;padding:0;min-width:0}
+.series-controls{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px}
+.series label{display:block;margin:6px 0}
+#report-captures{width:100%;min-height:130px;max-width:100%}
+.report-table{max-height:330px;overflow:auto;margin:10px 0;scrollbar-gutter:stable}
+.report-table table{min-width:780px}
+.report-feedback{min-height:3em;margin:8px 0}
+.histogram{height:130px;display:flex;gap:2px;align-items:end;border-bottom:1px solid var(--line);margin-top:10px}
+.histogram div{flex:1;background:var(--mint);min-width:0}
+#report-hist-choice{max-width:100%}
+@media(max-width:760px){.series-controls{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
 <body>
@@ -86,7 +113,7 @@ th{color:var(--sub);font-weight:600}
 <a href="/media">DJI Medien</a>
 <a href="/thermal">Thermal</a>
 <span class="active" aria-current="page">Multispektral</span>
-</nav>
+<a href="/results">Ergebnisraster</a></nav>
 <span class="header-state" id="state" role="status" aria-live="polite">Lade Aufnahmen…</span>
 </header>
 <div class="layout">
@@ -95,6 +122,14 @@ th{color:var(--sub);font-weight:600}
 <h2 id="list-title">M3M-Aufnahmen</h2>
 <div class="sub">Bänder werden über die CaptureUUID zusammengeführt (auch FlightHub-Uploads und SD-Importe).</div>
 <div class="scroll" id="list" style="margin-top:8px"></div>
+<details class="ortho-controls"><summary>Orthomosaik mit Metashape</summary><div class="ortho-body">
+<label class="sub" for="ortho-mode">Exportmodus</label>
+<select id="ortho-mode"><option value="rgb">RGB-Orthomosaik</option><option value="multispectral">MS-Rohbandmosaike</option></select>
+<p class="note">3–100 überlappende Aufnahmen derselben Flugserie markieren. Der Pi erstellt ein Paket (max. 4 GiB). Berechnung auf einem Arbeitsrechner mit aktivierter Metashape-Professional-Lizenz. MS-Rohbandmosaike sind keine NDVI-Karte.</p>
+<div class="row"><button id="ortho-export" type="button" disabled>Paket vorbereiten (0)</button><button id="ortho-refresh" type="button">Pakete aktualisieren</button></div>
+<div id="ortho-state" class="note" role="status" aria-live="polite"></div>
+<div id="ortho-packages"></div>
+</div></details>
 </section>
 
 <section class="panel" aria-labelledby="viewer-title">
@@ -171,11 +206,42 @@ th{color:var(--sub);font-weight:600}
 <div class="note" id="method">Verarbeitung: Schwarzwert, Gain und Belichtungszeit (Gl. 9), Vignettierung (Gl. 7/8), Objektiv-Entzerrung, Bandausrichtung per Calibrated HMatrix, Sonnenlichtsensor (Gl. 4–6). Reflexionswerte sind relativ (Faktor ρ_NIR ohne Referenztafel unbekannt); NDVI, GNDVI, NDRE und LCI sind davon unabhängig. Bei Nahaufnahmen bleibt Parallaxe zwischen den Bändern. Seriennummern werden nicht angezeigt.</div>
 </aside>
 </div>
+<section class="panel series" id="series" aria-labelledby="series-title">
+<div class="eyebrow">Flugserie · Auswertung je Aufnahme</div>
+<h2 id="series-title">Serienbericht</h2>
+<p class="sub">Aufnahmen bewusst auswählen (maximal 20). Eine Auswahl ist keine automatisch erkannte Flugmission.
+Statistik je Aufnahme, keine Flächenaddition überlappender Bilder. NDVI-Schwellen sind Richtwerte und keine Krankheitsdiagnose.</p>
+<fieldset id="report-settings"><legend>Auswahl und Berechnung</legend>
+<div class="series-controls">
+<div><label for="report-captures">Aufnahmen (Mehrfachauswahl)</label>
+<select id="report-captures" multiple size="6" aria-describedby="report-help"></select>
+<p class="sub" id="report-help">Auf dem Smartphone die Auswahl öffnen; am Computer Strg oder Umschalt für mehrere Aufnahmen verwenden.</p></div>
+<div><label for="report-scale">Auflösung</label><select id="report-scale"><option value="4">648×486 (empfohlen)</option><option value="2">1296×972</option><option value="1">2592×1944 (langsam)</option></select>
+<label><input type="checkbox" id="report-mask"> Nur Vegetation nach NDVI auswerten</label>
+<label for="report-threshold">NDVI mindestens (−1 bis 1)</label><input type="number" id="report-threshold" value="0.2" step="0.05" min="-1" max="1" disabled aria-describedby="report-validation">
+<p id="report-validation" class="error" role="alert"></p>
+<div class="row" id="report-indices" role="group" aria-label="Indizes für den Bericht">
+<label><input type="checkbox" value="ndvi" checked> NDVI</label><label><input type="checkbox" value="ndre" checked> NDRE</label>
+<label><input type="checkbox" value="gndvi" checked> GNDVI</label><label><input type="checkbox" value="lci" checked> LCI</label></div></div>
+</div></fieldset>
+<div class="row"><button type="button" id="report-run">Serienbericht berechnen</button>
+<button type="button" id="report-stop" disabled>Nach aktueller Aufnahme stoppen</button>
+<button type="button" id="report-csv" disabled>Statistik CSV</button><button type="button" id="report-json" disabled>Serienbericht JSON</button></div>
+<div class="report-feedback" id="report-state" role="status" aria-live="polite">Aufnahmen auswählen und Serienbericht berechnen.</div>
+<div id="report-results" hidden>
+<div class="report-table" tabindex="0" role="region" aria-label="Serienstatistik">
+<table><thead><tr><th>Aufnahme</th><th>Index</th><th>Status</th><th>Pixel ausgewählt / gültig</th><th>Mittel</th><th>Standardabw.</th><th>P10</th><th>Median</th><th>P90</th></tr></thead><tbody id="report-rows"></tbody></table></div>
+<label for="report-hist-choice">Histogramm für Aufnahme und Index</label><select id="report-hist-choice"></select>
+<div id="report-hist" class="histogram" role="img" aria-label="Histogramm"></div>
+<p class="sub">Klassen je Histogramm aus dem tatsächlichen Wertebereich; gültige Werte werden nicht abgeschnitten. Die letzte Klasse schließt die Obergrenze ein.</p>
+<details><summary>Histogramm als Tabelle</summary><div class="report-table"><table><thead><tr><th>Von</th><th>Bis</th><th>Pixel</th></tr></thead><tbody id="report-hist-rows"></tbody></table></div></details>
+</div></section>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
 let captures=[],current=null,data=null,W=0,H=0,cir=null,spots=[],tool="point",drag=null,busy=0;
+const orthoSelection=new Set();let orthoPending=false,orthoListGeneration=0;
 const CMAPS={
   rdylgn:[[0,165,0,38],[.25,244,109,67],[.5,255,255,191],[.75,102,189,99],[1,0,104,55]],
   viridis:[[0,68,1,84],[.25,59,82,139],[.5,33,145,140],[.75,94,201,98],[1,253,231,37]],
@@ -190,8 +256,8 @@ function lut(name){
 }
 function fmt(v,d=3){return typeof v==="number"&&Number.isFinite(v)?v.toFixed(d).replace(".",","):"–";}
 function el(tag,text,cls){const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;}
-async function api(path,binary){
-  const res=await fetch(path,{cache:"no-store",credentials:"same-origin"});
+async function api(path,binary,options={}){
+  const res=await fetch(path,{...options,cache:"no-store",credentials:"same-origin"});
   if(!res.ok){let d="HTTP "+res.status;try{const j=await res.json();if(typeof j.detail==="string")d=j.detail;}catch(e){}throw new Error(d);}
   return binary?res:res.json();
 }
@@ -200,8 +266,14 @@ function isIndex(layer){return !layer.startsWith("band_")&&layer!=="cir";}
 async function loadCaptures(){
   try{
     const r=await api("/api/v1/multispectral/captures");captures=r.captures||[];
+    const choices=$("report-captures");choices.replaceChildren();
+    for(const c of captures){const option=el("option",`${c.captured_at?new Date(c.captured_at).toLocaleString("de-DE"):"Zeit unbekannt"} · ${c.capture_uuid.slice(0,8)}`);option.value=c.capture_uuid;choices.append(option);}
     const list=$("list");list.replaceChildren();
     for(const c of captures){
+      const row=el("div",null,"capture-row"),choice=el("label",null,"capture-choice"),check=el("input");
+      check.type="checkbox";check.dataset.orthoCapture=c.capture_uuid;check.checked=orthoSelection.has(c.capture_uuid);
+      check.disabled=orthoPending;check.setAttribute("aria-label","Für Metashape auswählen: "+(c.captured_at||c.capture_uuid));
+      check.addEventListener("change",()=>{if(check.checked)orthoSelection.add(c.capture_uuid);else orthoSelection.delete(c.capture_uuid);orthoState();});choice.append(check);
       const b=el("button",null,"item");b.type="button";b.dataset.id=c.capture_uuid;
       const t=c.captured_at?new Date(c.captured_at).toLocaleString("de-DE"):"Zeit unbekannt";
       b.append(el("b",t));
@@ -210,11 +282,49 @@ async function loadCaptures(){
       const irr=Object.values(c.bands).map(x=>x.irradiance).filter(x=>typeof x==="number");
       b.append(el("small",[c.position?(c.position.gps_status||"GNSS"):"kein GNSS",irr.length?"Sonne "+Math.round(Math.min(...irr))+"–"+Math.round(Math.max(...irr)):"",c.rgb?"mit RGB":""].filter(Boolean).join(" · ")));
       if(c.warnings.length)b.append(el("small","⚠ "+c.warnings.length+" Hinweis(e)"));
-      b.addEventListener("click",()=>select(c));list.append(b);
+      b.addEventListener("click",()=>select(c));row.append(choice,b);list.append(row);
     }
+    for(const id of orthoSelection)if(!captures.some(c=>c.capture_uuid===id))orthoSelection.delete(id);
+    orthoState();
     $("state").textContent=captures.length?`${captures.length} Aufnahmen · Katalog ${r.scanned_at?new Date(r.scanned_at).toLocaleString("de-DE"):"–"}`:"Keine M3M-Aufnahmen – auf dem Pi: .venv/bin/python -m aeronexus.multispectral";
   }catch(e){$("state").textContent="Katalog nicht verfügbar: "+e.message;}
 }
+
+function orthoState(){
+  const n=orthoSelection.size,b=$("ortho-export");b.disabled=orthoPending||n<3||n>100;
+  b.textContent=orthoPending?"Paket wird vorbereitet…":`Paket vorbereiten (${n})`;
+  $("ortho-mode").disabled=orthoPending;
+  for(const input of document.querySelectorAll("input[data-ortho-capture]"))input.disabled=orthoPending;
+}
+async function orthoRequest(path,options){
+  const r=await fetch(path,{cache:"no-store",credentials:"same-origin",...options});
+  if(!r.ok){let message="HTTP "+r.status;try{const b=await r.json();if(typeof b.detail==="string")message=b.detail;}catch(e){}throw new Error(message);}
+  return r.status===204?null:r.json();
+}
+async function loadPackages(){
+  const generation=++orthoListGeneration,result=await orthoRequest("/api/v1/multispectral/metashape/packages");
+  if(generation!==orthoListGeneration)return;
+  const box=$("ortho-packages");box.replaceChildren();
+  for(const p of result.packages||[]){
+    if(!/^[0-9a-f]{32}$/.test(p.id))continue;
+    const row=el("div",null,"package-row"),link=el("a",`${p.mode==="rgb"?"RGB":"MS-Rohbänder"} · ${p.captures} Aufnahmen · ${Math.ceil(p.size_bytes/1048576)} MiB herunterladen`);
+    link.href=`/api/v1/multispectral/metashape/packages/${p.id}/file`;link.download=`aeronexus-metashape-${p.id}.zip`;
+    const remove=el("button","Paket löschen");remove.type="button";
+    remove.addEventListener("click",async()=>{remove.disabled=true;try{await orthoRequest(`/api/v1/multispectral/metashape/packages/${p.id}`,{method:"DELETE"});await loadPackages();}
+      catch(e){$("ortho-state").textContent="Paket konnte nicht gelöscht werden: "+e.message;remove.disabled=false;}});
+    row.append(link,remove);box.append(row);
+  }
+}
+$("ortho-export").addEventListener("click",async()=>{
+  if(orthoPending||orthoSelection.size<3||orthoSelection.size>100)return;
+  const body={capture_uuids:[...orthoSelection],mode:$("ortho-mode").value};
+  orthoPending=true;orthoState();$("ortho-state").textContent="Originale werden als Arbeitskopien verpackt. Große Pakete können einige Minuten benötigen.";
+  try{await orthoRequest("/api/v1/multispectral/metashape/packages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    await loadPackages();$("ortho-state").textContent="Paket bereit. Herunterladen, auf dem Arbeitsrechner entpacken und README.txt befolgen. Pakete werden eine Stunde vorgehalten.";
+  }catch(e){$("ortho-state").textContent="Paket nicht bestätigt: "+e.message+". Mit ‚Pakete aktualisieren‘ vorhandene Pakete prüfen.";}
+  finally{orthoPending=false;orthoState();}
+});
+$("ortho-refresh").addEventListener("click",()=>loadPackages().catch(e=>{$("ortho-state").textContent="Pakete nicht abrufbar: "+e.message;}));
 
 function select(c){
   current=c;spots=[];renderSpots();
@@ -497,9 +607,98 @@ function updateStackLink(){
   a.href=`/api/v1/multispectral/captures/${c.capture_uuid}/stack.tif?${q}`;
 }
 for(const id of ["stack-product","stack-scale","stack-refine"])$(id).addEventListener("change",updateStackLink);
+
+/* Series reports are independent from the current image selection. */
+let seriesReport=null,reportRunning=false,reportStopping=false;
+const REPORT_CSV_FIELDS=__MS_REPORT_CSV_FIELDS__;
+function invalidateReport(){
+  if(reportRunning)return;
+  seriesReport=null;$("report-results").hidden=true;$("report-csv").disabled=$("report-json").disabled=true;
+  $("report-state").textContent="Auswahl geändert. Serienbericht neu berechnen.";
+}
+function reportBusy(active){
+  reportRunning=active;$("report-settings").disabled=active;$("report-run").disabled=active;
+  $("report-stop").disabled=!active;$("series").setAttribute("aria-busy",String(active));
+  $("report-csv").disabled=$("report-json").disabled=active||!seriesReport||!seriesReport.rows.length;
+}
+function reportCaptureLabel(row){return `${row.captured_at?new Date(row.captured_at).toLocaleString("de-DE"):"Zeit unbekannt"} · ${row.capture_uuid.slice(0,8)}`;}
+function reportLabel(row){return `${reportCaptureLabel(row)} · ${row.layer.toUpperCase()}`;}
+function renderReport(){
+  const rows=seriesReport?seriesReport.rows:[],body=$("report-rows"),choices=$("report-hist-choice");body.replaceChildren();choices.replaceChildren();
+  rows.forEach((r,i)=>{const tr=el("tr"),s=r.stats||{};
+    const state=r.status==="ok"?"Berechnet":r.status==="empty"?"Keine ausgewählten Pixel":r.message||"Fehler";
+    tr.append(el("td",reportCaptureLabel(r)),el("td",r.layer.toUpperCase()),el("td",state),el("td",s.valid_pixels==null?"–":`${s.selected_pixels} / ${s.valid_pixels}`));
+    for(const k of ["mean","std","p10","median","p90"])tr.append(el("td",fmt(s[k])));
+    if((r.warnings||[]).length)tr.firstChild.append(el("div",r.warnings.join(" · "),"sub"));
+    body.append(tr);
+    if(r.histogram&&r.histogram.counts.length){const o=el("option",reportLabel(r));o.value=String(i);choices.append(o);}
+  });
+  $("report-results").hidden=!rows.length;choices.disabled=!choices.options.length;
+  if(choices.disabled)choices.append(el("option","Keine Histogrammdaten"));
+  renderReportHistogram();
+}
+function renderReportHistogram(){
+  const box=$("report-hist"),table=$("report-hist-rows");box.replaceChildren();table.replaceChildren();
+  const row=seriesReport&&seriesReport.rows[Number($("report-hist-choice").value)];
+  if(!row||!row.histogram||!row.histogram.counts.length){box.setAttribute("aria-label","Keine Histogrammdaten");box.append(el("span","Keine Histogrammdaten für diese Auswertung.","sub"));return;}
+  const h=row.histogram,max=Math.max(...h.counts,1);
+  box.setAttribute("aria-label",`Histogramm ${reportLabel(row)}: ${row.stats.selected_pixels} Pixel. Klassen und Häufigkeiten in der Tabelle darunter.`);
+  h.counts.forEach((n,i)=>{const bar=el("div");bar.style.height=(n/max*100)+"%";bar.setAttribute("aria-hidden","true");box.append(bar);
+    const tr=el("tr");tr.append(el("td",fmt(h.edges[i],5)),el("td",fmt(h.edges[i+1],5)),el("td",n.toLocaleString("de-DE")));table.append(tr);});
+}
+async function runReport(){
+  if(reportRunning)return;
+  invalidateReport();$("report-validation").textContent="";
+  $("report-threshold").setAttribute("aria-invalid","false");
+  const ids=[...$("report-captures").selectedOptions].map(o=>o.value);
+  const layers=[...document.querySelectorAll('#report-indices input:checked')].map(o=>o.value);
+  const masked=$("report-mask").checked,raw=$("report-threshold").value;
+  const threshold=masked?Number(raw):null,scale=Number($("report-scale").value);
+  if(ids.length<1||ids.length>20||!layers.length){$("report-validation").textContent="Bitte 1 bis 20 Aufnahmen und mindestens einen Index auswählen.";$("report-captures").focus();return;}
+  if(masked&&(raw.trim()===""||!Number.isFinite(threshold)||threshold< -1||threshold>1)){
+    $("report-validation").textContent="NDVI-Schwelle zwischen −1 und 1 eingeben.";$("report-threshold").setAttribute("aria-invalid","true");$("report-threshold").focus();return;}
+  reportStopping=false;reportBusy(true);
+  let completed=0,failed=null;
+  try{
+    for(const id of ids){
+      if(reportStopping)break;
+      $("report-state").textContent=`Berechne Aufnahme ${completed+1} von ${ids.length}…`;
+      const part=await api("/api/v1/multispectral/reports",false,{method:"POST",signal:AbortSignal.timeout(180000),headers:{"Content-Type":"application/json"},body:JSON.stringify({capture_uuids:[id],layers,scale,ndvi_threshold:threshold})});
+      if(!seriesReport)seriesReport={...part,capture_uuids:[],rows:[],requested_capture_uuids:ids,completed:false};
+      if(part.processing_version!==seriesReport.processing_version)throw new Error("Verarbeitungsversion geändert. Bericht erneut berechnen.");
+      seriesReport.capture_uuids.push(id);seriesReport.rows.push(...part.rows);completed++;
+    }
+  }catch(e){failed=e.name==="TimeoutError"?"Zeitüberschreitung. Nach kurzer Wartezeit erneut versuchen":e.message;}
+  finally{
+    if(seriesReport){seriesReport.completed=completed===ids.length;seriesReport.finished_at=new Date().toISOString();}
+    renderReport();reportBusy(false);
+    const errors=seriesReport?seriesReport.rows.filter(r=>r.status==="error").length:0;
+    const empty=seriesReport?seriesReport.rows.filter(r=>r.status==="empty").length:0;
+    $("report-state").textContent=`${failed?"Unterbrochen: "+failed+". ":reportStopping&&completed<ids.length?"Gestoppt. ":""}${completed} von ${ids.length} Aufnahmen verarbeitet · ${errors} Ebenen mit Fehler · ${empty} leere Auswertungen. ${completed<ids.length?"Teilbericht; für die restlichen Aufnahmen erneut starten.":"Bericht fertig."}`;
+  }
+}
+function reportCsvCell(value){
+  let s=value==null?"":String(value);if(typeof value==="string"&&/^[\s]*[=+\-@]/.test(s))s="'"+s;
+  return '"'+s.replaceAll('"','""')+'"';
+}
+$("report-run").addEventListener("click",runReport);
+$("report-stop").addEventListener("click",()=>{reportStopping=true;$("report-stop").disabled=true;$("report-state").textContent="Stoppen nach der laufenden Aufnahme. Bereits berechnete Ergebnisse bleiben im Teilbericht.";});
+$("report-mask").addEventListener("change",()=>{$("report-threshold").disabled=!$("report-mask").checked;invalidateReport();});
+$("report-settings").addEventListener("change",invalidateReport);
+$("report-threshold").addEventListener("input",invalidateReport);
+$("report-hist-choice").addEventListener("change",renderReportHistogram);
+$("report-csv").addEventListener("click",()=>{
+  if(reportRunning||!seriesReport)return;
+  const lines=[REPORT_CSV_FIELDS.join(";")];
+  for(const r of seriesReport.rows){const v={...r,...r.stats,scale:seriesReport.scale,ndvi_threshold:seriesReport.ndvi_threshold};lines.push(REPORT_CSV_FIELDS.map(k=>reportCsvCell(v[k])).join(";"));}
+  save(new Blob(["\ufeff"+lines.join("\r\n")+"\r\n"],{type:"text/csv;charset=utf-8"}),"m3m_serienbericht"+(seriesReport.completed?"":"_teilbericht")+".csv");
+});
+$("report-json").addEventListener("click",()=>{if(!reportRunning&&seriesReport)save(new Blob([JSON.stringify(seriesReport,null,2)],{type:"application/json"}),"m3m_serienbericht"+(seriesReport.completed?"":"_teilbericht")+".json");});
+
 window.addEventListener("resize",fit);
 $("range-mode").value="veg";
 loadCaptures();
+loadPackages().catch(e=>{$("ortho-state").textContent="Pakete nicht abrufbar: "+e.message;});
 </script>
 </body>
 </html>
@@ -507,5 +706,6 @@ loadCaptures();
 
 
 def render_multispectral_page() -> str:
-    return HTML
+    return HTML.replace("__MS_REPORT_CSV_FIELDS__", json.dumps(CSV_FIELDS))
+
 

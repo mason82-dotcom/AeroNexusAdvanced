@@ -23,3 +23,11 @@ Feature set of the DJI Mavic 3M 4-band stack (band order NIR, Green, Red,
 RedEdge; vignetting, undistort and Calibrated HMatrix per DJI's Mavic 3M
 Image Processing Guide; warp-border crop; capture tags) in
 src/aeronexus/m3m_stack.py. Re-implemented with numpy; no code copied.
+
+Optional external workflow: GeoSense-Freiburg/metashape_ortho
+https://github.com/GeoSense-Freiburg/metashape_ortho
+Pinned upstream commit: 101bc4e235982b34b3607eb035d84cc2448491ea
+The independently written AeroNexus bridge packages copied originals and calls
+the separately installed, source-verified MetashapeProject and
+MetashapeChunkProcessor classes. No GeoSense source or commercial Agisoft
+Metashape binary is bundled. See docs/metashape-integration.md.

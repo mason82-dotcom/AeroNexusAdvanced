@@ -104,7 +104,7 @@ details.section summary{cursor:pointer;font-weight:700;font-size:13px;padding:4p
 <a href="/media">DJI Medien</a>
 <span class="active" aria-current="page">Thermal</span>
 <a href="/multispectral">Multispektral</a>
-</nav>
+<a href="/results">Ergebnisraster</a></nav>
 <span class="header-state" id="sdk-state" role="status" aria-live="polite">Prüfe DJI Thermal SDK…</span>
 </header>
 <div class="layout">
