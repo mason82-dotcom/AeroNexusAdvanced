@@ -260,6 +260,9 @@ def index_summary(path: Path = DEFAULT_DATABASE) -> dict:
     try:
         meta = dict(db.execute("SELECT name,value FROM meta"))
         scan_id = meta.get("scan_id")
+        if not scan_id:
+            return {"state": "not_indexed", "total": 0, "total_bytes": 0,
+                    "kinds": {}, "scanned_at": None}
         rows = db.execute(
             "SELECT kind,COUNT(*),COALESCE(SUM(size_bytes),0) FROM media "
             "WHERE last_seen_scan=? GROUP BY kind", (scan_id,)).fetchall()
