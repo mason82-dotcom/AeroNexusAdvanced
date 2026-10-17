@@ -322,3 +322,34 @@ wird kein KMZ-Dateiabruf ausgelöst. Mögliche Statuswerte sind etwa
 `storage_origin_rejected` wird nicht durch Abschalten der URL-Prüfung
 umgangen. Der echte Pi-Abruf und die Speicherlinkkompatibilität stehen
 noch zur Abnahme aus.
+
+## Gemeinsame Kartenübersicht von bis zu acht Pilot-2-Waylines
+
+Im Mission Studio unter **Cloud-Routen** bietet die explizite Schaltfläche
+„Alle lokalen Routen auf Karte (max. 8)“ eine gemeinsame GeoJSON-Vorschau.
+Der Button wird erst nach vollständigem lokalem Pilot-2-Inventar aktiviert.
+Es werden ausschließlich Einträge mit Quelle `pilot2-local-cloud` ausgewählt,
+höchstens acht unterschiedliche Wayline-IDs aus der aktuellen Bibliothek.
+FlightHub-Routen werden nicht für lokale DJI-KMZ-Downloads ausgegeben.
+
+Jede Route wird erst nach Klick über den bestehenden, autorisierten und
+streng begrenzten `GET /api/v1/local-cloud/waylines/{wayline_id}/preview`
+angefordert. Ein neues Cloud- oder MinIO-Downloadverfahren gibt es nicht.
+Die Abfragen erfolgen sequenziell, mit Abbruchmöglichkeit und begrenztem
+Zeitbudget pro Anfrage. Fehler einer Route hindern nicht die Darstellung
+der bereits erfolgreichen Routen; die Oberfläche kennzeichnet Teilerfolge.
+
+Für jede erfolgreich gelesene Route zeigt das Kartenpanel Name, eigene
+Farbe, Punktzahl und Geometrieanzahl. Checkboxen blenden nur den jeweiligen
+schreibgeschützten Leaflet-Layer ein oder aus, „Zoom“ zentriert eine Route,
+und „Alle sichtbaren Routen zentrieren“ passt den Kartenausschnitt an.
+„Schließen“ bricht offene Requests ab, entfernt alle Vorschau-Layer und
+ermöglicht anschließend wieder Kartenbearbeitung. Einzel- und
+Mehrfachvorschau sind gegenseitig exklusiv.
+
+Routennamen werden ausschließlich über DOM-Textknoten eingefügt,
+GeoJSON-Elemente bleiben `interactive:false`; keine Routendaten
+werden in editierbare Missionen oder den WPML-Export übernommen.
+Die KMZ-Vorschau gibt ausdrücklich keine Flugfreigabe und liest keine
+DJI-Flugaktionen aus. Die Funktion wurde automatisiert getestet;
+eine reale Browserprüfung auf dem Pi ist zusätzlich erforderlich.
