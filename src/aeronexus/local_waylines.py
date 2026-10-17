@@ -1,7 +1,8 @@
 """Pilot-2 local Cloud API wayline metadata, fixed loopback origin, GET only.
 
-The interactive CLI alone can log in to obtain a session. The web adapter
-never logs in, refreshes tokens, follows downloads or issues flight commands.
+Existing local Cloud browser sessions can be handed off after explicit setup.
+Only the optional --login CLI submits a password. The read adapter never logs
+in, refreshes tokens, follows downloads or issues flight commands.
 """
 import argparse
 import asyncio
@@ -56,7 +57,7 @@ def credentials_path() -> Path:
                                "~/.config/aeronexusadvanced/pilot-waylines.json")).expanduser()
 
 
-def load_credentials(path: Path) -> Credentials | None:
+def load_private_json(path: Path) -> dict | None:
     """No symlink, FIFO, foreign owner or group/world-readable credential file."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -73,11 +74,31 @@ def load_credentials(path: Path) -> Credentials | None:
             data = stream.read(16385)
         if len(data) > 16384:
             raise LocalWaylineError("configuration_error")
-        return Credentials.parse(json.loads(data))
-    except (OSError, ValueError, UnicodeError):
+        value = json.loads(data)
+        if not isinstance(value, dict):
+            raise LocalWaylineError("configuration_error")
+        return value
+    except (OSError, ValueError, UnicodeError, RecursionError):
         raise LocalWaylineError("configuration_error") from None
     finally:
         os.close(fd)
+
+
+def load_credentials(path: Path) -> Credentials | None:
+    value = load_private_json(path)
+    return Credentials.parse(value) if value is not None else None
+
+
+def handoff_path() -> Path:
+    return credentials_path().with_name("session-handoff.json")
+
+
+def handoff_enabled() -> bool:
+    try:
+        value = load_private_json(handoff_path())
+        return isinstance(value, dict) and set(value) == {"enabled"} and value["enabled"] is True
+    except LocalWaylineError:
+        return False
 
 
 async def _json_response(response: httpx.Response) -> dict:
@@ -187,7 +208,7 @@ class LocalWaylineReader:
                 return {"state": "configuration_error", "waylines": []}
             if credentials is None:
                 self._credentials, self._result = None, None
-                return {"state": "not_configured", "waylines": []}
+                return {"state": "awaiting_browser_session" if handoff_enabled() else "not_configured", "waylines": []}
             if credentials == self._credentials and time.monotonic() < self._until:
                 return self._result
             try:
@@ -212,7 +233,7 @@ async def login(username: str, password: str, flag: int, *, transport=None) -> C
     return Credentials.parse(data)
 
 
-def save_credentials(path: Path, credentials: Credentials) -> None:
+def save_private_json(path: Path, value: dict) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = path.parent.stat()
     if path.parent.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
@@ -220,8 +241,7 @@ def save_credentials(path: Path, credentials: Credentials) -> None:
     fd, temporary = tempfile.mkstemp(prefix=".pilot-waylines-", dir=path.parent)
     try:
         with os.fdopen(fd, "w") as stream:
-            json.dump({"workspace_id": credentials.workspace_id,
-                       "access_token": credentials.access_token}, stream)
+            json.dump(value, stream)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -230,13 +250,25 @@ def save_credentials(path: Path, credentials: Credentials) -> None:
             os.unlink(temporary)
 
 
+def save_credentials(path: Path, credentials: Credentials) -> None:
+    save_private_json(path, {"workspace_id": credentials.workspace_id,
+                            "access_token": credentials.access_token})
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Lokale Pilot-2-Waylines lesen; keine Flugbefehle.")
-    parser.add_argument("--configure", action="store_true", help="Am lokalen Cloud-Server anmelden und Sitzung privat speichern")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--configure", action="store_true", help="Vorhandene Cloud-Sitzung automatisch übernehmen; keine Passwortabfrage")
+    mode.add_argument("--login", action="store_true", help="Optionale manuelle Kontoanmeldung")
     parser.add_argument("--account", choices=("web", "pilot"), default="web")
     args = parser.parse_args()
     try:
         if args.configure:
+            save_private_json(handoff_path(), {"enabled": True})
+            print("Automatische Sitzungsübernahme aktiviert. Die bereits angemeldete lokale Cloud-Oberfläche öffnen; keine erneute Kontoabfrage.")
+            if load_credentials(credentials_path()) is None:
+                print("Warte auf die vorhandene Browser-/Pilot-2-Sitzung. Das Web-Hilfsskript muss installiert sein.")
+        elif args.login:
             username = input("Lokaler Cloud-Benutzername: ").strip()
             password = getpass("Lokales Cloud-Passwort (wird nicht gespeichert): ")
             credentials = asyncio.run(login(username, password, 1 if args.account == "web" else 2))

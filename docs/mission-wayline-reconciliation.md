@@ -109,20 +109,65 @@ Voraussetzung: Der bereits migrierte Cloud-API-Server läuft auf dem Pi an
 lokales Benutzerkonto. Die Anbindung startet oder verändert keine Container,
 Datenbank, Brokerrechte oder Legacy-Dienste.
 
-Nach Installation des neuen Codes als Dienstbenutzer `mason`:
+Nach Installation des neuen Codes als Dienstbenutzer `mason` aktiviert dieser
+Befehl die Übernahme einer bestehenden Anmeldung **ohne Kontoabfrage**:
 
 ```bash
 cd ~/Projekte/AeroNexusAdvanced
 .venv/bin/python -m aeronexus.local_waylines --configure
 ```
 
-Der Benutzername wird am Terminal erfragt, das Passwort verdeckt. Standard ist
-ein bestehendes **Web-Konto** des lokalen Cloud-Servers. Für ein bestehendes
-Pilot-Konto explizit `--configure --account pilot` verwenden. Keine Benutzer
-werden angelegt, keine Standardpasswörter ausprobiert und keine Rechte erhöht.
-Nur dieser explizite CLI-Einrichtungsschritt sendet POST `/manage/api/v1/login`.
-Anschließend wird der lesende Wayline-GET geprüft. Erst bei Erfolg wird die
-bisherige Sitzungsdatei atomar ersetzt. Das Passwort wird nie gespeichert.
+Eine bereits vorhandene private Sitzungsdatei wird weiterverwendet. Andernfalls
+wartet der Adapter als `awaiting_browser_session` auf die angemeldete lokale
+Cloud-Oberfläche. Dafür das mitgelieferte Hilfsskript in die bereits migrierte
+Weboberfläche übernehmen und ausschließlich deren Container neu bauen:
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+python3 scripts/enable_wayline_session_handoff.py --apply
+cd cloud-server/edge
+docker compose -f compose.core.yaml -f compose.brand.yaml build control
+docker compose -f compose.core.yaml -f compose.brand.yaml \
+  up -d --no-deps --no-build --pull never control
+```
+
+Build und Start nur nacheinander bei erfolgreichem vorherigem Befehl ausführen.
+Das Vorbereitungswerkzeug verändert nur `index.html` und eine öffentliche
+JavaScript-Datei im migrierten Web-Quellbaum, mit Sicherung der bisherigen
+HTML-Datei. Es baut oder startet selbst nichts und ändert keinen Backendcode.
+Danach die bereits angemeldete Cloud-Webseite auf
+`http://192.168.178.63:8085` neu laden. Sie übernimmt ihre vorhandenen Werte
+`x-auth-token` und `workspace_id` aus ihrem eigenen Browser-Speicher. Keine
+Browserprofile werden durchsucht, keine Passwörter ausgelesen oder abgefragt.
+Das gilt auch für eine bereits angemeldete Pilot-2-WebView nach Neuladen.
+Ohne vorhandene Anmeldung kann kein gültiges Token erfunden werden; dann
+bleibt der Zustand wartend. Die normale Cloud-Anmeldung wird nicht entfernt.
+
+Der Helfer übergibt die bestehende Sitzung alle 30 Sekunden im sichtbaren
+Browserfenster an einen dedizierten HTTPS-Endpunkt des Advanced-Dienstes.
+Dieser ist separat opt-in (private `session-handoff.json`, Modus 0600) und
+akzeptiert ausschließlich direkte LAN-/Loopback-Anfragen per HTTPS an
+`192.168.178.63:8000` mit exakter Origin `http://192.168.178.63:8085`.
+Es gibt kein globales CORS und keine Lockerung vorhandener Studio-APIs.
+Vor dem Speichern validiert GET `/manage/api/v1/users/current` das Token
+am bestehenden Server und bestätigt Workspace sowie Kontotyp 1 oder 2.
+JWT-Inhalte werden nicht bloß decodiert und es werden keine Tokens signiert.
+Andere Workspaces ersetzen eine bereits eingerichtete Sitzung nicht.
+
+Die HTTPS-CA muss im verwendeten Browser/WebView vertraut sein. Ein TLS-/CORS-
+oder Serverfehler unterbricht nicht die Cloud-Oberfläche; der Helfer versucht
+es später erneut. Bestehende gleiche Tokens werden höchstens einmal pro Minute
+erneut geprüft. Tokenwechsel wird erneut validiert und atomar gespeichert.
+Browserabmeldung allein löscht nicht die separate private Pi-Sitzungsdatei;
+deren Gültigkeit bleibt Sache des lokalen Cloud-Servers. Zum Abschalten die
+private `session-handoff.json` entfernen, gegebenenfalls auch die Sitzungsdatei.
+
+Nur als ausdrücklich gewählte Alternative bleibt die manuelle Anmeldung:
+`.venv/bin/python -m aeronexus.local_waylines --login` bzw.
+`--login --account pilot`. Nur sie fragt Benutzername/Passwort ab und sendet
+POST `/manage/api/v1/login`; das Passwort bleibt ungespeichert. Sie prüft den
+Wayline-GET vor dem Ersetzen einer bestehenden Datei. Es werden keine Benutzer
+angelegt, Standardpasswörter ausprobiert oder Rechte erhöht.
 
 Die Datei `~/.config/aeronexusadvanced/pilot-waylines.json` enthält ausschließlich
 Workspace-ID und Sitzungstoken, Modus 0600 im Verzeichnis 0700. Dieses Token hat
@@ -132,8 +177,9 @@ Dateibesitzer und unsichere Dateirechte werden verweigert. Die Datei gehört
 nicht ins Repository oder in Chat-Ausgaben. Optionaler privater Pfad:
 `AERONEXUS_LOCAL_WAYLINES_FILE`; CLI und Dienst müssen denselben Pfad verwenden.
 
-Die eingerichtete Datei aktiviert den Adapter ausdrücklich. Ohne Datei bleibt
-er `not_configured` und sendet keine Anfrage. Ein Dienstneustart ist für eine
+Die eingerichtete Datei aktiviert den Adapter ausdrücklich. Ohne Datei und
+ohne Übergabeaktivierung bleibt er `not_configured` und sendet keine Anfrage.
+Ein Dienstneustart ist für eine
 neue Sitzung nicht nötig; der nächste Bericht liest die Datei erneut. Zum
 Deaktivieren die eigene Sitzungsdatei lokal entfernen; ein eventuell noch
 serverseitig gültiges Token wird dadurch nicht widerrufen.
@@ -147,10 +193,11 @@ cd ~/Projekte/AeroNexusAdvanced
 
 Danach denselben HTTPS-Abgleichsbefehl oben ausführen. `connected` mit null
 Waylines bedeutet erfolgreich leer; `not_configured`, `configuration_error`,
-`authentication_required`, `business_error`, `upstream_error`, `unavailable`,
+`awaiting_browser_session`, `authentication_required`, `business_error`, `upstream_error`, `unavailable`,
 `invalid_response` und `inventory_changed` bedeuten keinen bestätigten Bestand.
-Bei abgelaufener Sitzung erneut lokal `--configure` ausführen; Webaufrufe
-melden sich weder neu an noch verlängern sie Sitzungen.
+Bei abgelaufener Sitzung eine noch angemeldete lokale Cloud-Webseite neu laden;
+deren eigene erfolgreiche Sitzungsverlängerung kann das neue Token übergeben.
+Advanced meldet sich dabei weder neu an noch verlängert es selbst Sitzungen.
 
 Der Adapter verwendet ausschließlich die feste Loopback-Adresse und
 `GET /wayline/api/v1/workspaces/{workspace_id}/waylines` mit `x-auth-token`.
