@@ -218,6 +218,15 @@ Dateiname. Die Seite zeigt eine Karte mit Aufnahmepunkten, Footprints und GSD;
 unplausible GNSS-Positionen sind markiert.
 Details: [docs/photo-catalog.md](docs/photo-catalog.md).
 
+## CSV-Wegpunkte im Mission Studio
+
+Im Missionseditor lassen sich CSV-Dateien mit `latitude`, `longitude` und
+optional `take_photo` prüfen und als neue Wegpunktliste übernehmen. Vorschau
+mit Karte und Tabelle, Zeilenfehler, explizite Trenn-/Dezimalzeichen und
+Rückgängig/Wiederherstellen; Missionswerte bleiben erhalten, Speichern bleibt
+ein eigener Schritt. UTF-8, maximal 512 KiB und 500 ausführbare Wegpunkte.
+Anleitung und Dateivertrag: [CSV-Import](docs/mission-csv-import.md).
+
 ## Thermal (`/thermal`)
 
 Eigener Web-UI-Tab für radiometrische DJI-Wärmebilder (M3T/M4T R-JPEG) aus

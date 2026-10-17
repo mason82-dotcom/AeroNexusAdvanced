@@ -1,7 +1,6 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026 – Basis `main` @ `cff65d4` (PR #30),
-plus Fotokatalog/M3E (Branch `feature/photo-catalog-m3e-20261017`).
+**Stand:** 17. Oktober 2026 – `main` mit PR #34, #5 und #24.
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
 ## Aktueller Stand auf `main`
@@ -22,7 +21,9 @@ plus Fotokatalog/M3E (Branch `feature/photo-catalog-m3e-20261017`).
 | Multispektral-Serienbericht mit NDVI-Maske und Histogrammen | gemergt; Live-Pi-Abnahme offen | #32 |
 | GeoTIFF-/COG-Ergebniskatalog und Kachelviewer `/results` | gemergt; Live-Pi-Abnahme offen | #33 |
 | Medien-Sync-Korrekturen, M3M-Quellenkonsistenz, GeoTIFF nur bei exaktem Nadir | gemergt, auf dem Pi aktiv | #30 |
-| Fotokatalog `/media` (M3E/M3T/M4T/M3M nach Metadaten), HTTP-Kompression, CSP-/Mobil-Korrekturen | Branch, auf dem Pi live geprüft | – |
+| Fotokatalog `/media` (M3E/M3T/M4T/M3M nach Metadaten), HTTP-Kompression, CSP-/Mobil-Korrekturen | gemergt, auf dem Pi live geprüft | #34 |
+| CSV-Wegpunkte im Mission Studio: Vorschau, Zeilenfehler, Rückgängig ([CSV-Import](mission-csv-import.md)) | gemergt; Browser-Abnahme am Pi bestanden (Chromium, Desktop und 390 px) | #24 |
+| Cloud API 2: strikte `online`-Auswertung (unbekannt statt offline), x86_64-Rollout-Doku | gemergt | #5 |
 
 - Basisprüfung bei `7a9edf4`: **857 bestanden, 1 übersprungen**, 1 bekannte
   Starlette/httpx-Warnung; GitHub Actions für diesen Commit erfolgreich.
@@ -87,12 +88,14 @@ plus Fotokatalog/M3E (Branch `feature/photo-catalog-m3e-20261017`).
   (Seitenverhältnis 256:1 als Mindestbreite) – behoben.
 - Leaflet-Ebenensymbol wurde auf allen Kartenseiten von der CSP blockiert – behoben.
 - Medien-Sync läuft im Ereignis-Modus (MinIO-Listen-Recht vorhanden).
+- Betrieb bestätigt (17.10.2026): FlightHub-2-EU-Abfrage ist bewusst
+  deaktiviert; Live-Quelle ist der DJI-Cloud-API-MQTT-Feed.
+- Gemergte Branches von #30–#34 entfernt.
 
 ### Offen
 
-- FlightHub-Abfrage vs. MQTT-Feed: gewünschten Betrieb bestätigen.
-- Draft-PRs #5 (Cloud API 2) und #24 (CSV-Import Studio) entscheiden; beide
-  haben Konflikte mit `main`. Gemergte Remote-Branches von #31–#33 löschen.
+- CSV-Import: Abnahme auf Android und Speichern/KMZ-Export einer echten Mission
+  (Browser-Abnahme ohne Speichern am 17.10.2026 bestanden).
 - Fest verdrahtetes Heimnetz `192.168.178.0/24` konfigurierbar machen.
 - Fachliche Abnahmen: PV-Inspektion mit echten PV-Aufnahmen, Multispektral-
   und Thermal-Footprints mit einem echten Nadir-Flug.

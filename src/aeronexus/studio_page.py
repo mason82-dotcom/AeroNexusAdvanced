@@ -71,6 +71,20 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .media-card button{font-size:12px;padding:7px}
 dialog{max-width:min(900px,95vw);max-height:90vh;background:#102039;color:#fff;border:1px solid #436080;border-radius:15px;padding:18px}
 dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-height:68vh;display:block;margin:auto}
+#csv-dialog{width:min(760px,95vw);padding:0;overflow:hidden}
+#csv-dialog[open]{display:flex;flex-direction:column}
+#csv-dialog [hidden]{display:none}
+.csv-heading,.csv-actions{padding:14px 18px;flex:0 0 auto}
+.csv-body{padding:0 18px;overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.csv-actions{border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+.csv-actions button{flex:1}
+#csv-map{height:220px;background:var(--bg);border:1px solid var(--line);border-radius:9px;margin:12px 0}
+.csv-table{overflow:auto;max-height:250px;border:1px solid var(--line);border-radius:9px;scrollbar-gutter:stable;scrollbar-color:var(--muted) var(--bg);scrollbar-width:thin}
+.csv-table table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12px}
+.csv-table th,.csv-table td{padding:8px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line)}
+.csv-table th{position:sticky;top:0;background:var(--pane)}
+#csv-errors{padding-left:24px;overflow-wrap:anywhere;color:#ffc1c8}
+#csv-message{min-height:44px;overflow-wrap:anywhere}
 .fleet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
 .fleet-card{border:1px solid #3a5272;border-radius:13px;padding:17px;background:#142943}
 .fleet-card h3{font-size:17px}.fleet-data{display:grid;grid-template-columns:1fr 1fr;gap:9px}
@@ -195,6 +209,8 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="button-row"><button id="insert-midpoint">Zwischenpunkt danach</button><button id="copy-point">WGS84 kopieren</button></div>
 </div>
 <hr>
+<button id="open-csv" style="width:100%">Wegpunkte aus CSV importieren</button>
+<p class="note">CSV zuerst prüfen, dann Wegpunkte im aktuellen Entwurf ersetzen. Speichern bleibt ein eigener Schritt.</p>
 <label>Eigene AeroNexus-KMZ wieder öffnen<input type="file" id="import-kmz" accept=".kmz,application/vnd.google-earth.kmz"></label>
 <div class="button-row"><button id="import-mission">KMZ importieren & bearbeiten</button></div>
 <div class="button-row"><button class="primary" id="export-mission">KMZ / DJI WPML exportieren</button></div>
@@ -332,6 +348,32 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </main>
 </div>
 <dialog id="media-dialog"><div class="flex between"><strong id="preview-name">Vorschau</strong><button id="preview-close">Schließen</button></div><div id="preview-content" style="margin-top:15px"></div></dialog>
+<dialog id="csv-dialog" aria-labelledby="csv-title" aria-describedby="csv-help">
+<div class="csv-heading flex between"><h2 id="csv-title" style="margin:0">Wegpunkte aus CSV</h2><button id="csv-close" autofocus>Schließen</button></div>
+<div class="csv-body">
+<p id="csv-help" class="note">UTF-8, maximal 512 KiB und 500 ausführbare Wegpunkte. Pflichtspalten: latitude (Breitengrad), longitude (Längengrad), optional take_photo. Ausschließlich WGS84 in Grad; keine automatische Erkennung der Spaltenreihenfolge.</p>
+<label for="csv-file">CSV-Datei<input id="csv-file" type="file" accept=".csv,text/csv" aria-describedby="csv-help csv-message"></label>
+<div class="field-row">
+<label for="csv-delimiter">Trennzeichen<select id="csv-delimiter"><option value="semicolon">Semikolon (;)</option><option value="comma">Komma (,)</option><option value="tab">Tabulator</option></select></label>
+<label for="csv-decimal">Zahlenformat<select id="csv-decimal"><option value="dot">Dezimalpunkt · 49.1533</option><option value="comma">Dezimalkomma · 49,1533</option></select></label>
+</div>
+<p class="note">Foto: true/false, 1/0 oder ja/nein; leer bedeutet kein Foto. Koordinaten werden auf 7 Dezimalstellen gerundet. Höhe, Geschwindigkeit und weitere Missionswerte bleiben aus dem aktuellen Entwurf erhalten. Zusätzliche Spalten werden abgelehnt.</p>
+<div class="button-row"><button id="csv-template">CSV-Beispiel herunterladen</button></div>
+<div id="csv-message" class="status" role="status" aria-live="polite" tabindex="-1">Datei auswählen und Vorschau prüfen. Noch keine Wegpunkte übernommen.</div>
+<ul id="csv-errors" hidden></ul>
+<div id="csv-result" hidden>
+<p class="note">Spaltenreihenfolge und Lage prüfen: plausible vertauschte Koordinaten lassen sich nicht automatisch erkennen. Kartenkacheln werden wie im Missionseditor beim bestehenden Kartenanbieter geladen.</p>
+<div id="csv-map" role="region" aria-label="Kartenprüfung der CSV-Wegpunkte"></div>
+<p id="csv-map-message" class="note" role="status"></p>
+<div class="csv-table" tabindex="0" role="region" aria-label="CSV-Wegpunkttabelle">
+<table><caption id="csv-range">Geprüfte Wegpunkte</caption><thead><tr><th scope="col">Zeile</th><th scope="col">Breitengrad</th><th scope="col">Längengrad</th><th scope="col">Foto</th></tr></thead><tbody id="csv-rows"></tbody></table>
+</div>
+<div class="button-row"><button id="csv-more" hidden>Weitere 50 Wegpunkte anzeigen</button></div>
+</div>
+<p class="note">„Wegpunkte ersetzen“ ersetzt alle Wegpunkte des aktuellen Entwurfs. Rückgängig ist möglich; gespeicherte Missionen ändern sich erst durch „Speichern“. Kein Upload zur Drohne.</p>
+</div>
+<div class="csv-actions"><button id="csv-check">Vorschau prüfen</button><button id="csv-apply" class="primary" disabled>Wegpunkte ersetzen</button></div>
+</dialog>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 "use strict";
@@ -346,6 +388,7 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Fixed initial view of Forst (Baden), postal code 76694, approximate town centre.
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
+const SATELLITE_TILE_URL="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
 let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainGeo=null,terrainLoadSerial=0,terrainProfile=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
@@ -538,7 +581,7 @@ function getMap(){
     maxZoom:19,maxNativeZoom:19,referrerPolicy:"strict-origin-when-cross-origin",
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
   });
-  mapTiles.satellite=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{
+  mapTiles.satellite=L.tileLayer(SATELLITE_TILE_URL,{
     maxZoom:19,maxNativeZoom:19,attribution:"Tiles &copy; Esri and data providers"
   });
   // OSM may return a 403 warning *as an image* with HTTP 200. Start with
@@ -836,6 +879,126 @@ async function removeMission(){
      !window.confirm("Mission wirklich dauerhaft löschen?"))return;
   await api("/api/v1/studio/missions/"+encodeURIComponent(missionId),{method:"DELETE"});
   newMission({skipConfirm:true});await loadMissions();notice("Mission gelöscht");
+}
+let csvPreview=null,csvSerial=0,csvAbort=null,csvMap=null,csvShown=0;
+function csvInvalidate(message="Datei oder Format geändert. Vorschau erneut prüfen."){
+  csvSerial++;
+  csvAbort?.abort();csvAbort=null;csvPreview=null;
+  if(csvMap){csvMap.remove();csvMap=null;}
+  $("csv-apply").disabled=true;$("csv-check").disabled=false;
+  $("csv-check").textContent="Vorschau prüfen";
+  $("csv-dialog").setAttribute("aria-busy","false");
+  $("csv-result").hidden=true;$("csv-errors").hidden=true;
+  $("csv-errors").replaceChildren();$("csv-rows").replaceChildren();
+  $("csv-file").removeAttribute("aria-invalid");
+  $("csv-message").className="status";$("csv-message").textContent=message;
+}
+function openCsvImport(){
+  csvInvalidate("Datei auswählen und Vorschau prüfen. Noch keine Wegpunkte übernommen.");
+  $("csv-dialog").showModal();
+}
+function csvMoreRows(){
+  if(!csvPreview)return;
+  const end=Math.min(csvShown+50,csvPreview.rows.length);
+  for(const row of csvPreview.rows.slice(csvShown,end)){
+    const tr=els("tr");
+    for(const value of [row.line,row.latitude.toFixed(7),row.longitude.toFixed(7),row.take_photo?"Ja":"Nein"])
+      tr.appendChild(els("td","",value));
+    $("csv-rows").appendChild(tr);
+  }
+  csvShown=end;
+  $("csv-range").textContent=csvShown+" von "+csvPreview.rows.length+" Wegpunkten · Dateireihenfolge";
+  $("csv-more").hidden=csvShown>=csvPreview.rows.length;
+}
+function csvShowMap(){
+  $("csv-map-message").textContent="";
+  if(!window.L){
+    $("csv-map-message").textContent="Kartenbibliothek nicht verfügbar. Lage anhand der Koordinatentabelle prüfen.";
+    return;
+  }
+  csvMap=L.map("csv-map").setView([HOME_VIEW.latitude,HOME_VIEW.longitude],15);
+  L.tileLayer(SATELLITE_TILE_URL,{maxZoom:19,maxNativeZoom:19,
+    attribution:"Tiles &copy; Esri and data providers"}).on("tileerror",()=>{
+      $("csv-map-message").textContent="Kartenbilder nicht verfügbar. Wegpunkte und Tabelle bleiben prüfbar.";
+    }).addTo(csvMap);
+  const points=csvPreview.waypoints.map(p=>[p.latitude,p.longitude]);
+  L.polyline(points,{color:"#48a8f5",weight:3}).addTo(csvMap);
+  if($("close-route").checked){
+    L.polyline([points[points.length-1],points[0]],{color:"#ffce74",dashArray:"8 6"}).addTo(csvMap);
+  }
+  csvPreview.rows.forEach((p,n)=>L.circleMarker([p.latitude,p.longitude],{radius:5,color:"#48a8f5"})
+    .bindTooltip("WP "+(n+1)+" · CSV-Zeile "+p.line).addTo(csvMap));
+  csvMap.fitBounds(L.latLngBounds(points),{padding:[20,20],maxZoom:17});
+}
+async function previewCsv(){
+  csvInvalidate("CSV wird geprüft…");
+  const serial=csvSerial,file=$("csv-file").files?.[0];
+  const signature=editorSignature(editorSnapshot());
+  const controller=new AbortController();csvAbort=controller;
+  let timeout;
+  try{
+    if(!file)throw new Error("Bitte eine CSV-Datei auswählen.");
+    if(!file.size||file.size>512*1024)throw new Error("CSV muss 1 Byte bis 512 KiB groß sein.");
+    $("csv-check").disabled=true;$("csv-check").textContent="Wird geprüft…";
+    $("csv-dialog").setAttribute("aria-busy","true");
+    const params=new URLSearchParams({delimiter:$("csv-delimiter").value,
+      decimal:$("csv-decimal").value,close_route:String($("close-route").checked)});
+    timeout=setTimeout(()=>controller.abort(),30000);
+    const response=await api("/api/v1/studio/missions/preview.csv?"+params,{
+      method:"POST",headers:{"Content-Type":"text/csv;charset=utf-8"},body:file,signal:controller.signal});
+    const data=await response.json();
+    if(serial!==csvSerial)return;
+    if(!data.valid){
+      $("csv-file").setAttribute("aria-invalid","true");
+      $("csv-message").className="status error";
+      $("csv-message").textContent=data.error_count+" Fehler. Keine Wegpunkte übernommen.";
+      $("csv-errors").hidden=false;
+      for(const issue of data.errors){
+        const prefix=issue.line?"Zeile "+issue.line:"Route";
+        $("csv-errors").appendChild(els("li","",prefix+(issue.column?" · "+issue.column:"")+": "+issue.message));
+      }
+      if(data.error_count>data.errors.length)
+        $("csv-errors").appendChild(els("li","","Es werden die ersten 50 Fehler angezeigt."));
+      $("csv-message").focus();return;
+    }
+    csvPreview={...data,signature};csvShown=0;
+    $("csv-result").hidden=false;csvMoreRows();
+    $("csv-message").className="status good";
+    $("csv-message").textContent=data.waypoints.length+" Wegpunkte geprüft. Lage und Reihenfolge kontrollieren, dann übernehmen.";
+    $("csv-apply").disabled=false;
+    try{csvShowMap();}catch(_){
+      $("csv-map-message").textContent="Kartenvorschau nicht verfügbar. Lage anhand der Koordinatentabelle prüfen.";
+    }
+  }catch(error){
+    if(serial!==csvSerial)return;
+    $("csv-message").className="status error";
+    $("csv-message").textContent=error.name==="AbortError"?
+      "Zeitlimit erreicht. Verbindung prüfen und Vorschau erneut starten.":errorMessage(error);
+    $("csv-message").focus();
+  }finally{
+    clearTimeout(timeout);
+    if(serial===csvSerial){
+      csvAbort=null;$("csv-check").disabled=false;$("csv-check").textContent="Vorschau prüfen";
+      $("csv-dialog").setAttribute("aria-busy","false");
+    }
+  }
+}
+function applyCsv(){
+  if(!csvPreview||$("csv-apply").disabled)return;
+  if(editorSignature(editorSnapshot())!==csvPreview.signature){
+    csvInvalidate("Missionsentwurf geändert. Vorschau erneut prüfen.");return;
+  }
+  historyRecord();
+  mission.waypoints=csvPreview.waypoints.map(p=>({...p}));selected=-1;
+  redraw();historyRecord();fitMission();
+  const count=mission.waypoints.length;
+  $("csv-dialog").close();
+  notice(count+" CSV-Wegpunkte übernommen. Rückgängig möglich; zum Behalten Mission speichern.");
+}
+function downloadCsvTemplate(){
+  const blob=new Blob(["latitude;longitude;take_photo\n49.1533000;8.5841700;true\n49.1535000;8.5844000;false\n"],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob),a=els("a");a.href=url;a.download="AeroNexus-Wegpunkte-Beispiel.csv";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 async function importMission(){
   if(!allowDiscard())return;
@@ -1801,6 +1964,15 @@ function wire(){
   });
   $("export-mission").addEventListener("click",()=>exportMission().catch(err=>notice(err.message,true)));
   $("import-mission").addEventListener("click",()=>importMission().catch(err=>notice(err.message,true)));
+  $("open-csv").addEventListener("click",openCsvImport);
+  $("csv-close").addEventListener("click",()=>$("csv-dialog").close());
+  $("csv-dialog").addEventListener("close",()=>{csvInvalidate();$("open-csv").focus();});
+  for(const id of ["csv-file","csv-delimiter","csv-decimal"])
+    $(id).addEventListener("change",()=>csvInvalidate());
+  $("csv-check").addEventListener("click",previewCsv);
+  $("csv-apply").addEventListener("click",applyCsv);
+  $("csv-more").addEventListener("click",csvMoreRows);
+  $("csv-template").addEventListener("click",downloadCsvTemplate);
   $("add-mode").addEventListener("click",()=>{
     if(geoDraw)setGeoMode(false);
     addMode=!addMode;$("add-mode").textContent=addMode?"Klickmodus beenden":"+ Auf Karte setzen";
