@@ -185,6 +185,12 @@ startet die Karte automatisch über **76694 Forst**.
   authentifizierte SDK-BFF-Instanz auf einem privaten x86_64-Server**
   benötigt; ein DJI-Entwicklerkonto oder eine Lizenz allein genügt nicht.
   Diese Anbindung ist standardmäßig **deaktiviert**.
+- **Livestream** (Bereich „Kamerabild“): Streams, die DJI Pilot 2 an den
+  lokalen MediaMTX sendet, lassen sich direkt ansehen (WebRTC, ca. 1 s
+  Verzögerung, Vollbild, Auflösung/fps/Bitrate). Das Gateway leitet nur die
+  WebRTC-Anmeldung weiter; das Video kommt per UDP direkt vom Pi. Der Browser
+  sieht keine Streampfade oder Seriennummern. In Pilot 2 H.264 wählen.
+  Details: [docs/livestream.md](docs/livestream.md).
 - Keine Dock-Integration, Flugbefehle, DJI-Missionsausführung oder
   ungeprüfte Cloud-Uploads. Das FlightHub-2-Live-Polling läuft wie bisher.
 
