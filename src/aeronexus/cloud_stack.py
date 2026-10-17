@@ -113,7 +113,7 @@ def fleet_view(device_views, feed: dict | None) -> dict:
         if view.get("provider") != "dji-cloud-api":
             continue
         rows.append({"kind": view.get("kind"), "name": view.get("name"),
-                     "online": view.get("online") is True and view.get("freshness") == "fresh",
+                     "online": view.get("online") if view.get("freshness") == "fresh" else None,
                      "freshness": view.get("freshness"), "received_at": view.get("received_at")})
     rows.sort(key=lambda r: (r["kind"] != "controller", not r["online"], r["name"] or ""))
     feed = feed or {}
