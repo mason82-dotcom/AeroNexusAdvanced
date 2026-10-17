@@ -1,7 +1,7 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 17. Oktober 2026  
-**Phase:** 20 (DEM-Hangneigungsanalyse im separaten Entwicklungsbranch;
+**Phase:** 20 (DEM-Hangneigungsanalyse über PR #16;
 GitHub CI: 641 Tests, eine bekannte Warnung; Pi-/Chrome-Abnahme offen).
 Phase 19 ist auf `main` mit dem Gelände-Overlay-Draping integriert.
 Phase 17/18 mit Geo-Polygonen, Flächenstreifen, GeoTIFF/STL,
