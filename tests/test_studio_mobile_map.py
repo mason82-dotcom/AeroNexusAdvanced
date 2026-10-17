@@ -63,7 +63,74 @@ let frames=[],resized=0,visited=[];
 const requestAnimationFrame=callback=>frames.push(callback);
 const map={invalidateSize(opts){assert.equal(opts.pan,false);resized++}};
 const switchTab=id=>visited.push(id);
-const methods=new Function('
+const methods=new Function(' {setCloudOverviewMinimized,setMapToolsExpanded,setMapInfoExpanded,setMapFocus};')(
+ $,document,map,requestAnimationFrame,switchTab,message=>String(message));
+const flush=()=>{while(frames.length)frames.shift()()};
+methods.setMapToolsExpanded(false);
+assert.equal($('map-toolbar').dataset.compact,'true');
+assert.equal($('map-tools-toggle').attrs['aria-expanded'],'false');
+methods.setMapToolsExpanded(true);
+assert.equal($('map-toolbar').dataset.compact,'false');
+assert.equal($('map-tools-toggle').attrs['aria-expanded'],'true');
+methods.setMapInfoExpanded(false);
+assert.equal($('map-info').dataset.minimized,'true');
+methods.setMapInfoExpanded(true);
+assert.equal($('map-info').dataset.minimized,'false');
+methods.setCloudOverviewMinimized(true);
+assert.equal($('cloud-overview-panel').dataset.minimized,'true');
+assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'false');
+methods.setCloudOverviewMinimized(false);
+assert.equal($('cloud-overview-panel').dataset.minimized,'false');
+assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'true');
+methods.setMapFocus(true);flush();
+assert.equal(active.has('map-focus-active'),true);
+assert.equal($('map-focus-toggle').attrs['aria-pressed'],'true');
+assert.equal(resized,1);
+assert.deepEqual(visited,[]);
+methods.setMapFocus(false);flush();
+assert.equal(active.has('map-focus-active'),false);
+assert.equal($('map-focus-toggle').attrs['aria-pressed'],'false');
+assert.equal(resized,2);
+console.log('Mobile map focus controls passed');
+"""
+    result = subprocess.run([node, "-e", program], input=source,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+,'document','map','requestAnimationFrame','switchTab','mapStatusSummary',code+
+ '\nreturn {setCloudOverviewMinimized,setMapToolsExpanded,setMapInfoExpanded,setMapFocus};')(
+ $,document,map,requestAnimationFrame,switchTab);
+const flush=()=>{while(frames.length)frames.shift()()};
+methods.setMapToolsExpanded(false);
+assert.equal($('map-toolbar').dataset.compact,'true');
+assert.equal($('map-tools-toggle').attrs['aria-expanded'],'false');
+methods.setMapToolsExpanded(true);
+assert.equal($('map-toolbar').dataset.compact,'false');
+assert.equal($('map-tools-toggle').attrs['aria-expanded'],'true');
+methods.setMapInfoExpanded(false);
+assert.equal($('map-info').dataset.minimized,'true');
+methods.setMapInfoExpanded(true);
+assert.equal($('map-info').dataset.minimized,'false');
+methods.setCloudOverviewMinimized(true);
+assert.equal($('cloud-overview-panel').dataset.minimized,'true');
+assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'false');
+methods.setCloudOverviewMinimized(false);
+assert.equal($('cloud-overview-panel').dataset.minimized,'false');
+assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'true');
+methods.setMapFocus(true);flush();
+assert.equal(active.has('map-focus-active'),true);
+assert.equal($('map-focus-toggle').attrs['aria-pressed'],'true');
+assert.equal(resized,1);
+assert.deepEqual(visited,[]);
+methods.setMapFocus(false);flush();
+assert.equal(active.has('map-focus-active'),false);
+assert.equal($('map-focus-toggle').attrs['aria-pressed'],'false');
+assert.equal(resized,2);
+console.log('Mobile map focus controls passed');
+"""
+    result = subprocess.run([node, "-e", program], input=source,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+,'document','map','requestAnimationFrame','switchTab','mapStatusSummary',code+
  '\nreturn {setCloudOverviewMinimized,setMapToolsExpanded,setMapInfoExpanded,setMapFocus};')(
  $,document,map,requestAnimationFrame,switchTab,message=>String(message));
 const flush=()=>{while(frames.length)frames.shift()()};
