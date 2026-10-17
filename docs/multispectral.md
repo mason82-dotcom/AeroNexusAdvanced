@@ -171,6 +171,15 @@ eingebetteten Viewer-JavaScript regressionsgetestet. Nach dem Update auf dem Pi
 den Katalog mit `.venv/bin/python -m aeronexus.multispectral --ndvi` aktualisieren,
 um gespeicherte Übersichten nach den neuen Regeln neu zu berechnen.
 
+## Optionale Orthomosaik-Verarbeitung
+
+Unter „Orthomosaik mit Metashape“ können markierte Aufnahmen für einen externen
+Arbeitsrechner verpackt werden. Der Pi erstellt ausschließlich Arbeitskopien.
+RGB-Orthomosaike und vier unabhängige MS-Rohbandmosaike sind vorgesehen; letztere
+sind keine kalibrierten, pixelgleich registrierten NDVI-Produkte.
+Voraussetzungen, Grenzen und Bedienung stehen in
+[Metashape-Anbindung](metashape-integration.md).
+
 ## Vorschläge
 
 - Reflexions-Referenztafel (Kalibrierpanel) zur absoluten Reflexion.
