@@ -99,7 +99,8 @@ def terrain_stl(grid: TerrainGrid) -> bytes:
     return output.getvalue()
 
 
-def geotiff_preview(content: bytes, *, max_bytes: int=8*1024*1024) -> TerrainGrid:
+def geotiff_preview(content: bytes, *, max_bytes: int=8*1024*1024,
+                    geo_info: dict | None = None) -> TerrainGrid:
     """Sample a GeoTIFF on the Pi with optional GDAL, no disk persistence.
 
     Reject unknown spatial reference and non-metre unit assumptions.
@@ -164,9 +165,32 @@ def geotiff_preview(content: bytes, *, max_bytes: int=8*1024*1024) -> TerrainGri
         values=[[float(v) for v in row] for row in data]
         if nodata is not None and any(v==nodata for row in values for v in row):
             raise ValueError("DEM contains NoData; clip to a complete region first")
-        return TerrainGrid(heights_m=values,
-                           x_step_m=xdist*(ds.RasterXSize-1)/(width-1),
-                           y_step_m=ydist*(ds.RasterYSize-1)/(height-1))
+        grid=TerrainGrid(heights_m=values,
+                         # GDAL resamples pixel-centre values; the sampled
+                         # centres are W/width and H/height pixels apart.
+                         x_step_m=xdist*ds.RasterXSize/width,
+                         y_step_m=ydist*ds.RasterYSize/height)
+        if geo_info is not None:
+            geo_info.clear()
+            # Only return literal WGS84 positions if the bounded local
+            # tangent-plane model is meaningful and centres stay in range.
+            # Projected CRS needs a separate verified coordinate transform.
+            if spatial.IsGeographic():
+                lon_step=gt[1]*ds.RasterXSize/width
+                lat_step=gt[5]*ds.RasterYSize/height
+                west=gt[0]+gt[1]*ds.RasterXSize/(2*width)
+                north=gt[3]+gt[5]*ds.RasterYSize/(2*height)
+                east=west+(width-1)*lon_step
+                south=north+(height-1)*lat_step
+                if (all(isfinite(v) for v in (west,north,east,south)) and
+                        -180<=west<=east<=180 and -90<=south<=north<=90 and
+                        east-west<=0.45 and north-south<=0.45):
+                    geo_info.update({"crs":"EPSG:4326","reference":"sample-centres",
+                                     "west_lon":west,"north_lat":north,
+                                     "lon_step_deg":lon_step,"lat_step_deg":lat_step,
+                                     "horizontal_units":"WGS84 degrees",
+                                     "vertical_reference":"unspecified"})
+        return grid
     finally:
         ds=None
         gdal.Unlink(path)
