@@ -346,6 +346,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button id="map-focus-toggle" type="button" class="map-primary" aria-pressed="false">Kartenfokus</button>
 <button id="map-tools-toggle" type="button" class="map-primary" aria-expanded="false" aria-controls="map-tools-details">Werkzeuge</button>
 <button id="wayline-preview-fit" hidden type="button" class="map-primary">Route zentrieren</button>
+<button id="cloud-overview-map-open" hidden type="button" class="map-primary" aria-pressed="false">Alle Cloud-Routen</button>
 <div id="map-tools-details" class="map-extra" style="display:contents">
 <select id="map-layer" class="map-extra" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
 <button id="pilot2-map-toggle" class="map-extra" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button>
@@ -1248,6 +1249,7 @@ function renderWaylines(){
   $("wayline-overview-open").disabled=!(waylineData?.local_pilot?.state==="connected"&&
     waylineData.local_pilot.pagination_complete===true&&
     waylineData.waylines.some(route=>route.provider==="pilot2-local-cloud"));
+  syncCloudOverviewShortcut();
 }
 // Leaflet must measure the newly revealed map on mobile before computing fit zoom.
 function fitWaylineMapBounds(bounds,isCurrent){
@@ -1359,6 +1361,18 @@ function cloudOverviewFormatDistance(distance){
   if(distance>=1000)return (distance/1000).toLocaleString("de-DE",{maximumFractionDigits:2})+" km";
   return Math.round(distance)+" m";
 }
+function syncCloudOverviewShortcut(){
+  const button=$("cloud-overview-map-open");
+  const inventory=waylineData?.local_pilot;
+  const routes=(waylineData?.waylines||[]).filter(route=>
+    route.provider==="pilot2-local-cloud"&&route.wayline_id);
+  const available=inventory?.state==="connected"&&inventory.pagination_complete===true&&routes.length>0;
+  button.hidden=!available;
+  if(!available)return;
+  const showing=!$("cloud-overview-panel").hidden;
+  button.setAttribute("aria-pressed",String(showing));
+  button.textContent=showing?"Übersicht schließen":"Alle Cloud-Routen ("+Math.min(8,routes.length)+")";
+}
 function setCloudOverviewMinimized(minimized){
   const panel=$("cloud-overview-panel"),button=$("cloud-overview-expand");
   panel.dataset.minimized=String(minimized);
@@ -1406,6 +1420,7 @@ function closeCloudOverview(quiet=false){
   $("cloud-overview-list").replaceChildren();
   $("cloud-overview-panel").hidden=true;
   $("cloud-overview-fit").disabled=true;
+  syncCloudOverviewShortcut();
   setCloudOverviewMinimized(true);
   if(!quiet&&map)mapWarning("Cloud-Routenübersicht geschlossen. Missionen unverändert.");
 }
@@ -1416,11 +1431,18 @@ function fitCloudRoutes(entry=null){
   if(!valid.length)return;
   const bounds=L.latLngBounds([]);
   for(const item of valid)bounds.extend(item);
-  if(bounds.isValid())map.fitBounds(bounds.pad(.2),{maxZoom:16});
+  // Share the mobile map-size guard with single KMZ previews. No stale fit after closing.
+  if(bounds.isValid()){
+    const generation=cloudOverviewGeneration;
+    fitWaylineMapBounds(bounds,()=>generation===cloudOverviewGeneration&&
+      cloudOverviewLayer!==null&&map.hasLayer(cloudOverviewLayer)&&
+      (!entry||entry.visible));
+  }
 }
 function renderCloudOverview(){
   const list=$("cloud-overview-list");list.replaceChildren();
   let loaded=0,failed=0,visible=0,points=0,totalLength=0,measured=0;
+  const loading=cloudOverviewRoutes.find(route=>route.state==="loading");
   for(const entry of cloudOverviewRoutes){
     if(entry.state==="connected"){
       loaded++;points+=entry.pointCount;if(entry.visible)visible++;
@@ -1466,7 +1488,8 @@ function renderCloudOverview(){
   $("cloud-overview-status").textContent=loaded+"/"+cloudOverviewRoutes.length+
     " Routen gelesen · "+visible+" sichtbar · "+points+" Punkte gelesen"+
     (measured?" · Σ Linienlängen: "+cloudOverviewFormatDistance(totalLength):"")+
-    (failed?" · "+failed+" nicht verfügbar":"")+".";
+    (failed?" · "+failed+" nicht verfügbar":"")+
+    (loading?" · Lade: "+loading.name:"")+".";
 }
 async function openCloudOverview(){
   // No automatic requests: use only a verified, fully enumerated local inventory.
@@ -1500,6 +1523,7 @@ async function openCloudOverview(){
   }));
   cloudOverviewLayer.clearLayers();cloudOverviewLayer.addTo(map);
   $("cloud-overview-panel").hidden=false;
+  syncCloudOverviewShortcut();
   setCloudOverviewMinimized(typeof window!=="undefined"&&window.matchMedia("(max-width:700px)").matches);
   renderCloudOverview();
   for(const entry of cloudOverviewRoutes){
@@ -2567,6 +2591,10 @@ function wire(){
   $("wayline-overview-open").addEventListener("click",()=>openCloudOverview().catch(err=>{
     $("wayline-state").className="status error";$("wayline-state").textContent=errorMessage(err);
   }));
+  $("cloud-overview-map-open").addEventListener("click",()=>{
+    if(!$("cloud-overview-panel").hidden){closeCloudOverview();return;}
+    openCloudOverview().catch(err=>mapWarning("Cloud-Übersicht: "+errorMessage(err)));
+  });
   $("cloud-overview-close").addEventListener("click",()=>closeCloudOverview());
   $("cloud-overview-expand").addEventListener("click",()=>setCloudOverviewMinimized(
     $("cloud-overview-panel").dataset.minimized!=="true"));
