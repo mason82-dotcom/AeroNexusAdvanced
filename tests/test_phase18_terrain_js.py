@@ -53,7 +53,7 @@ const $=id=>{
     new Canvas(id):{value:"",checked:false,textContent:""});
   return elements.get(id);
 };
-const api=new Function("$","window","let terrainGrid=null;\n"+code+
+const api=new Function("$","window","let terrainGrid=null,terrainGeo=null,geoObjects=[];\n"+code+
   "\nreturn {terrainColor,terrainProjection,terrainDrawCanvas,drawTerrainPreview,"+
   "terrainBindPointer,terrainResetView,terrainControlChanged,terrainSyncControls,"+
   "setGrid(grid){terrainGrid=grid},get view(){return terrainView;}};"

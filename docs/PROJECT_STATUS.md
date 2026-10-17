@@ -1,11 +1,15 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 17. Oktober 2026  
-**Phase:** 18 (interaktiver lokaler Canvas-3D-Terrain-Viewer, in Entwicklung).
-Phase 17 mit P1 Geo-Objekten, P2 Flächenflugstreifen und P4
-GeoTIFF/STL aus PR #4/#9 im Raspberry-Pi-5-/Chrome-LAN getestet.
-Der neue Phase-18-Viewer ist vor eigenem Pi-/Chrome-Test noch **nicht
-live abgenommen**. Siehe `docs/phase-18-interactive-terrain.md`.
+**Phase:** 19 (WGS84-Georeferenzierung, Geo-Overlays,
+Rasterpunktabfrage und Höhenprofil, im Entwicklungsbranch).
+Phase 17/18 mit Geo-Polygonen, Flächenstreifen, GeoTIFF/STL,
+interaktivem 3D-Viewer und Höhenfarben wurden auf dem Pi/Chrome
+sichtgeprüft. Für Phase 18 zeigt ein Chrome-Screenshot eine gerenderte
+32×32-Großansicht mit Rotation -135°, Neigung 35° und Zoom 1,6×;
+die tatsächliche Pointer-/Mausrad-Interaktion wurde dadurch **nicht**
+abschließend bestätigt. Neue Phase-19-Funktionen ebenfalls noch nicht
+live auf Pi/Chrome geprüft. Siehe `docs/phase-19-georeferenced-terrain.md`.
 Phase 9 Cloud-MQTT und optionaler Cloud API 2 BFF bleiben deaktiviert.  
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`  
 **Zuletzt bestätigter Pi-Teststand (Phase 17):** **619 Tests,
@@ -17,6 +21,16 @@ mit synthetischem 32×32-Test-DEM importiert, Höhen 120,003–184,327 m,
 Drahtgitter angezeigt und STL heruntergeladen. **Reale DEMs, Geoid-
 Höhenbezüge und Phase-18-Interaktionen noch nicht bestätigt.**
 DJI Matrice 4T im Operations Center in früherer Phase live bestätigt.
+
+## Phase 19 – lokaler Georeferenz-Test (ausstehend)
+
+- Vorhandene GDAL-API liefert optional ausschließlich WGS84-EPSG:4326-
+  Rasterpunktmitten; bei projizierten/unplausiblen Datensätzen `geo: null`.
+- 3D-Overlay gesicherter Geo-Objekte nur vollständig innerhalb des Rasters.
+  Zusätzlich Karten-Fußabdruck, Klick-Höhenwert und Linienprofil.
+- Vertikaler Höhenbezug unbekannt, keine DJI-Missionshöhen.
+- Neue automatisierte Browser- und API-Regressionen im Branch.
+- Auf Pi/Chrome erst nach CI/Merge und manueller Prüfung bestätigen.
 
 ## Phase 18 – geplanter Browser-Abnahmetest
 
