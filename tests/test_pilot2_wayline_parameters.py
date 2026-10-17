@@ -102,6 +102,17 @@ def test_model_metadata_and_embedded_wpml_can_disagree():
     assert r["parameter_state"] == "not_comparable"
 
 
+def test_embedded_drone_model_conflict_blocks_parameter_equal_claim():
+    kmz = modified_kmz(b"<wpml:droneEnumValue>99</wpml:droneEnumValue>",
+                       b"<wpml:droneEnumValue>77</wpml:droneEnumValue>")
+    r = report(mission(), kmz)
+    assert r["geometry_result"] == "coordinates_equal"
+    assert r["wpml_model_match"] is False
+    assert r["cloud_metadata_wpml_agree"] is False
+    assert r["parameter_state"] == "not_comparable"
+    assert r["parameter_matches"] == {}
+
+
 def test_unknown_actions_never_report_camera_match():
     kmz = modified_kmz(b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
                        b"<wpml:actionActuatorFunc>rotateYaw</wpml:actionActuatorFunc>")
