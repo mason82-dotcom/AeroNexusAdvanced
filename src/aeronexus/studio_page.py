@@ -299,7 +299,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div id="map" role="application" aria-label="Interaktive Missionskarte"></div>
 <div class="map-bar">
 <select id="map-layer" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
-<button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
+<button id="pilot2-map-toggle" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button><button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
 </div>
 <div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
 </section>
@@ -373,6 +373,9 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="pane-inner">
 <div class="page-head"><div><h1>Flottenstatus</h1><p class="muted">Matrice 4T und weitere DJI-Geräte · Echtzeitstatus aus FlightHub 2</p></div></div>
 <div id="fleet-grid" class="fleet-grid"><div class="empty">Lokale Flottendaten werden geladen…</div></div>
+<div class="page-head" style="margin-top:24px"><div><h2>Direkte Pilot-2-Gerätetopologie</h2><p class="muted">Drohnen, Fernsteuerungen und Zuordnung aus der lokalen Cloud · nur lesen</p></div><button id="pilot2-topology-refresh">Pilot-2-Geräte laden</button></div>
+<div id="pilot2-topology-state" class="status" role="status" aria-live="polite">Daten werden nur nach Klick geladen.</div>
+<div id="pilot2-topology-grid" class="fleet-grid"></div>
 </div>
 </section>
 </main>
@@ -419,7 +422,8 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
 const SATELLITE_TILE_URL="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
+let map=null,lines=null,waypointsLayer=null,deviceLayer=null,pilot2MapLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
+let pilot2LayerVisible=false,pilot2LayerRequest=0;
 let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainGeo=null,terrainLoadSerial=0,terrainProfile=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
@@ -633,6 +637,7 @@ function getMap(){
   waypointsLayer=L.layerGroup().addTo(map);deviceLayer=L.layerGroup().addTo(map);
   geoLayer=L.layerGroup().addTo(map);surveyLayer=L.layerGroup().addTo(map);photoLayer=L.layerGroup().addTo(map);
   terrainFootprintLayer=L.layerGroup().addTo(map);
+  pilot2MapLayer=L.layerGroup(); // Off by default. Never mutates editable mission layers.
   map.on("click",event=>{
     if(geoDraw){
       const lat=+event.latlng.lat.toFixed(7),lon=+(((((event.latlng.lng+540)%360)+360)%360)-180).toFixed(7);
@@ -665,6 +670,50 @@ function setMapLayer(kind){
   banner.textContent=kind==="satellite"
     ?"Startpunkt: 76694 Forst (Baden) · Satellitenbilder © Esri und Datenanbieter. Es werden ausschließlich sichtbare Kartenkacheln geladen."
     :"Startpunkt: 76694 Forst (Baden) · Straßenkarte © OpenStreetMap-Mitwirkende. Nur die Seitenherkunft wird an den Kartenserver übertragen.";
+}
+async function togglePilot2MapLayer(){
+  if(!map||!pilot2MapLayer)throw new Error("Karte nicht verfügbar");
+  pilot2LayerVisible=!pilot2LayerVisible;
+  const request=++pilot2LayerRequest;
+  const button=$("pilot2-map-toggle");
+  button.setAttribute("aria-pressed",String(pilot2LayerVisible));
+  button.textContent=pilot2LayerVisible?"Pilot-2-Layer ausblenden":"Pilot-2-Layer einblenden";
+  if(!pilot2LayerVisible){
+    pilot2MapLayer.clearLayers();map.removeLayer(pilot2MapLayer);
+    mapWarning("Pilot-2-Layer ausgeblendet. Lokale Geo-Objekte und Missionen unverändert.");
+    return;
+  }
+  pilot2MapLayer.clearLayers();
+  pilot2MapLayer.addTo(map);
+  button.disabled=true;
+  try{
+    const response=await api("/api/v1/local-cloud/map-elements");
+    const data=await response.json();
+    if(request!==pilot2LayerRequest||!pilot2LayerVisible)return;
+    if(data.state!=="connected")throw new Error("Pilot-2-Layer: "+clean(data.state));
+    if(!Array.isArray(data.features))throw new Error("Ungültige Pilot-2-Kartenantwort");
+    // WGS84 GeoJSON from a bounded, validated and allowlisted server endpoint.
+    // Noninteractive: clicking Pilot marks must never add mission waypoints.
+    for(const feature of data.features){
+      if(!feature||!feature.geometry)continue;
+      L.geoJSON({type:"Feature",geometry:feature.geometry,properties:{}},{
+        interactive:false,
+        pointToLayer:(_feature,latlng)=>L.circleMarker(latlng,{radius:7,interactive:false})
+      }).addTo(pilot2MapLayer);
+    }
+    mapWarning("Pilot-2-Kartenebene: "+data.features.length+" Objekte (nur lesen). "+
+      clean(data.skipped_unsupported)+" nicht unterstützte Objekte ausgelassen. "+
+      "Lokale Missionen bleiben unverändert.");
+  }catch(error){
+    if(request!==pilot2LayerRequest)return;
+    pilot2LayerVisible=false;
+    button.setAttribute("aria-pressed","false");
+    button.textContent="Pilot-2-Layer einblenden";
+    pilot2MapLayer.clearLayers();map.removeLayer(pilot2MapLayer);
+    mapWarning("Pilot-2-Kartenebene nicht verfügbar: "+errorMessage(error));
+  }finally{
+    if(request===pilot2LayerRequest)button.disabled=false;
+  }
 }
 function centerOnForst(){
   if(!map)return;
@@ -1300,6 +1349,32 @@ async function loadFleet(){
     }
   }
   return data.devices;
+}
+async function loadPilot2Topology(){
+  const status=$("pilot2-topology-state"),grid=$("pilot2-topology-grid"),button=$("pilot2-topology-refresh");
+  button.disabled=true;grid.replaceChildren();
+  status.className="status";status.textContent="Lokale Pilot-2-Topologie wird abgefragt…";
+  try{
+    const response=await api("/api/v1/local-cloud/topology");
+    const data=await response.json();
+    if(data.state!=="connected")throw new Error("Pilot-2-Geräte: "+clean(data.state));
+    if(!Array.isArray(data.devices)||!Array.isArray(data.links))throw new Error("Ungültige Geräte-Topologie");
+    status.className="status good";
+    status.textContent=data.devices.length+" Geräte, "+data.links.length+
+      " Zuordnungen · Aktualisierung: "+clean(data.updated_at)+
+      " · keine automatische Flugsteuerung";
+    for(const item of data.devices){
+      const card=cardText(grid,"article","wayline-card");
+      cardText(card,"h2","",item.callsign||"DJI-Gerät");
+      cardText(card,"p","",item.role==="aircraft"?"Fluggerät":"Fernsteuerung");
+      cardText(card,"p","",clean(item.serial_number)+" · "+clean(item.device_model_key));
+      cardText(card,"p","",item.online===true?"Online":item.online===false?"Offline":"Online-Status unbekannt");
+    }
+    if(!data.devices.length)cardText(grid,"div","empty","Keine Geräte in der lokalen Pilot-2-Topologie gemeldet.");
+  }catch(err){
+    grid.replaceChildren();status.className="status error";
+    status.textContent=errorMessage(err)+" · Prüfung der Sitzung und lokalen Cloud erforderlich.";
+  }finally{button.disabled=false;}
 }
 async function showFleetOnMap(){
   const devices=await loadFleet();
@@ -2096,6 +2171,7 @@ function wire(){
   $("map-zoom-in").addEventListener("click",()=>map?.zoomIn());$("map-zoom-out").addEventListener("click",()=>map?.zoomOut());
   $("map-layer").addEventListener("change",e=>setMapLayer(e.target.value));
   $("map-home").addEventListener("click",centerOnForst);
+  $("pilot2-map-toggle").addEventListener("click",()=>togglePilot2MapLayer().catch(err=>mapWarning(errorMessage(err))));
   $("apply-point").addEventListener("click",()=>{
     const p=mission.waypoints[selected];if(!p)return;
     const lat=Number($("point-lat").value),lon=Number($("point-lon").value);
@@ -2171,6 +2247,7 @@ function wire(){
   $("more-media").addEventListener("click",()=>{displayMedia+=20;renderMedia().catch(()=>{});});
   $("preview-close").addEventListener("click",closePreview);$("media-dialog").addEventListener("close",closePreview);
   $("refresh-fleet").addEventListener("click",()=>loadFleet().catch(err=>$("fleet-notice").textContent=err.message));
+  $("pilot2-topology-refresh").addEventListener("click",loadPilot2Topology);
   $("show-fleet-map").addEventListener("click",()=>showFleetOnMap().catch(err=>notice(err.message,true)));
   getMap();redraw();historyReset();
 }
