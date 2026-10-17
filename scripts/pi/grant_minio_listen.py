@@ -72,9 +72,9 @@ def grant(root: Path) -> str:
     policy = {"Version": "2012-10-17", "Statement": [
         {"Effect": "Allow", "Action": ["s3:ListenBucketNotification"],
          "Resource": [f"arn:aws:s3:::{bucket}"]}]}
-    admin_client = MinioAdmin("127.0.0.1:9000", credentials=StaticProvider(admin, admin_secret),
-                              secure=False)
     try:
+        admin_client = MinioAdmin(endpoint="127.0.0.1:9000",
+                                  credentials=StaticProvider(admin, admin_secret), secure=False)
         admin_client.policy_add(name, policy=policy)
         admin_client.attach_policy([name], user=reader)
     except Exception as exc:  # never echo responses that could contain identities
