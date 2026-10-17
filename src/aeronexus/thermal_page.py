@@ -69,7 +69,7 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .map-legend canvas{display:block;width:150px;height:10px;margin:4px 0;border-radius:3px}
 .map-state{position:absolute;z-index:500;left:10px;bottom:10px;max-width:min(520px,85%);background:#112137e8;border-radius:8px;padding:7px 9px;font-size:11px;color:#c8dbed}
 .colorbar{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px}
-.colorbar canvas{flex:1;height:14px;border-radius:4px;border:1px solid #3a5876}
+.colorbar canvas{flex:1;min-width:0;width:0;height:14px;border-radius:4px;border:1px solid #3a5876}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px}
 .kv span{color:var(--sub)}.kv b{font-weight:600;overflow-wrap:anywhere}
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}

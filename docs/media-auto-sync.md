@@ -8,9 +8,11 @@ AeroNexusAdvanced-Kataloge aktuell – **nur lesend**, ohne Schreibzugriff auf
 MinIO oder DJI:
 
 1. Medienindex (`minio_media_index`) – vollständiger Abgleich mit dem Bucket
-2. Thermal-Geo-Index (`thermal_geo`) – Kopfdaten neuer Wärmebilder (Range-Read)
-3. Multispektral-Katalog (`multispectral`) und fehlende NDVI-Übersichten
-4. Thermal-Messungen (DJI Thermal SDK) aller noch nicht gemessenen Wärmebilder
+2. Fotokatalog (`photo_catalog`) – Modell/Kamera/Position aller JPEGs (Range-Read),
+   erkennt auch FlightHub-Infrarotbilder `org_*.jpg` ([photo-catalog.md](photo-catalog.md))
+3. Thermal-Geo-Index (`thermal_geo`) – Kopfdaten neuer Wärmebilder (Range-Read)
+4. Multispektral-Katalog (`multispectral`) und fehlende NDVI-Übersichten
+5. Thermal-Messungen (DJI Thermal SDK) aller noch nicht gemessenen Wärmebilder
    (abschaltbar: `AERONEXUS_MEDIA_SYNC_THERMAL=0` in `.env` oder `--no-thermal`)
 
 Jeder Schritt ist isoliert: ein Fehler stoppt die anderen nicht; im Status

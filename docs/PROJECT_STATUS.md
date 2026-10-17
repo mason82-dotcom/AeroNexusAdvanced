@@ -1,7 +1,7 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026 – Basis `main` @ `7a9edf4` (PR #33),
-mit den nachfolgend beschriebenen Analysekorrekturen in diesem Änderungsstand.
+**Stand:** 17. Oktober 2026 – Basis `main` @ `cff65d4` (PR #30),
+plus Fotokatalog/M3E (Branch `feature/photo-catalog-m3e-20261017`).
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
 ## Aktueller Stand auf `main`
@@ -21,6 +21,8 @@ mit den nachfolgend beschriebenen Analysekorrekturen in diesem Änderungsstand.
 | Metashape-Arbeitsauftrag für externen Worker | gemergt; echte Rekonstruktion separat abnehmen | #31 |
 | Multispektral-Serienbericht mit NDVI-Maske und Histogrammen | gemergt; Live-Pi-Abnahme offen | #32 |
 | GeoTIFF-/COG-Ergebniskatalog und Kachelviewer `/results` | gemergt; Live-Pi-Abnahme offen | #33 |
+| Medien-Sync-Korrekturen, M3M-Quellenkonsistenz, GeoTIFF nur bei exaktem Nadir | gemergt, auf dem Pi aktiv | #30 |
+| Fotokatalog `/media` (M3E/M3T/M4T/M3M nach Metadaten), HTTP-Kompression, CSP-/Mobil-Korrekturen | Branch, auf dem Pi live geprüft | – |
 
 - Basisprüfung bei `7a9edf4`: **857 bestanden, 1 übersprungen**, 1 bekannte
   Starlette/httpx-Warnung; GitHub Actions für diesen Commit erfolgreich.
@@ -71,12 +73,26 @@ mit den nachfolgend beschriebenen Analysekorrekturen in diesem Änderungsstand.
   beschädigte Dateien → sauberer 422; die GDAL-FutureWarning im Dienstlog entfällt.
 - Doku: dieser Abschnitt; der Checkpoint vom 17.10.2026 ist als historisch markiert.
 
+### Analyse 17.10.2026 (2) – Fotokatalog und Korrekturen
+
+- Fotokatalog (`photo_catalog`): 6076 JPEGs klassifiziert – M3T 4286, M4T 1567,
+  M3E 203 (Mapping-Flug 04.10.2026: 168 Bilder, 60 m, RTK, GSD 1,64 cm/px),
+  M3M 20. Schritt im Medien-Sync vor `thermal_geo`; neuer Bereich auf `/media`
+  mit Karte, Flugliste und Tabelle. Details: [photo-catalog.md](photo-catalog.md).
+- Unplausible GNSS-Positionen (>20 km vom Flugmedian, z. B. ein M3E-Bodenbild
+  mit 35,25° N / 6,16° E trotz „RTK“) werden markiert statt verworfen.
+- HTTP-Kompression (GZip, ab 2 KiB; Bilder, Downloads und Ereignisströme
+  ausgenommen): `/api/v1/thermal/map` 1,2 MB → 252 KB.
+- `/thermal`: Farbskala-Canvas verbreiterte die Seite auf ~3100 px
+  (Seitenverhältnis 256:1 als Mindestbreite) – behoben.
+- Leaflet-Ebenensymbol wurde auf allen Kartenseiten von der CSP blockiert – behoben.
+- Medien-Sync läuft im Ereignis-Modus (MinIO-Listen-Recht vorhanden).
+
 ### Offen
 
 - FlightHub-Abfrage vs. MQTT-Feed: gewünschten Betrieb bestätigen.
-- Optional: Ereignis-Modus des Medien-Syncs freischalten (`scripts/pi/grant_minio_listen.py`).
-- Draft-PRs #5 (Cloud API 2) und #24 (CSV-Import Studio) entscheiden;
-  nicht gemergte Branches aufräumen.
+- Draft-PRs #5 (Cloud API 2) und #24 (CSV-Import Studio) entscheiden; beide
+  haben Konflikte mit `main`. Gemergte Remote-Branches von #31–#33 löschen.
 - Fest verdrahtetes Heimnetz `192.168.178.0/24` konfigurierbar machen.
 - Fachliche Abnahmen: PV-Inspektion mit echten PV-Aufnahmen, Multispektral-
   und Thermal-Footprints mit einem echten Nadir-Flug.

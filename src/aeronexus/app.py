@@ -8,6 +8,7 @@ from io import BytesIO
 from urllib.parse import unquote
 from contextlib import asynccontextmanager
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -17,6 +18,7 @@ from enum import Enum
 from secrets import compare_digest
 
 from fastapi import FastAPI, Header, HTTPException, Query, Response, Request, WebSocket
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import datetime
@@ -43,6 +45,7 @@ from .multispectral import (LAYERS, MultispectralBusy, MultispectralError, Multi
 from .multispectral_page import render_multispectral_page
 from .thermal_flights import ThermalFlights, ThermalJobRunning
 from .media_sync import read_status as read_media_sync_status
+from .photo_catalog import PhotoCatalog
 from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, MetashapePackageNotFound,
                                list_packages, package_path, prepare_package, remove_package)
 from .raster_results import (RasterResults, RasterError, RasterUnavailable,
@@ -103,6 +106,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AeroNexusAdvanced", version="0.1.0", lifespan=lifespan)
 app.state.cloud_api2_bridge = None
+try:  # Starlette >= 0.46 can skip media and event streams; older versions are left uncompressed
+    from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES as _GZIP_SKIP
+except ImportError:
+    _GZIP_SKIP = None
+if _GZIP_SKIP is not None:
+    # JSON maps and pages compress about tenfold; originals and downloads stay byte-identical.
+    app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=5,
+                       exclude_content_types=_GZIP_SKIP + (
+                           "image/*", "application/octet-stream",
+                           "application/vnd.google-earth.kmz", "model/stl"))
 app.state.task_media_cache = {}
 app.state.studio_event_clients = 0
 app.state.status_runtime = StatusRuntime(
@@ -247,6 +260,85 @@ def dji_media_list(request: Request, response: Response,
         raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
 
 
+
+_PHOTO_FILTER = re.compile(r"[A-Za-z0-9_]{1,32}\Z")
+_PHOTO_ID = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _photo_catalog(request: Request, authorization: str | None) -> PhotoCatalog:
+    workspace = _studio_workspace(request, authorization)
+    return PhotoCatalog(DjiMediaIndex(workspace.root))
+
+
+def _photo_filters(model: str | None, camera: str | None) -> tuple[str | None, str | None]:
+    for value in (model, camera):
+        if value is not None and not _PHOTO_FILTER.fullmatch(value):
+            raise HTTPException(status_code=422, detail="Invalid model or camera filter")
+    return model or None, camera or None
+
+
+@app.get("/api/v1/photos/summary")
+def photo_summary(request: Request, response: Response,
+                  authorization: str | None = Header(default=None)) -> dict:
+    """Aircraft models and cameras of all indexed DJI JPEGs (from their own metadata)."""
+    catalog = _photo_catalog(request, authorization)
+    _no_cache(response)
+    try:
+        return catalog.summary()
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
+
+
+@app.get("/api/v1/photos/flights")
+def photo_flights(request: Request, response: Response,
+                  model: str | None = Query(default=None, max_length=32),
+                  camera: str | None = Query(default=None, max_length=32),
+                  authorization: str | None = Header(default=None)) -> dict:
+    catalog = _photo_catalog(request, authorization)
+    model, camera = _photo_filters(model, camera)
+    _no_cache(response)
+    try:
+        return {"flights": catalog.flights(model=model, camera=camera)}
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
+
+
+@app.get("/api/v1/photos")
+def photo_list(request: Request, response: Response,
+               model: str | None = Query(default=None, max_length=32),
+               camera: str | None = Query(default=None, max_length=32),
+               flight: str | None = Query(default=None, max_length=64),
+               limit: int = Query(default=50, ge=1, le=200),
+               offset: int = Query(default=0, ge=0, le=1_000_000),
+               authorization: str | None = Header(default=None)) -> dict:
+    catalog = _photo_catalog(request, authorization)
+    model, camera = _photo_filters(model, camera)
+    if flight is not None and not _PHOTO_ID.fullmatch(flight):
+        raise HTTPException(status_code=422, detail="Invalid flight id")
+    _no_cache(response)
+    try:
+        return catalog.list(model=model, camera=camera, flight=flight, limit=limit, offset=offset)
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
+
+
+@app.get("/api/v1/photos/map")
+def photo_map(request: Request, response: Response,
+              model: str | None = Query(default=None, max_length=32),
+              camera: str | None = Query(default=None, max_length=32),
+              flight: str | None = Query(default=None, max_length=64),
+              authorization: str | None = Header(default=None)) -> dict:
+    """Capture positions and flat-terrain footprints derived from EXIF focal length."""
+    catalog = _photo_catalog(request, authorization)
+    model, camera = _photo_filters(model, camera)
+    if flight is not None and not _PHOTO_ID.fullmatch(flight):
+        raise HTTPException(status_code=422, detail="Invalid flight id")
+    _no_cache(response)
+    try:
+        return catalog.map_items(model=model, camera=camera, flight=flight)
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
+
 @app.get("/api/v1/flighthub/catalog")
 async def flighthub_catalog(request: Request, response: Response,
                             authorization: str | None = Header(default=None)) -> dict:
@@ -375,7 +467,7 @@ def operations_page(request: Request, response: Response) -> str:
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' data: blob: https://tile.openstreetmap.org "
+        "img-src 'self' data: blob: https://cdn.jsdelivr.net https://tile.openstreetmap.org "
         "https://server.arcgisonline.com; "
         "connect-src 'self' https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
@@ -391,9 +483,10 @@ def dji_media_page(request: Request, response: Response) -> str:
     _no_cache(response)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; script-src 'unsafe-inline'; "
-        "style-src 'unsafe-inline'; connect-src 'self'; "
-        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+        "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
     return render_dji_media_page()
 
@@ -434,7 +527,7 @@ def studio_page(request: Request, response: Response) -> str:
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' blob: data: https://tile.openstreetmap.org "
+        "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org "
         "https://server.arcgisonline.com; "
         f"connect-src 'self' {_studio_socket_origin()}https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "media-src 'self' blob:; frame-ancestors 'none'; "
@@ -835,7 +928,7 @@ def thermal_page(request: Request, response: Response) -> str:
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' blob: data: https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "connect-src 'self'; "
         "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
@@ -848,7 +941,7 @@ def thermal_status(request: Request, response: Response,
     service = _thermal_service(request, authorization)
     _no_cache(response)
     try:
-        listing = service.index.list_thermal(limit=1)
+        listing = service.index.list_thermal(limit=1, extra_ids=service.extra_thermal_ids())
     except (DjiMediaError, OSError, sqlite3.Error):
         listing = {"total": None, "last_scanned_at": None}
     return {"sdk": service.sdk_status(), "thermal_images": listing["total"],
@@ -1191,7 +1284,7 @@ def multispectral_page(request: Request, response: Response) -> str:
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' blob: data: https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
     return render_multispectral_page()

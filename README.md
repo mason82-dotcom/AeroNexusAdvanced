@@ -212,6 +212,12 @@ Phase-20-Indizes unter `var/` bleiben unangetastet; für deren Umstieg ist
 ein expliziter Scan mit dem neuen Lesezugang erforderlich.
 Details: [Phase 21 – DJI-MinIO-Medien](docs/phase-21-dji-minio-media.md).
 
+**Fotokatalog auf `/media`:** Alle DJI-JPEGs sind nach Drohne (M3E, M3T, M4T,
+M3M), Kamera und Flug geordnet. Grundlage sind die Bild-Metadaten, nicht der
+Dateiname. Die Seite zeigt eine Karte mit Aufnahmepunkten, Footprints und GSD;
+unplausible GNSS-Positionen sind markiert.
+Details: [docs/photo-catalog.md](docs/photo-catalog.md).
+
 ## Thermal (`/thermal`)
 
 Eigener Web-UI-Tab für radiometrische DJI-Wärmebilder (M3T/M4T R-JPEG) aus
@@ -227,7 +233,7 @@ Details: [docs/thermal.md](docs/thermal.md).
 
 Dienst `aeronexusadvanced-media-sync`: vollständiger Scan beim Start, danach
 nach jedem Pilot-2-Upload (Bucket-Abfrage alle 2 min oder MinIO-Ereignisse)
-Aktualisierung von Medienindex, Thermal-Geo-Index, Multispektral-Katalog,
+Aktualisierung von Medienindex, Fotokatalog, Thermal-Geo-Index, Multispektral-Katalog,
 NDVI-Übersichten und Thermal-Messungen – nur lesend. Status auf `/media`.
 Details: [docs/media-auto-sync.md](docs/media-auto-sync.md).
 
