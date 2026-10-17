@@ -19,6 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import datetime
 
 from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
+from .dji_media_index import MediaIndexError, browse_media, index_summary
+from .dji_media_page import render_dji_media_page
 from .cloud_api2_bridge import CloudApi2Bridge, CloudApi2Settings
 from .flighthub_catalog import read_task_track, read_task_media
 from .flighthub_poller import FlightHubFleetRefresher, FlightHubPollSettings
@@ -179,6 +181,36 @@ async def status_devices(
             "devices": list(devices[offset:offset + limit])}
 
 
+@app.get("/api/v1/dji/media/summary")
+def dji_media_summary(request: Request, response: Response,
+                      authorization: str | None = Header(default=None)) -> dict:
+    """Locally indexed MinIO object-list metadata; no MinIO network access."""
+    _no_cache(response)
+    _require_viewer_access(request, authorization)
+    try:
+        return index_summary()
+    except (OSError, MediaIndexError) as exc:
+        raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
+
+
+@app.get("/api/v1/dji/media")
+def dji_media_list(request: Request, response: Response,
+                   authorization: str | None = Header(default=None),
+                   kind: str | None = None,
+                   q: str = Query(default="", max_length=200),
+                   limit: int = Query(default=50, ge=1, le=100),
+                   offset: int = Query(default=0, ge=0, le=1000000)) -> dict:
+    """Paginated metadata only: never disclose S3 paths or signed URLs."""
+    _no_cache(response)
+    _require_viewer_access(request, authorization)
+    if kind is not None and kind not in ("image", "raw", "video", "audio", "sidecar"):
+        raise HTTPException(status_code=422, detail="Unsupported media category")
+    try:
+        return browse_media(kind=kind, query=q, limit=limit, offset=offset)
+    except (OSError, MediaIndexError) as exc:
+        raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
+
+
 @app.get("/api/v1/flighthub/catalog")
 async def flighthub_catalog(request: Request, response: Response,
                             authorization: str | None = Header(default=None)) -> dict:
@@ -313,6 +345,21 @@ def operations_page(request: Request, response: Response) -> str:
         "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
     )
     return render_operations()
+
+
+@app.get("/media", response_class=HTMLResponse, include_in_schema=False)
+def dji_media_page(request: Request, response: Response) -> str:
+    """Static read-only DJI MinIO index browser; never contains credentials."""
+    if lan_mode_enabled():
+        require_lan(request)
+    _no_cache(response)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'unsafe-inline'; "
+        "style-src 'unsafe-inline'; connect-src 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    )
+    return render_dji_media_page()
 
 
 @app.get("/api/v1/cloudapi2/devices")

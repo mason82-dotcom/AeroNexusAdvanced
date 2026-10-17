@@ -11,3 +11,6 @@ config/pki/
 # broker state, copied upstream code, logs and proprietary assets.
 # Never commit any part of the staged server.
 /cloud-server/
+
+# Phase 20: private, locally indexed DJI object metadata (may contain device IDs).
+/var/
