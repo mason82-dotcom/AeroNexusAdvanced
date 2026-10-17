@@ -60,6 +60,57 @@ dji-cloud, s3:GetObject auf dji-cloud/* (ggf. s3:GetBucketLocation).
 Keine Root-Keys und keine Credentials in Git oder Chat posten.
 Die .env muss weiterhin Dateimodus 0600 besitzen.
 
+## Eigener MinIO-Lesezugang für die Studio-Vorschau
+
+Nach erfolgreicher Erstindexierung kann ein separater, zufällig erzeugter
+MinIO-Lesezugang mit **ausschließlich** `s3:ListBucket` /
+`s3:GetBucketLocation` für `dji-cloud` und `s3:GetObject` für
+`dji-cloud/*` angelegt werden. Weder Root-Passwort noch neuer
+Zugangsschlüssel werden im Terminal ausgegeben.
+
+Für den Raspberry Pi 5 (ARM64) den offiziellen MinIO-Client herunterladen
+und anhand der nebenstehenden SHA256-Prüfsummendatei verifizieren:
+
+~~~bash
+mkdir -p "$HOME/minio-binaries"
+cd "$HOME/minio-binaries"
+curl -fL --retry 3 -o mc   https://dl.min.io/client/mc/release/linux-arm64/mc
+curl -fL --retry 3 -o mc.sha256sum   https://dl.min.io/client/mc/release/linux-arm64/mc.sha256sum
+sha256sum -c mc.sha256sum
+chmod 700 mc
+./mc --version
+~~~
+
+Falls die Prüfsumme **nicht** übereinstimmt, die Binärdatei nicht ausführen.
+Es werden keine Systempakete oder MinIO-Container installiert oder aktualisiert.
+Nur die offizielle URL `dl.min.io` verwenden.
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced
+.venv/bin/python scripts/pi/configure_minio_readonly.py
+
+# Danach konfigurierte Leser-Verbindung testen:
+.venv/bin/python -m aeronexus.minio_media_index --dry-run
+systemctl --user restart aeronexusadvanced
+systemctl --user is-active aeronexusadvanced
+~~~
+
+Der Einrichtungshelfer verwendet das bereits vorhandene lokale
+`cloud-server/edge/.env`-Administratorkonto nur einmalig und mit
+temporärem `MC_CONFIG_DIR`. Er erzeugt eine eigene MinIO-Policy und einen
+zufälligen Reader, prüft den neuen Zugriff per Listen/HEAD und schreibt
+erst danach die vier Variablen `AERONEXUS_MINIO_*` in die bestehende
+private Projekt-`.env` (Dateimodus 0600). Bereits vorhandene Einstellungen
+werden **nicht** überschrieben; ein zweiter Aufruf beendet sich ohne
+Änderungen.
+
+Die Account-Erstellung verändert nur MinIO-IAM-Metadaten, keine
+Mediendateien. Root-Zugangsdaten bleiben in der ursprünglichen
+gitignorierten Konfiguration. Die Client-Prozesse müssen auf dem
+lokalen Pi mit entsprechender Benutzer-/Prozessisolation ausgeführt werden,
+da der Einrichtungshelfer das erzeugte Reader-Secret für
+`mc admin user add` kurzfristig als Prozessargument übergibt.
+
 ## Import und Kontrolle
 
 ~~~bash
