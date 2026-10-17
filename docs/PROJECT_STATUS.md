@@ -1,8 +1,9 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
 **Stand:** 17. Oktober 2026  
-**Phase:** 19 (WGS84-Georeferenzierung, Geo-Overlays,
-Rasterpunktabfrage und Höhenprofil, im Entwicklungsbranch).
+**Phase:** 20 (DEM-Hangneigungsanalyse im separaten Entwicklungsbranch;
+GitHub CI: 641 Tests, eine bekannte Warnung; Pi-/Chrome-Abnahme offen).
+Phase 19 ist auf `main` mit dem Gelände-Overlay-Draping integriert.
 Phase 17/18 mit Geo-Polygonen, Flächenstreifen, GeoTIFF/STL,
 interaktivem 3D-Viewer und Höhenfarben wurden auf dem Pi/Chrome
 sichtgeprüft. Für Phase 18 zeigt ein Chrome-Screenshot eine gerenderte
@@ -21,6 +22,21 @@ mit synthetischem 32×32-Test-DEM importiert, Höhen 120,003–184,327 m,
 Drahtgitter angezeigt und STL heruntergeladen. **Reale DEMs, Geoid-
 Höhenbezüge und Phase-18-Interaktionen noch nicht bestätigt.**
 DJI Matrice 4T im Operations Center in früherer Phase live bestätigt.
+
+## Phase 20 – lokale DEM-Hangneigungsanalyse
+
+- Optionaler Farbmodus für die Neigung aus den **nicht überhöhten**
+  Rasterhöhen und metrischen X/Y-Zellschritten: Grün <8°, Gelb 8–15°,
+  Orange 15–30°, Rot ab 30°.
+- Mittelwert, Maximum und Anzahl der Zellen ab 30° nach transientem
+  GeoTIFF-Import; Klickabfrage der lokalen Neigung. Reset und Dateitausch
+  setzen die Anzeige zurück.
+- Kein neuer DJI-Aufruf, keine Flugfreigabe, keine Änderung an STL,
+  Missionen oder Georeferenzierung. Resampling und ungeprüfter vertikaler
+  Bezug bleiben dokumentierte Grenzen.
+- GitHub Actions auf Phase-20-Branch: **641 bestanden, 1 bekannte Warnung**.
+  Pi-/Chrome-Livetest steht aus. Anleitung:
+  `docs/phase-20-terrain-slope.md`.
 
 ## Phase 19 – lokaler Georeferenz-Test (ausstehend)
 
