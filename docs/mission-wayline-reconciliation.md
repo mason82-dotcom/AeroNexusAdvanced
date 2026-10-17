@@ -100,7 +100,28 @@ curl --fail --show-error --max-time 15 \
 ```
 
 Im Token-Modus denselben geschützten Zugang wie beim bestehenden Studio verwenden;
-keine Token in Chat-Ausgaben kopieren. Der Bericht bleibt API-only.
+keine Token in Chat-Ausgaben kopieren.
+
+## Cloud-Routen im Studio
+
+Im Studio auf Port 8000 gibt es einen eigenen Bereich **Cloud-Routen**.
+Er lädt beim ersten Öffnen denselben geschützten Abgleich. Suche nach Namen,
+Quellenfilter und zwölf Karten pro Seite helfen bei größeren Beständen.
+„Routen aktualisieren“ liest den Bericht erneut; keine automatische Pollschleife.
+
+Jede Karte zeigt Namen, Modell, Routentyp, Quelle/Scope, Änderungszeit und
+Prüfstatus. Lokaler Abrufzeitpunkt und Quellenzustände stehen über der Liste.
+Modellkonflikte und begrenzte Namenskandidaten werden sichtbar benannt; ein
+gleicher Name wird niemals als verifizierter Inhalt dargestellt. Lokale
+Millisekunden- und FlightHub-Sekunden-Zeitstempel werden korrekt in Berliner
+Zeit angezeigt. Unbekannte geometrische Template-Codes bleiben sichtbar.
+
+Die Ansicht liest nur Metadaten. Keine Routenänderung, Übernahme in den Editor,
+Kartenvorschau, KMZ-Übertragung oder Flugausführung. Ein offener Entwurf bleibt
+unverändert. Daten aus nicht lesbaren Quellen werden nicht als erfolgreich
+leer ausgegeben. Fehler/Timeouts entfernen den alten Anzeigestand und erlauben
+erneutes Laden. Suchbegriffe und Filter werden nicht in URLs oder persistenten
+Browser-Speicher geschrieben.
 
 ## Lokale Pilot-2-Cloud anbinden
 

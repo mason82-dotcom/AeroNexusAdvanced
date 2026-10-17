@@ -47,6 +47,11 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .status{padding:11px 13px;border-radius:9px;background:#152d46;border:1px solid #335573;color:#bedcff;margin:12px 0;line-height:1.5}
 .status.error{color:#ffc1c8;border-color:#804d58;background:#351f2c}
 .status.good{color:#b4ffdf;border-color:#346b59;background:#173c36}
+.wayline-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}
+.wayline-card{background:var(--pane);border:1px solid var(--line);border-radius:9px;padding:14px;overflow-wrap:anywhere;min-width:0}
+.wayline-card h2{margin:0 0 12px;font-size:16px}.wayline-card p{margin:7px 0;line-height:1.5}
+.wayline-tools{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.wayline-tools label{flex:1;min-width:160px}
+#wayline-state{min-height:68px}#wayline-range{min-height:20px}#wayline-page{align-self:center}
 .badge{border-radius:999px;border:1px solid #3c5875;color:#a9cbea;padding:3px 8px;font-size:11px}
 #map{height:100%;min-height:600px;background:#192837}
 .map-bar{position:absolute;z-index:500;top:16px;left:16px;right:16px;display:flex;gap:7px;align-items:center;flex-wrap:wrap;pointer-events:none}
@@ -60,7 +65,7 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .point-row small{color:#adc2da;display:block;margin-top:4px}.point-row button{padding:5px 8px}
 #point-list{max-height:380px;overflow-y:auto}
 #point-editor{border:1px solid #385270;border-radius:11px;padding:12px;margin-top:10px}
-#point-editor[hidden],#mission-panel[hidden],#media-panel[hidden],#fleet-panel[hidden],#geo-panel[hidden]{display:none}
+#point-editor[hidden],#mission-panel[hidden],#media-panel[hidden],#fleet-panel[hidden],#geo-panel[hidden],#wayline-panel[hidden]{display:none}
 .pane-inner{padding:25px;max-width:1500px;margin:0 auto}
 .page-head{display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .page-head h1{font-size:28px}.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -149,6 +154,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button data-tab="geo-pane">Geo &amp; Gelände</button>
 <button data-tab="terrain-pane">3D Gelände</button>
 <button data-tab="media-pane">Medienbibliothek</button>
+<button data-tab="waylines-pane" aria-controls="waylines-pane">Cloud-Routen</button>
 <button data-tab="fleet-pane">Flottenstatus</button>
 <a href="/operations" style="color:#9edaff;padding:9px;text-decoration:none">Operations Center ↗</a>
 <a href="/status" style="color:#9edaff;padding:9px;text-decoration:none">Live-Dashboard ↗</a>
@@ -250,6 +256,13 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </div>
 <div id="terrain-message" class="note" role="status">Lokales GDAL erforderlich. Höhenmodell nur Visualisierung und 3D-Modell – nicht zur Flugfreigabe.</div>
 </aside>
+<aside class="side" id="wayline-panel" hidden>
+<h1>Cloud-Routen</h1>
+<p class="note">Vorhandene Flugrouten aus der lokalen Pilot-2-Cloud und dem geladenen FlightHub-Katalog.</p>
+<p>Die Liste ist schreibgeschützt. Der offene Studio-Entwurf bleibt unverändert.</p>
+<p class="note">Gleiche Namen sind nur Hinweise. Eine Übereinstimmung des Routeninhalts ist noch nicht geprüft.</p>
+<p class="note">Flächen- und Geometrierouten können hier noch nicht auf der Karte geöffnet oder bearbeitet werden.</p>
+</aside>
 <aside class="side" id="media-panel" hidden>
 <h1>Medienimport</h1><p class="note">Bilder und Videos werden ausschließlich im privaten Pi-Arbeitsbereich gespeichert. Maximal 25 MiB je Datei.</p>
 <label>Bild-/Videodateien<input type="file" id="media-file" accept=".jpg,.jpeg,.png,.webp,.mp4,image/jpeg,image/png,image/webp,video/mp4" multiple></label>
@@ -340,6 +353,20 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="gallery" id="dji-media-gallery"></div>
 <div class="button-row"><button id="more-dji-media" hidden>Weitere DJI-Medien anzeigen</button></div>
 <footer>Vorschaubilder werden mit deinem Token geladen und nur als temporäre Browser-Objekte angezeigt. Kein externer Mediendienst.</footer>
+</div>
+</section>
+<section class="pane" id="waylines-pane">
+<div class="pane-inner">
+<div class="page-head"><div><h1>Wayline-Bibliothek</h1><p class="muted">Cloud-Routen und Abgleich mit gespeicherten Studio-Missionen</p></div><button id="refresh-waylines">Routen aktualisieren</button></div>
+<div class="wayline-tools">
+<label for="wayline-search">Routenname suchen<input id="wayline-search" type="search" autocomplete="off"></label>
+<button id="clear-wayline-search" disabled>Suche löschen</button>
+<label for="wayline-source">Quelle<select id="wayline-source"><option value="all">Alle Quellen</option><option value="pilot2-local-cloud">Lokale Pilot-2-Cloud</option><option value="flighthub-public-v2">FlightHub</option></select></label>
+</div>
+<div id="wayline-state" class="status" role="status" aria-live="polite">Cloud-Routen werden beim Öffnen geladen.</div>
+<p id="wayline-range" class="note" role="status" aria-live="polite"></p>
+<div id="wayline-grid" class="wayline-grid" role="region" aria-label="Cloud-Routen"></div>
+<div class="button-row"><button id="wayline-prev" disabled>Vorherige Seite</button><span id="wayline-page">Seite 1</span><button id="wayline-next" disabled>Nächste Seite</button></div>
 </div>
 </section>
 <section class="pane" id="fleet-pane">
@@ -1028,16 +1055,94 @@ async function exportMission(){
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(href),2000);
   notice("KMZ erstellt. Vor jedem Flug in DJI Pilot 2 und vor Ort überprüfen.");
 }
+// Read-only library: no KMZ import, editor mutation or cloud commands.
+let waylineData=null,waylinePage=1,waylineSerial=0,waylineAbort=null;
+const WAYLINE_PAGE_SIZE=12;
+function waylineModel(key){
+  const names={"0-77-0":"Mavic 3E","0-77-1":"Mavic 3T","0-77-2":"Mavic 3M","0-77-3":"Mavic 3TA",
+    "0-99-0":"Matrice 4E","0-99-1":"Matrice 4T"};
+  return Object.prototype.hasOwnProperty.call(names,key)?names[key]:key||"Modell nicht übermittelt";
+}
+function waylineSource(provider){return provider==="pilot2-local-cloud"?"Lokale Pilot-2-Cloud":provider==="flighthub-public-v2"?"FlightHub":provider||"Unbekannte Quelle";}
+function waylineType(route){
+  const known={waypoint:"Wegpunktmission",mapping_2d:"Flächenroute (2D)",mapping_3d:"Mapping (3D)",mapping_strip:"Streifenroute"};
+  const names=(route.template_types||[]).map(type=>known[type]||type);
+  for(const code of route.template_type_codes||[])if(![0,1,2,3].includes(code))names.push("Geometrie-/Template-Code "+code);
+  return names.join(", ")||"Routentyp nicht übermittelt";
+}
+function waylineTime(route){
+  const ms=route.updated_at_ms??(typeof route.updated_at==="number"?route.updated_at*1000:null);
+  if(typeof ms!=="number"||!Number.isFinite(ms)||ms<=0)return "nicht übermittelt";
+  const date=new Date(ms);if(!Number.isFinite(date.getTime()))return "nicht übermittelt";
+  return date.toLocaleString("de-DE",{timeZone:"Europe/Berlin",timeZoneName:"short"});
+}
+function waylineCheck(route){
+  const matches=(waylineData?.missions||[]).flatMap(m=>
+    (m.candidates||[]).filter(c=>c.provider===route.provider&&c.project_id===route.project_id&&c.wayline_id===route.wayline_id));
+  if(matches.some(c=>c.model_match===false))return "Modellkonflikt bei gleichem Namen · Inhalt ungeprüft";
+  if(matches.length>1)return "Mehrere unbestätigte Namenszuordnungen · Inhalt ungeprüft";
+  if(matches.length)return "Unbestätigte Namenszuordnung · Inhalt ungeprüft";
+  if((waylineData?.missions||[]).some(m=>m.candidate_count>(m.candidates||[]).length))return "Namensabgleich begrenzt · Inhalt ungeprüft";
+  return "Keine Namenszuordnung · Inhalt ungeprüft";
+}
+function renderWaylines(){
+  const grid=$("wayline-grid");grid.replaceChildren();
+  const query=$("wayline-search").value.trim().toLocaleLowerCase("de-DE"),source=$("wayline-source").value;
+  $("clear-wayline-search").disabled=!$("wayline-search").value;
+  const routes=(waylineData?.waylines||[]).filter(r=>(source==="all"||r.provider===source)&&String(r.name||"").toLocaleLowerCase("de-DE").includes(query));
+  const pages=Math.max(1,Math.ceil(routes.length/WAYLINE_PAGE_SIZE));if(waylineData)waylinePage=Math.max(1,Math.min(waylinePage,pages));
+  const start=(waylinePage-1)*WAYLINE_PAGE_SIZE;
+  for(const route of routes.slice(start,start+WAYLINE_PAGE_SIZE)){
+    const card=els("article","wayline-card","");card.appendChild(els("h2","",route.name||"Unbenannte Route"));
+    for(const value of [waylineModel(route.device_model_key),waylineType(route),waylineSource(route.provider),
+      "Projekt / Workspace: "+clean(route.workspace_id||route.project_id),"Geändert: "+waylineTime(route),waylineCheck(route)])
+      card.appendChild(els("p","",value));
+    grid.appendChild(card);
+  }
+  if(waylineData&&!routes.length)grid.appendChild(els("p","empty",query||source!=="all"?"Keine Route passt zur Suche oder Quelle.":"Im aktuellen Datenstand sind keine Cloud-Routen enthalten. Quellenstatus oben beachten."));
+  $("wayline-range").textContent=waylineData?(routes.length?`${start+1}–${Math.min(start+WAYLINE_PAGE_SIZE,routes.length)} von ${routes.length} Routen im geladenen Datenstand`:"0 Routen im gewählten Ausschnitt"):"";
+  $("wayline-page").textContent=waylineData?`Seite ${waylinePage} von ${pages}`:"Seite –";
+  $("wayline-prev").disabled=!waylineData||waylinePage<=1;$("wayline-next").disabled=!waylineData||waylinePage>=pages;
+}
+function waylineSourceState(data){
+  const state=data.local_pilot?.state||"not_configured";
+  const labels={not_configured:"nicht eingerichtet",awaiting_browser_session:"wartet auf vorhandene Cloud-Sitzung",configuration_error:"Konfiguration prüfen",
+    authentication_required:"Sitzung nicht gültig",business_error:"Server lehnt Anfrage ab",upstream_error:"Serverfehler",unavailable:"nicht erreichbar",invalid_response:"Antwort nicht lesbar",inventory_changed:"Bestand während Abruf geändert – erneut aktualisieren"};
+  const local=state==="connected"?"verbunden"+(data.local_pilot.pagination_complete?" · alle gemeldeten Seiten gelesen":" · Teilbestand am Abruflimit"):(labels[state]||"Zustand unbekannt");
+  const fh=data.coverage?.flighthub_cache_available?"Cache geladen":"kein Katalog geladen";
+  const incomplete=(data.projects||[]).some(p=>p.waylines_readable===false||p.waylines_at_limit);
+  const total=(data.waylines||[]).length;
+  return `Lokale Cloud: ${local}. FlightHub: ${fh}. ${total} Routen im Datenstand.`+
+    " Lokaler Abruf: "+waylineTime({updated_at_ms:Date.parse(data.local_pilot?.updated_at||"")})+"."+
+    (incomplete?" Mindestens eine Sammlung ist nicht lesbar oder begrenzt.":"")+" Routeninhalt ungeprüft; keine vollständige Inventur bestätigt.";
+}
+async function loadWaylines(){
+  const serial=++waylineSerial;waylineAbort?.abort();const controller=new AbortController();waylineAbort=controller;
+  const timer=setTimeout(()=>controller.abort(),20000);
+  waylineData=null;renderWaylines();$("refresh-waylines").disabled=true;$("wayline-grid").setAttribute("aria-busy","true");
+  $("wayline-state").className="status";$("wayline-state").textContent="Cloud-Routen werden geladen…";
+  try{
+    const response=await api("/api/v1/studio/missions/reconciliation",{signal:controller.signal});const data=await response.json();
+    if(serial!==waylineSerial)return;
+    if(!Array.isArray(data.waylines)||!Array.isArray(data.missions))throw new Error("Routenliste ist nicht lesbar.");
+    waylineData=data;renderWaylines();$("wayline-state").textContent=waylineSourceState(data);
+  }catch(err){
+    if(serial!==waylineSerial)return;
+    waylineData=null;renderWaylines();$("wayline-state").className="status error";
+    $("wayline-state").textContent=(controller.signal.aborted?"Zeitlimit beim Laden erreicht.":errorMessage(err))+" Über Routen aktualisieren erneut versuchen.";
+  }finally{clearTimeout(timer);if(serial===waylineSerial){$("refresh-waylines").disabled=false;$("wayline-grid").setAttribute("aria-busy","false");waylineAbort=null;}}
+}
 function switchTab(id){
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
-  ["mission-panel","geo-panel","media-panel","fleet-panel"].forEach((key,i)=>{
-    const current=["map-pane","geo-pane","media-pane","fleet-pane"][i];
+  ["mission-panel","geo-panel","media-panel","fleet-panel","wayline-panel"].forEach((key,i)=>{
+    const current=["map-pane","geo-pane","media-pane","fleet-pane","waylines-pane"][i];
     $(key).hidden=(current!==id&&!(key==="geo-panel"&&id==="terrain-pane"));
   });
   const mapVisible=(id==="map-pane"||id==="geo-pane");
   $("map-pane").classList.toggle("active",mapVisible);
   if(mapVisible&&map)setTimeout(()=>map.invalidateSize(),80);
+  if(id==="waylines-pane"&&!waylineData&&!waylineAbort)loadWaylines();
 }
 async function loadWorkspace(){
   statusMessage("LAN-Verbindung wird geprüft…");
@@ -1960,6 +2065,12 @@ function wire(){
     }
   });
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
+  $("refresh-waylines").addEventListener("click",loadWaylines);
+  $("wayline-search").addEventListener("input",()=>{waylinePage=1;renderWaylines();});
+  $("wayline-source").addEventListener("change",()=>{waylinePage=1;renderWaylines();});
+  $("clear-wayline-search").addEventListener("click",()=>{$("wayline-search").value="";waylinePage=1;renderWaylines();$("wayline-search").focus();});
+  $("wayline-prev").addEventListener("click",()=>{waylinePage--;renderWaylines();});
+  $("wayline-next").addEventListener("click",()=>{waylinePage++;renderWaylines();});
   $("delete-mission").addEventListener("click",()=>removeMission().catch(err=>notice(err.message,true)));
   $("close-route").addEventListener("change",e=>{
     mission.close_route=e.target.checked;
