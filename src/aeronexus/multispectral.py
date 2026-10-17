@@ -34,7 +34,7 @@ import struct
 import sys
 import threading
 
-from .minio_media_index import DjiMediaError, DjiMediaIndex
+from .minio_media_index import DjiMediaChanged, DjiMediaError, DjiMediaIndex
 from .thermal import ThermalError, _num, _text, _xmp_fields, jpeg_segments
 
 
@@ -508,6 +508,25 @@ class MultispectralCatalog:
                             datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")))
         finally:
             db.close()
+
+    def assert_current(self, capture: dict) -> None:
+        """Reject a media index ahead of (or missing items from) this catalogue.
+
+        A media-sync scan can complete before the following header scan. Comparing
+        catalogue snapshots alone would miss that interval and allow new rasters
+        to be labelled with stale capture metadata.
+        """
+        bands = capture["bands"]
+        records = self.media.get_many([band["id"] for band in bands.values()])
+        sources = []
+        for name, band in bands.items():
+            record = records.get(band["id"])
+            if record is None:
+                raise DjiMediaChanged("Band no longer indexed")
+            sources.append(f'{name}:{record["id"]}:{record["etag"]}#v{META_VERSION}')
+        source_key = PROCESSING_VERSION + "|" + "|".join(sorted(sources))
+        if source_key != capture["source_key"]:
+            raise DjiMediaChanged("Multispectral catalogue requires refresh")
 
     def summaries(self) -> dict[str, tuple[str, dict]]:
         db = self._connect(write=False)
