@@ -1150,7 +1150,7 @@ function showGeoPhotos(){
 // No WebGL, external 3D library, DJI flight path, map tiles or new backend API.
 // Never mutate the validated TerrainGrid: the STL uses original metre values.
 const TERRAIN_DEFAULT_VIEW=Object.freeze({
-  azimuth:45,tilt:45,zoom:1,exaggeration:2,color:true,wire:true
+  azimuth:45,tilt:45,zoom:1,exaggeration:2,color:true,wire:true,geoOverlay:true
 });
 let terrainView={...TERRAIN_DEFAULT_VIEW},terrainDrag=null,terrainDrawQueued=false;
 function terrainClamp(value,min,max){
@@ -1173,15 +1173,17 @@ function terrainProjection(grid,view,width,height){
   const cy=Math.cos(yaw),sy=Math.sin(yaw),sp=Math.sin(tilt),cp=Math.cos(tilt);
   const scale=Math.min(width,height)*0.66*view.zoom;
   const originX=width/2,originY=height*0.58;
-  const vertices=heights.map((row,r)=>row.map((elevation,c)=>{
+  const project=(r,c,elevation)=>{
     const x=(c*grid.x_step_m-xextent/2)/extent;
     const y=(r*grid.y_step_m-yextent/2)/extent;
-    // Limit pathological vertical display only; never change source heights.
+    // Display clip only: never alter original DEM values.
     const z=terrainClamp((elevation-zmin)/extent,0,1.5)*view.exaggeration;
     const rx=x*cy-y*sy,ry=x*sy+y*cy;
     return {x:originX+rx*scale,y:originY+(ry*sp-z*cp)*scale,
-      depth:ry*cp+z*sp,elevation};
-  }));
+      depth:ry*cp+z*sp,elevation,row:r,col:c};
+  };
+  const vertices=heights.map((row,r)=>row.map((elevation,c)=>
+    project(r,c,elevation)));
   const cells=[];
   for(let r=0;r<rows-1;r++){
     for(let c=0;c<cols-1;c++){
@@ -1192,7 +1194,126 @@ function terrainProjection(grid,view,width,height){
     }
   }
   cells.sort((a,b)=>a.depth-b.depth);
-  return {cells,zmin,zmax,rows,cols};
+  return {cells,zmin,zmax,rows,cols,project};
+}
+// Phase 19: WGS84 sample centres, bounded; never infer lat/lon from a
+// projected CRS or attach unknown vertical datums to elevation values.
+function terrainGridPoint(grid,geo,location){
+  if(!grid||!geo||geo.crs!=="EPSG:4326"||!location)return null;
+  if(!Number.isFinite(location.latitude)||!Number.isFinite(location.longitude)||
+     !(geo.lon_step_deg>0)||!(geo.lat_step_deg<0))return null;
+  const col=(location.longitude-geo.west_lon)/geo.lon_step_deg;
+  const row=(location.latitude-geo.north_lat)/geo.lat_step_deg;
+  const lastRow=grid.heights_m.length-1,lastCol=grid.heights_m[0].length-1;
+  if(!Number.isFinite(col)||!Number.isFinite(row)||
+     row < -1e-7 || col < -1e-7 || row>lastRow+1e-7 || col>lastCol+1e-7)return null;
+  return terrainHeightAt(grid,terrainClamp(row,0,lastRow),terrainClamp(col,0,lastCol));
+}
+function terrainHeightAt(grid,row,col){
+  if(!grid||!Number.isFinite(row)||!Number.isFinite(col))return null;
+  const heights=grid.heights_m,rows=heights.length,cols=heights[0].length;
+  if(row<0||col<0||row>rows-1||col>cols-1)return null;
+  const r0=Math.min(rows-2,Math.floor(row)),c0=Math.min(cols-2,Math.floor(col));
+  const ry=row-r0,cx=col-c0;
+  const z=(1-ry)*((1-cx)*heights[r0][c0]+cx*heights[r0][c0+1])+
+        ry*((1-cx)*heights[r0+1][c0]+cx*heights[r0+1][c0+1]);
+  return {row,col,elevation:z};
+}
+function terrainGeoFromGrid(geo,row,col){
+  if(!geo||geo.crs!=="EPSG:4326")return null;
+  return {latitude:geo.north_lat+row*geo.lat_step_deg,
+    longitude:geo.west_lon+col*geo.lon_step_deg};
+}
+function terrainOverlayGeometry(obj){
+  if(!obj||!Array.isArray(obj.vertices)||!obj.vertices.length)return null;
+  if(obj.kind==="circle"){
+    if(obj.vertices.length!==1||!Number.isFinite(obj.radius_m))return null;
+    const centre=obj.vertices[0],cosine=Math.cos(centre.latitude*Math.PI/180);
+    if(cosine<0.01)return null;
+    const circle=[];
+    for(let i=0;i<33;i++){
+      const angle=2*Math.PI*i/32;
+      circle.push({latitude:centre.latitude+Math.cos(angle)*obj.radius_m/111132,
+        longitude:centre.longitude+Math.sin(angle)*obj.radius_m/(111320*cosine)});
+    }
+    return circle;
+  }
+  if(!["point","line","polygon"].includes(obj.kind))return null;
+  return obj.vertices;
+}
+function terrainGeoPolyline(obj,grid,geo){
+  const vertices=terrainOverlayGeometry(obj);
+  if(!vertices||vertices.length>129)return null;
+  const points=vertices.map(loc=>terrainGridPoint(grid,geo,loc));
+  if(points.some(p=>p===null))return null; // Never draw out-of-bounds segments.
+  if(obj.kind==="polygon"&&points.length>2)points.push({...points[0]});
+  return points;
+}
+function terrainDrawOverlays(ctx,projection,grid,geo,objects,view){
+  if(!geo||!view.geoOverlay||!Array.isArray(objects))return;
+  ctx.lineWidth=2.4;
+  for(const item of objects){
+    const obj=item.object;
+    const points=terrainGeoPolyline(obj,grid,geo);
+    if(!points||!points.length)continue;
+    ctx.beginPath();
+    for(let i=0;i<points.length;i++){
+      const p=points[i],screen=projection.project(p.row,p.col,p.elevation);
+      if(i===0)ctx.moveTo(screen.x,screen.y);
+      else ctx.lineTo(screen.x,screen.y);
+    }
+    if(points.length===1){
+      const p=points[0],screen=projection.project(p.row,p.col,p.elevation);
+      ctx.arc(screen.x,screen.y,4,0,2*Math.PI);
+    }
+    ctx.strokeStyle="#ff7c8d";
+    ctx.stroke();
+  }
+}
+function terrainPolylineProfile(obj,grid,geo){
+  if(!obj||obj.kind!=="line")return null;
+  const points=terrainGeoPolyline(obj,grid,geo);
+  if(!points||points.length<2)return null;
+  const distances=[0];
+  for(let i=1;i<points.length;i++){
+    const dx=(points[i].col-points[i-1].col)*grid.x_step_m;
+    const dy=(points[i].row-points[i-1].row)*grid.y_step_m;
+    distances.push(distances[i-1]+Math.hypot(dx,dy));
+  }
+  const total=distances[distances.length-1];
+  if(!Number.isFinite(total)||total<=0)return null;
+  const result=[];
+  let leg=1;
+  for(let i=0;i<=128;i++){
+    const d=total*i/128;
+    while(leg<distances.length-1&&distances[leg]<d)leg++;
+    const span=distances[leg]-distances[leg-1];
+    const t=span>0?(d-distances[leg-1])/span:0;
+    const row=points[leg-1].row+t*(points[leg].row-points[leg-1].row);
+    const col=points[leg-1].col+t*(points[leg].col-points[leg-1].col);
+    const sample=terrainHeightAt(grid,row,col);
+    if(!sample)return null;
+    result.push({distance_m:d,...sample});
+  }
+  return {samples:result,distance_m:total,
+    min_m:Math.min(...result.map(p=>p.elevation)),
+    max_m:Math.max(...result.map(p=>p.elevation))};
+}
+function terrainDrawProfile(profile){
+  const canvas=$("terrain-profile-canvas"),ctx=canvas.getContext("2d");
+  if(!ctx)return;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#0d2233";ctx.fillRect(0,0,canvas.width,canvas.height);
+  if(!profile)return;
+  const margin=35,width=canvas.width-2*margin,height=canvas.height-2*margin;
+  const range=Math.max(1,profile.max_m-profile.min_m);
+  ctx.beginPath();
+  for(const [i,p] of profile.samples.entries()){
+    const x=margin+p.distance_m/profile.distance_m*width;
+    const y=margin+(1-(p.elevation-profile.min_m)/range)*height;
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle="#75e5cb";ctx.lineWidth=2.5;ctx.stroke();
 }
 function terrainDrawCanvas(canvas,grid,view){
   const ctx=canvas.getContext("2d");
@@ -1217,6 +1338,8 @@ function terrainDrawCanvas(canvas,grid,view){
       ctx.stroke();
     }
   }
+  if(canvas.id==="terrain-canvas-large")
+    terrainDrawOverlays(ctx,projected,grid,terrainGeo,geoObjects,view);
 }
 function drawTerrainPreview(grid){
   terrainDrawCanvas($("terrain-canvas"),grid,terrainView);
@@ -1228,6 +1351,7 @@ function terrainSyncControls(){
   }
   $("terrain-color").checked=terrainView.color;
   $("terrain-wire").checked=terrainView.wire;
+  $("terrain-geo-overlay").checked=terrainView.geoOverlay;
   $("terrain-azimuth-value").textContent=Math.round(terrainView.azimuth)+"°";
   $("terrain-tilt-value").textContent=Math.round(terrainView.tilt)+"°";
   $("terrain-zoom-value").textContent=terrainView.zoom.toFixed(1).replace(".",",")+"×";
@@ -1257,6 +1381,7 @@ function terrainControlChanged(){
   }
   terrainView.color=$("terrain-color").checked;
   terrainView.wire=$("terrain-wire").checked;
+  terrainView.geoOverlay=$("terrain-geo-overlay").checked;
   terrainSyncControls();
   terrainRedrawSoon();
 }
