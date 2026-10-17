@@ -373,6 +373,9 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="pane-inner">
 <div class="page-head"><div><h1>Flottenstatus</h1><p class="muted">Matrice 4T und weitere DJI-Geräte · Echtzeitstatus aus FlightHub 2</p></div></div>
 <div id="fleet-grid" class="fleet-grid"><div class="empty">Lokale Flottendaten werden geladen…</div></div>
+<div class="page-head" style="margin-top:24px"><div><h2>Direkte Pilot-2-Gerätetopologie</h2><p class="muted">Drohnen, Fernsteuerungen und Zuordnung aus der lokalen Cloud · nur lesen</p></div><button id="pilot2-topology-refresh">Pilot-2-Geräte laden</button></div>
+<div id="pilot2-topology-state" class="status" role="status" aria-live="polite">Daten werden nur nach Klick geladen.</div>
+<div id="pilot2-topology-grid" class="fleet-grid"></div>
 </div>
 </section>
 </main>
@@ -1347,6 +1350,32 @@ async function loadFleet(){
   }
   return data.devices;
 }
+async function loadPilot2Topology(){
+  const status=$("pilot2-topology-state"),grid=$("pilot2-topology-grid"),button=$("pilot2-topology-refresh");
+  button.disabled=true;grid.replaceChildren();
+  status.className="status";status.textContent="Lokale Pilot-2-Topologie wird abgefragt…";
+  try{
+    const response=await api("/api/v1/local-cloud/topology");
+    const data=await response.json();
+    if(data.state!=="connected")throw new Error("Pilot-2-Geräte: "+clean(data.state));
+    if(!Array.isArray(data.devices)||!Array.isArray(data.links))throw new Error("Ungültige Geräte-Topologie");
+    status.className="status good";
+    status.textContent=data.devices.length+" Geräte, "+data.links.length+
+      " Zuordnungen · Aktualisierung: "+clean(data.updated_at)+
+      " · keine automatische Flugsteuerung";
+    for(const item of data.devices){
+      const card=cardText(grid,"article","wayline-card");
+      cardText(card,"h2","",item.callsign||"DJI-Gerät");
+      cardText(card,"p","",item.role==="aircraft"?"Fluggerät":"Fernsteuerung");
+      cardText(card,"p","",clean(item.serial_number)+" · "+clean(item.device_model_key));
+      cardText(card,"p","",item.online===true?"Online":item.online===false?"Offline":"Online-Status unbekannt");
+    }
+    if(!data.devices.length)cardText(grid,"div","empty","Keine Geräte in der lokalen Pilot-2-Topologie gemeldet.");
+  }catch(err){
+    grid.replaceChildren();status.className="status error";
+    status.textContent=errorMessage(err)+" · Prüfung der Sitzung und lokalen Cloud erforderlich.";
+  }finally{button.disabled=false;}
+}
 async function showFleetOnMap(){
   const devices=await loadFleet();
   switchTab("map-pane");getMap();if(!map||!deviceLayer)throw new Error("Karte nicht verfügbar");deviceLayer.clearLayers();
@@ -2218,6 +2247,7 @@ function wire(){
   $("more-media").addEventListener("click",()=>{displayMedia+=20;renderMedia().catch(()=>{});});
   $("preview-close").addEventListener("click",closePreview);$("media-dialog").addEventListener("close",closePreview);
   $("refresh-fleet").addEventListener("click",()=>loadFleet().catch(err=>$("fleet-notice").textContent=err.message));
+  $("pilot2-topology-refresh").addEventListener("click",loadPilot2Topology);
   $("show-fleet-map").addEventListener("click",()=>showFleetOnMap().catch(err=>notice(err.message,true)));
   getMap();redraw();historyReset();
 }

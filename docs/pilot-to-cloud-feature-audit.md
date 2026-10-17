@@ -113,3 +113,11 @@ curl --fail --show-error --cacert config/pki/ca.crt \
 
 So lässt sich die zuletzt beobachtete Diskrepanz HTTP 200 / DJI `code=-1`
 lokal eingrenzen, ohne vertrauliche Originalantworten weiterzugeben.
+
+## Direktanzeige der Pilot-2-Topologie
+
+Im Mission Studio unter **Flottenstatus** kann die reine Gerätekopplung über
+`Pilot-2-Geräte laden` explizit abgerufen werden. Die Anzeige nutzt nur
+serverseitig validierte Gerätedaten und sichere DOM-`textContent`-Knoten.
+Die bestehende FlightHub-Flottenanzeige und der Telemetrie-Status bleiben
+unverändert; es werden keine MQTT-Kommandos gesendet.
