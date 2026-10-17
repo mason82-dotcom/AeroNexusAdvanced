@@ -284,7 +284,6 @@ def main(argv: list[str] | None = None) -> int:
         client = minio_client(settings)
         if args.dry_run:
             # This is a bucket metadata read, not a destructive S3 operation.
-            client.stat_object(settings.bucket, "__aeronexus_nonexistent_probe__") if False else None
             iterator = client.list_objects(settings.bucket, recursive=True)
             first = next(iter(iterator), None)
             print(json.dumps({"bucket": settings.bucket, "read_access": "ok",
