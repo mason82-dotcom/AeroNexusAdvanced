@@ -46,6 +46,7 @@ from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, 
 from .studio_events import serve_studio_events
 from .lan_access import lan_host, lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
+from .mission_csv import MAX_CSV_BYTES, MissionCsvError, preview_csv
 from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
 
@@ -441,6 +442,26 @@ def studio_create_mission(mission: WaypointMission, request: Request,
         return _studio_workspace(request, authorization).save_mission(mission)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
+
+
+@app.post("/api/v1/studio/missions/preview.csv")
+async def studio_preview_csv(request: Request, response: Response,
+                             delimiter: str = "semicolon", decimal: str = "dot",
+                             close_route: bool = False,
+                             authorization: str | None = Header(default=None)) -> dict:
+    """Authenticated, non-persistent CSV preview; existing mission save remains explicit."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > MAX_CSV_BYTES:
+            raise HTTPException(status_code=413, detail="CSV darf maximal 512 KiB groß sein.")
+        content.extend(chunk)
+    try:
+        return preview_csv(bytes(content), delimiter=delimiter, decimal=decimal,
+                           close_route=close_route)
+    except MissionCsvError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/v1/studio/missions/import.kmz", status_code=201)
