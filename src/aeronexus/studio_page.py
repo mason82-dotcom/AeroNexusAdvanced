@@ -281,11 +281,13 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </div>
 <div class="terrain-toggles">
 <label><input id="terrain-color" type="checkbox" checked> Höhenfarben</label>
+<label><input id="terrain-slope" type="checkbox"> Hangneigung einfärben</label>
 <label><input id="terrain-wire" type="checkbox" checked> Gitternetz</label>
 <label><input id="terrain-geo-overlay" type="checkbox" checked> Geo-Objekte (nur EPSG:4326)</label>
 <button id="terrain-reset-view">Ansicht zurücksetzen</button>
 </div>
 <div id="terrain-georef-info" class="terrain-location" role="status">Keine WGS84-Georeferenz geladen. Geländedarstellung weiterhin möglich.</div>
+<div id="terrain-slope-info" class="terrain-location" role="status">Noch keine Hangneigungsanalyse. GeoTIFF laden, um die lokale DEM-Neigung auszuwerten.</div>
 <canvas id="terrain-canvas-large" width="1000" height="590" role="img" aria-label="Interaktive orthografische Geländedarstellung"></canvas>
 <div id="terrain-large-message" class="terrain-help" role="status">Noch kein Höhenraster geladen. Links unter „Gelände aus GeoTIFF“ eine Datei auswählen und „3D-Vorschau“ drücken.</div>
 <div id="terrain-coordinate-probe" class="terrain-location" role="status">Klick auf die Geländeoberfläche: Rasterhöhe und WGS84-Position anzeigen (kein bekannter vertikaler Höhenbezug).</div>
@@ -296,6 +298,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </div>
 <canvas id="terrain-profile-canvas" width="980" height="190" role="img" aria-label="Schematisches Profil der interpolierten DEM-Höhen"></canvas>
 <div id="terrain-profile-message" class="terrain-help" role="status">Nur gespeicherte Linien, deren Punkte vollständig innerhalb des WGS84-Rasters liegen, können ausgewertet werden.</div>
+<p class="terrain-help">Die Hangneigung wird aus benachbarten Original-Rasterhöhen und den angenäherten horizontalen Rasterabständen berechnet (ohne Höhenüberhöhung). Stark vereinfachte, resampelte DEM-Visualisierung: keine Böschungs-, Hindernis- oder Flugfreigabe.</p>
 <p class="terrain-help">Schematische EPSG:4326-Punktzuordnung nur für kleine nordorientierte Raster. Höhenwerte bleiben in Metern, ihre vertikale Referenz (z. B. Geoid oder Ellipsoid) ist unbekannt. Überhöhung betrifft nur die Darstellung, niemals STL-Daten. Keine Hindernisprüfung oder DJI-Flugfreigabe.</p>
 </div>
 </section>
@@ -1156,7 +1159,7 @@ function showGeoPhotos(){
 // No WebGL, external 3D library, DJI flight path, map tiles or new backend API.
 // Never mutate the validated TerrainGrid: the STL uses original metre values.
 const TERRAIN_DEFAULT_VIEW=Object.freeze({
-  azimuth:45,tilt:45,zoom:1,exaggeration:2,color:true,wire:true,geoOverlay:true
+  azimuth:45,tilt:45,zoom:1,exaggeration:2,color:true,wire:true,slope:false,geoOverlay:true
 });
 let terrainView={...TERRAIN_DEFAULT_VIEW},terrainDrag=null,terrainDrawQueued=false;
 function terrainClamp(value,min,max){
@@ -1168,6 +1171,58 @@ function terrainColor(value){
   const start=Math.min(colors.length-2,Math.floor(index));
   const t=index-start,from=colors[start],to=colors[start+1];
   return "rgb("+from.map((channel,i)=>Math.round(channel+(to[i]-channel)*t)).join(",")+")";
+}
+// Phase 20: derive local DEM inclination from *unexaggerated* raster heights.
+// The bilinear partial derivatives use horizontal grid spacing in metres.
+// The result is a display-only angle, not a safe flight/terrain assessment.
+function terrainSlopeAt(grid,row,col){
+  if(!grid||!Number.isFinite(row)||!Number.isFinite(col))return null;
+  const z=grid.heights_m;
+  if(!Array.isArray(z)||z.length<2||!Array.isArray(z[0])||z[0].length<2||
+     !(grid.x_step_m>0)||!(grid.y_step_m>0))return null;
+  const nr=z.length,nc=z[0].length;
+  if(row<0||col<0||row>nr-1||col>nc-1)return null;
+  const r=Math.min(nr-2,Math.floor(row)),c=Math.min(nc-2,Math.floor(col));
+  const ty=row-r,tx=col-c;
+  const dx=((1-ty)*(z[r][c+1]-z[r][c])+
+    ty*(z[r+1][c+1]-z[r+1][c]))/grid.x_step_m;
+  const dy=((1-tx)*(z[r+1][c]-z[r][c])+
+    tx*(z[r+1][c+1]-z[r][c+1]))/grid.y_step_m;
+  const degrees=Math.atan(Math.hypot(dx,dy))*180/Math.PI;
+  return Number.isFinite(degrees)?degrees:null;
+}
+function terrainSlopeStatistics(grid){
+  if(!grid||!Array.isArray(grid.heights_m)||grid.heights_m.length<2||
+     !Array.isArray(grid.heights_m[0]))return null;
+  const rows=grid.heights_m.length,cols=grid.heights_m[0].length;
+  let min=Infinity,max=-Infinity,sum=0,count=0,steep=0;
+  for(let r=0;r<rows-1;r++){
+    for(let c=0;c<cols-1;c++){
+      const deg=terrainSlopeAt(grid,r+0.5,c+0.5);
+      if(deg===null)return null;
+      min=Math.min(min,deg);max=Math.max(max,deg);sum+=deg;count++;
+      if(deg>=30)steep++;
+    }
+  }
+  return count?{min_deg:min,max_deg:max,mean_deg:sum/count,
+    steep_cells:steep,total_cells:count}:null;
+}
+function terrainSlopeColor(degrees){
+  if(degrees===null||!Number.isFinite(degrees))return "#456677";
+  if(degrees<8)return "#3da989";
+  if(degrees<15)return "#b5bf5b";
+  if(degrees<30)return "#e4a354";
+  return "#d95c63";
+}
+function terrainUpdateSlopeInfo(grid){
+  const stats=terrainSlopeStatistics(grid);
+  $("terrain-slope-info").textContent=stats?
+    "DEM-Hangneigung (resampelte Zellen, keine Flugfreigabe): Mittel "+
+    stats.mean_deg.toFixed(1)+"°, Maximum "+stats.max_deg.toFixed(1)+
+    "° · ≥30°: "+stats.steep_cells+"/"+stats.total_cells+
+    " Zellen. Farben: Grün <8°, Gelb 8–15°, Orange 15–30°, Rot ≥30°. "+
+    "Rastergradient ohne Darstellungsüberhöhung; Höhenbezug ungeprüft.":
+    "Noch keine Hangneigungsanalyse. GeoTIFF laden, um die lokale DEM-Neigung auszuwerten.";
 }
 function terrainProjection(grid,view,width,height){
   const heights=grid.heights_m;
@@ -1399,7 +1454,10 @@ function terrainDrawCanvas(canvas,grid,view){
     ctx.closePath();
     const fraction=(cell.elevation-projected.zmin)/
       Math.max(projected.zmax-projected.zmin,1e-9);
-    ctx.fillStyle=view.color?terrainColor(fraction):"#456677";
+    const slope=view.slope?terrainSlopeAt(grid,cell.points[0].row+0.5,
+      cell.points[0].col+0.5):null;
+    ctx.fillStyle=view.slope?terrainSlopeColor(slope):
+      view.color?terrainColor(fraction):"#456677";
     ctx.fill();
     if(view.wire){
       ctx.strokeStyle="rgba(210,239,250,0.42)";
@@ -1420,6 +1478,7 @@ function terrainSyncControls(){
   }
   $("terrain-color").checked=terrainView.color;
   $("terrain-wire").checked=terrainView.wire;
+  $("terrain-slope").checked=terrainView.slope;
   $("terrain-geo-overlay").checked=terrainView.geoOverlay;
   $("terrain-azimuth-value").textContent=Math.round(terrainView.azimuth)+"°";
   $("terrain-tilt-value").textContent=Math.round(terrainView.tilt)+"°";
@@ -1450,6 +1509,7 @@ function terrainControlChanged(){
   }
   terrainView.color=$("terrain-color").checked;
   terrainView.wire=$("terrain-wire").checked;
+  terrainView.slope=$("terrain-slope").checked;
   terrainView.geoOverlay=$("terrain-geo-overlay").checked;
   terrainSyncControls();
   terrainRedrawSoon();
@@ -1491,10 +1551,12 @@ function terrainShowProbe(canvas,event){
     return;
   }
   const geo=terrainGeoFromGrid(terrainGeo,hit.row,hit.col);
+  const slope=terrainSlopeAt(terrainGrid,hit.row,hit.col);
   target.textContent="Rasterhöhe (vertikaler Bezug unbekannt): "+
     hit.elevation.toFixed(2)+" m · "+(geo?
       "WGS84 "+geo.latitude.toFixed(7)+", "+geo.longitude.toFixed(7):
-      "GPS-Position nicht verfügbar (CRS oder Rasterausdehnung ungeeignet)");
+      "GPS-Position nicht verfügbar (CRS oder Rasterausdehnung ungeeignet)")+
+    (slope===null?"":" · lokale DEM-Hangneigung "+slope.toFixed(1)+"° (ungeprüft)");
 }
 function terrainRefreshProfileOptions(){
   const select=$("terrain-profile-object"),old=select.value;
@@ -1589,6 +1651,7 @@ async function previewTerrain(){
   terrainProfile=null;
   terrainRefreshProfileOptions();
   terrainDrawProfile(null);
+  terrainUpdateSlopeInfo(terrainGrid);
   drawTerrainPreview(terrainGrid);
   $("terrain-georef-info").textContent=terrainGeo?
     "EPSG:4326 / WGS84 · georeferenzierte Rasterpunktmitten · Nordwest: "+
@@ -1718,6 +1781,7 @@ function wire(){
     terrainRefreshProfileOptions();
     $("terrain-coordinate-probe").textContent="Noch kein Geländepunkt ausgewählt.";
     $("terrain-georef-info").textContent="Keine WGS84-Georeferenz geladen.";
+    terrainUpdateSlopeInfo(null);
     $("terrain-profile-message").textContent="Noch kein Höhenprofil geladen.";
     $("terrain-export").disabled=true;
     $("terrain-open-large").disabled=true;
@@ -1728,7 +1792,7 @@ function wire(){
   $("terrain-open-large").addEventListener("click",()=>switchTab("terrain-pane"));
   $("terrain-show-map").addEventListener("click",terrainShowOnMap);
   $("terrain-reset-view").addEventListener("click",terrainResetView);
-  for(const key of ["azimuth","tilt","zoom","exaggeration","color","wire","geo-overlay"]){
+  for(const key of ["azimuth","tilt","zoom","exaggeration","color","wire","slope","geo-overlay"]){
     $("terrain-"+key).addEventListener("input",terrainControlChanged);
     $("terrain-"+key).addEventListener("change",terrainControlChanged);
   }
