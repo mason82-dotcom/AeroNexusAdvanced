@@ -22,7 +22,9 @@ const nodes=new Map();
 const $=id=>{
   if(!nodes.has(id))nodes.set(id,{textContent:"",value:"",children:[],
     replaceChildren(){this.children=[];},
-    appendChild(v){this.children.push(v);}});
+    appendChild(v){this.children.push(v);},
+    getContext(){return {clearRect(){},fillRect(){},beginPath(){},
+      moveTo(){},lineTo(){},stroke(){}};}});
   return nodes.get(id);
 };
 const els=(tag,cls,text)=>({tag,cls,textContent:text,value:""});
