@@ -55,6 +55,7 @@ const fs=require('node:fs'),assert=require('node:assert/strict');
 const logic=fs.readFileSync(0,'utf8');
 const elems=new Map();
 function element(){return {textContent:'',children:[],style:{},dataset:{},hidden:true,disabled:false,checked:false,value:'',
+  classList:{contains(){return true}},
   setAttribute(){},replaceChildren(){this.children=[]},appendChild(el){this.children.push(el);return el}}}
 const $=id=>{if(!elems.has(id))elems.set(id,element());return elems.get(id)};
 const els=(tag,cls,text)=>Object.assign(element(),{tag,className:cls,textContent:String(text??'')});
@@ -68,7 +69,9 @@ class Group {
 }
 const map={layers:[],lastBounds:null,addLayer(l){if(!this.layers.includes(l))this.layers.push(l)},
  removeLayer(l){this.layers=this.layers.filter(x=>x!==l)},
- hasLayer(l){return this.layers.includes(l)},fitBounds(b){this.lastBounds=b}};
+ hasLayer(l){return this.layers.includes(l)},fitBounds(b){this.lastBounds=b},
+ invalidateSize(options){assert.equal(options.pan,false)},
+ getContainer(){return {clientWidth:390,clientHeight:700}}};
 const markers=[];
 const L={layerGroup:()=>new Group(),featureGroup:()=>new Group(),
  circleMarker:(coords,options)=>{
@@ -93,14 +96,14 @@ const api=async (url,options)=>{
 const main=new Function('$','els','api','map','L','switchTab','getMap','mapWarning',
  'errorMessage','clean','cloudOverviewLayer','waylinePreviewLayer',
  'cloudOverviewGeneration','cloudOverviewController','cloudOverviewRoutes',
- 'CLOUD_OVERVIEW_COLORS','waylinePreviewRequest','fitWaylineMapBounds',logic+
+ 'CLOUD_OVERVIEW_COLORS','waylinePreviewRequest','requestAnimationFrame',logic+
  '\nreturn {openCloudOverview,closeCloudOverview,renderCloudOverview,fitCloudRoutes,'+
  'cloudOverviewLineStats,cloudOverviewFormatDistance,syncCloudOverviewShortcut,'+
  'setData(d){waylineData=d},getRoutes(){return cloudOverviewRoutes},getLayer(){return cloudOverviewLayer}};');
 const overview=main($,els,api,map,L,()=>{},()=>{},s=>warn.push(s),e=>e.message,v=>String(v??'–'),
  new Group(),new Group(),0,null,[],
  ["#ffb74d","#60b5ff","#82d39a","#df9eff","#ff7993","#66d8d5","#f3dc6d","#b8abff"],0,
- (bounds,isCurrent)=>{if(isCurrent())map.fitBounds(bounds)});
+ callback=>callback());
 const routes=Array.from({length:10},(_,n)=>({provider:n===9?'flighthub-public-v2':'pilot2-local-cloud',
  wayline_id:'r'+n,name:'Route '+n}));
 overview.setData({waylines:routes,local_pilot:{state:'connected',pagination_complete:true},missions:[]});
