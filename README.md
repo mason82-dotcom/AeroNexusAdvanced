@@ -36,6 +36,11 @@ FlightHub EU provider remains independent. DJI Cloud API 1.18 (2026-10-13)
 adds mainly O4 Ground Station and Dock functions, not a new Matrice 4T
 Pilot 2 API. See [Phase 9 live feed and 1.18 audit](docs/phase-9-cloud-api-live-feed.md).
 
+The telemetry extension covers M3E, M3T, M3M, M3TA and M4E/M4T property
+formats, RC Pro/RC Plus 2 link state, camera payloads and independent field
+freshness. Existing source timestamps prevent late samples replacing newer
+values. [Data contract and limits](docs/cloud-api-118-telemetry.md).
+
 ## DJI Cloud API server under AeroNexusAdvanced (Raspberry Pi 5)
 
 The previously installed `~/Projekte/AeroNexus/edge` server can be staged,

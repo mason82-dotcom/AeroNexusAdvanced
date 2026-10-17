@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from .inventory import DeviceType, Inventory
 from .providers import ProviderKind
+from .cloud_api_freshness import clock_view, project_fields
 
 
 def utc_now() -> datetime:
@@ -51,6 +52,8 @@ class StatusRuntime:
     catalog: dict[tuple[ProviderKind, str], dict] = field(default_factory=dict)
     flighthub_system_ok: bool | None = None
     catalog_updated_at: datetime | None = None
+    cloud_field_clocks: dict = field(default_factory=dict, repr=False)
+    cloud_osd_clocks: dict = field(default_factory=dict, repr=False)
 
     def device_views(
         self, provider: ProviderKind | None = None,
@@ -80,20 +83,32 @@ class StatusRuntime:
                 key: value for key, value in asdict(snapshot).items()
                 if key not in ("provider", "device_id")
             })
+            cloud = {}
+            key = (device.provider, device.project_id, device.device_id)
+            clocks = self.cloud_field_clocks.get(key)
+            if clocks:
+                last_known = sample
+                sample, field_status = project_fields(sample, clocks, now, self.settings.stale_after_seconds)
+                cloud = {'field_status': field_status, 'last_known_telemetry': last_known}
+                osd_clock = self.cloud_osd_clocks.get(key)
+                if osd_clock:
+                    freshness = clock_view(osd_clock, now, self.settings.stale_after_seconds)['freshness']
             views.append({
                 "provider": device.provider.value,
                 "project_id": device.project_id,
                 "device_id": device.device_id,
                 "kind": device.kind.value,
-                "name": device.name,
+                "name": ((snapshot.cloud_details or {}).get('aircraft_model_hint', device.name)
+                         if device.name == 'Aircraft' and snapshot is not None else device.name),
                 "freshness": freshness,
                 "received_at": utc_iso(received),
                 "age_seconds": age,
-                "online": snapshot.online if snapshot is not None and freshness == "fresh" else None,
+                "online": sample.get('online') if snapshot is not None and freshness == "fresh" else None,
                 "reported_online": None if snapshot is None else snapshot.online,
                 "telemetry": sample,
                 "health": list(self.health.get(
                     (device.provider, device.project_id, device.device_id), ())),
+                **cloud,
             })
         return tuple(views)
 

@@ -1,5 +1,6 @@
 """DJI Cloud API OSD normalization and validated, atomic ingestion."""
 import json
+import time
 
 import pytest
 
@@ -29,8 +30,13 @@ CONTROLLER = {"capacity_percent": 88, "latitude": 49.1, "longitude": 8.5,
               "wireless_link": {"sdr_quality": 5}}
 
 
+_last_timestamp = 0
+
+
 def envelope(data):
-    return json.dumps({"tid": "t", "bid": "b", "timestamp": 1, "data": data}).encode()
+    global _last_timestamp
+    _last_timestamp = max(_last_timestamp + 1, time.time_ns() // 1_000_000)
+    return json.dumps({"tid": "t", "bid": "b", "timestamp": _last_timestamp, "data": data}).encode()
 
 
 def topic(sn):
@@ -63,6 +69,9 @@ def test_classification():
 
 def test_aircraft_mapping():
     f = normalize_osd(DeviceType.AIRCRAFT, AIRCRAFT)
+    details = f.pop('cloud_details')
+    assert details['position']['quality_code'] == 5
+    assert details['battery']['remaining_flight_time_s'] == 1200
     assert f == {
         "latitude": 49.1, "longitude": 8.5, "height_m": 162.4, "elevation_m": 42.3,
         "home_distance_m": 120.0, "horizontal_speed_mps": 5.2, "vertical_speed_mps": -0.4,
@@ -74,7 +83,8 @@ def test_aircraft_mapping():
 
 def test_controller_mapping_ignores_aircraft_fields():
     assert normalize_osd(DeviceType.CONTROLLER, CONTROLLER) == {
-        "latitude": 49.1, "longitude": 8.5, "battery_percent": 88}
+        "latitude": 49.1, "longitude": 8.5, "battery_percent": 88,
+        "cloud_details": {'wireless_link': {'sdr_quality': 5}}}
 
 
 def test_zero_position_is_no_location_and_strings_accepted():

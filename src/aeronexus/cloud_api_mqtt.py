@@ -15,7 +15,8 @@ import os
 import secrets
 
 from .cloud_api_osd import (CloudOsdError, OSD_TOPIC, STATE_TOPIC, MAX_PAYLOAD_BYTES,
-                            classify, normalize_osd, osd_data, topic_device)
+                            classify, normalize_osd, osd_envelope, topic_device)
+from .cloud_api_freshness import merge_fields
 from .inventory import DeviceType, Project
 from .providers import ProviderKind
 from .status_runtime import StatusRuntime, utc_iso, utc_now
@@ -110,6 +111,7 @@ class CloudOsdIngest:
         self.accepted = 0
         self.rejected = 0
         self.ignored = 0
+        self.outdated = 0
         self.last_message_at: datetime | None = None
         runtime.inventory.add_project(Project(CLOUD, project_id, "AeroNexus (DJI Cloud API)"))
 
@@ -119,7 +121,10 @@ class CloudOsdIngest:
             serial, channel = topic_device(topic)
             if channel == "state" and not allow_state:
                 raise CloudOsdError("DJI state topic is not enabled")
-            data = osd_data(payload)
+            data, timestamp = osd_envelope(payload)
+            received = utc_now()
+            if timestamp is not None and timestamp > int(received.timestamp() * 1000) + 30000:
+                raise CloudOsdError("DJI source clock too far in future")
             classified = classify(data)
             known = inventory._devices.get((CLOUD, self.project_id, serial))
             if channel == "state":
@@ -132,25 +137,48 @@ class CloudOsdIngest:
                 if classified is not None and classified != kind:
                     raise CloudOsdError("State device type conflicts with known device")
             else:
-                kind = classified
+                kind = classified if classified is not None else (known.kind if known else None)
                 if kind is None:
                     self.ignored += 1
                     return False
+                if known is not None and kind != known.kind:
+                    raise CloudOsdError("OSD device type conflicts with known device")
             if known is None and len(inventory.devices(CLOUD, self.project_id)) >= self.max_devices:
                 raise CloudOsdError("Device limit reached")
             fields = normalize_osd(kind, data)
-            if channel == "state" and not fields:
+            if not fields:
                 self.ignored += 1
                 return False
             previous = inventory.telemetry(CLOUD, self.project_id, serial)
             base = {} if previous is None else {
                 key: value for key, value in vars(previous).items()
                 if key not in ("provider", "device_id")}
-            record = {**base, **fields, "device_id": serial, "online": True}
+            key = (CLOUD, self.project_id, serial)
+            clocks = self.runtime.cloud_field_clocks.get(key, {})
+            merged, staged, changed = merge_fields(base, fields, clocks, received, timestamp, channel)
+            if not changed:
+                self.ignored += 1
+                self.outdated += 1
+                return False
+            osd_clock = self.runtime.cloud_osd_clocks.get(key)
+            renew_osd = channel == 'osd' and (
+                osd_clock is None or (timestamp is not None and (
+                    osd_clock['source_timestamp_ms'] is None or timestamp > osd_clock['source_timestamp_ms']))
+                or (timestamp is None and osd_clock['source_timestamp_ms'] is None))
+            if renew_osd:
+                merged['online'] = True
+                staged['online'] = {'received_at': received, 'source_timestamp_ms': timestamp, 'channel': channel}
+            record = {**merged, "device_id": serial}
             ingest_project_batch(
                 inventory, CLOUD, self.project_id,
                 [{"kind": kind.value, "device_id": serial, "name": _NAMES[kind]}],
                 [record])
+            self.runtime.cloud_field_clocks[key] = staged
+            if renew_osd:
+                self.runtime.cloud_osd_clocks[key] = staged['online']
+            # State or late disjoint properties do not renew device liveness.
+            inventory._received_at[key] = (received if renew_osd else
+                                          osd_clock['received_at'] if osd_clock else received)
         except ValueError:
             # Covers CloudOsdError and all validation errors; content is not logged.
             self.rejected += 1
@@ -267,5 +295,6 @@ class CloudMqttFeed:
             "accepted": self.ingest.accepted,
             "rejected": self.ingest.rejected,
             "ignored": self.ingest.ignored,
+            "outdated": self.ingest.outdated,
             "last_message_at": utc_iso(self.ingest.last_message_at),
         }

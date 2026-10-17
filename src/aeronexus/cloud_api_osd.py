@@ -18,6 +18,7 @@ from math import isfinite
 import re
 
 from .inventory import DeviceType
+from .cloud_api_details import PAYLOAD_MODELS, normalize_details
 
 
 class CloudOsdError(ValueError):
@@ -29,9 +30,10 @@ STATE_TOPIC = "thing/product/+/state"
 MAX_PAYLOAD_BYTES = 65536
 _TOPIC = re.compile(r"thing/product/([A-Za-z0-9_-]{1,80})/(osd|state)\Z")
 _AIRCRAFT_KEYS = frozenset({"mode_code", "elevation", "position_state", "home_distance",
-                            "horizontal_speed", "total_flight_sorties"})
+                            "horizontal_speed", "total_flight_sorties", "attitude_head",
+                            "attitude_roll", "attitude_pitch", "wind_speed"})
 _CONTROLLER_KEYS = frozenset({"capacity_percent", "wireless_link",
-                              "transmission_signal_quality"})
+                              "transmission_signal_quality", "live_status", "live_capacity"})
 
 
 def topic_device(topic: str) -> tuple[str, str]:
@@ -52,6 +54,11 @@ def topic_serial(topic: str) -> str:
 
 def osd_data(payload: bytes) -> Mapping:
     """Bounded JSON decode of the Cloud API envelope; returns its data object."""
+    return osd_envelope(payload)[0]
+
+
+def osd_envelope(payload: bytes) -> tuple[Mapping, int | None]:
+    """Decode once; preserve optional source milliseconds for ordering and age."""
     if not isinstance(payload, (bytes, bytearray)) or not 0 < len(payload) <= MAX_PAYLOAD_BYTES:
         raise CloudOsdError("Invalid OSD payload size")
     try:
@@ -61,12 +68,19 @@ def osd_data(payload: bytes) -> Mapping:
     data = message.get("data") if isinstance(message, dict) else None
     if not isinstance(data, dict) or not data:
         raise CloudOsdError("OSD payload has no data object")
-    return data
+    timestamp = message.get("timestamp")
+    if timestamp is not None and (type(timestamp) is not int or not 0 <= timestamp <= 253402300799999):
+        raise CloudOsdError("Invalid DJI source timestamp")
+    return data, timestamp
 
 
 def classify(data: Mapping) -> DeviceType | None:
     keys = set(data)
-    if keys & _AIRCRAFT_KEYS or isinstance(data.get("battery"), Mapping):
+    cameras = data.get('cameras')
+    known_camera = isinstance(cameras, list) and any(
+        isinstance(c, Mapping) and isinstance(c.get('payload_index'), str)
+        and c['payload_index'] in PAYLOAD_MODELS for c in cameras)
+    if keys & (_AIRCRAFT_KEYS | PAYLOAD_MODELS.keys()) or known_camera or isinstance(data.get("battery"), Mapping):
         return DeviceType.AIRCRAFT
     if keys & _CONTROLLER_KEYS:
         return DeviceType.CONTROLLER
@@ -133,6 +147,9 @@ def normalize_osd(kind: DeviceType, data: Mapping) -> dict:
         fields["latitude"], fields["longitude"] = lat, lon
     if kind == DeviceType.CONTROLLER:
         _put(fields, data, "capacity_percent", "battery_percent")
+        details = normalize_details(kind.value, data)
+        if details:
+            fields['cloud_details'] = details
         return fields
     _put(fields, data, "height", "height_m")
     _put(fields, data, "elevation", "elevation_m")
@@ -155,4 +172,7 @@ def normalize_osd(kind: DeviceType, data: Mapping) -> dict:
     if isinstance(packs, list) and packs and isinstance(packs[0], Mapping):
         _put(fields, packs[0], "voltage", "battery_voltage_mv")
         _put(fields, packs[0], "temperature", "battery_temperature_c")
+    details = normalize_details(kind.value, data)
+    if details:
+        fields['cloud_details'] = details
     return fields
