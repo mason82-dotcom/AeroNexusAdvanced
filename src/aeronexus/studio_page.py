@@ -314,7 +314,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div id="map" role="application" aria-label="Interaktive Missionskarte"></div>
 <div class="map-bar">
 <select id="map-layer" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
-<button id="pilot2-map-toggle" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button><button id="wayline-preview-clear" hidden>Cloud-Vorschau schließen</button><button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
+<button id="pilot2-map-toggle" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button><button id="wayline-preview-fit" hidden>Cloud-Vorschau zentrieren</button><button id="wayline-preview-clear" hidden>Cloud-Vorschau schließen</button><button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
 </div>
 <section id="cloud-overview-panel" role="region" aria-label="Cloud-Waylines auf der Karte" hidden>
   <div class="cloud-head"><strong>Cloud-Routen · nur lesen</strong><button id="cloud-overview-close" type="button">Schließen</button></div>
@@ -445,7 +445,7 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
 const SATELLITE_TILE_URL="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,pilot2MapLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
-let pilot2LayerVisible=false,pilot2LayerRequest=0,waylinePreviewLayer=null,waylinePreviewRequest=0;
+let pilot2LayerVisible=false,pilot2LayerRequest=0,waylinePreviewLayer=null,waylinePreviewRequest=0,waylinePreviewBounds=null;
 let cloudOverviewLayer=null,cloudOverviewGeneration=0,cloudOverviewController=null,cloudOverviewRoutes=[];
 const CLOUD_OVERVIEW_COLORS=["#ffb74d","#60b5ff","#82d39a","#df9eff","#ff7993","#66d8d5","#f3dc6d","#b8abff"];
 let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainGeo=null,terrainLoadSerial=0,terrainProfile=null,studioSocket=null,studioFleetLoading=false;
@@ -1194,8 +1194,25 @@ function renderWaylines(){
     waylineData.local_pilot.pagination_complete===true&&
     waylineData.waylines.some(route=>route.provider==="pilot2-local-cloud"));
 }
+// Leaflet must measure the newly revealed map on mobile before computing fit zoom.
+function fitWaylineMapBounds(bounds,isCurrent){
+  if(!bounds||!bounds.isValid())return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(!isCurrent()||!map||!$("map-pane").classList.contains("active"))return;
+    map.invalidateSize({pan:false});
+    const container=map.getContainer();
+    if(!container||container.clientWidth<60||container.clientHeight<60)return;
+    map.fitBounds(bounds.pad(.18),{maxZoom:17,animate:false});
+  }));
+}
+function centerCloudWaylinePreview(){
+  fitWaylineMapBounds(waylinePreviewBounds,()=>waylinePreviewBounds!==null&&
+    waylinePreviewLayer!==null&&map.hasLayer(waylinePreviewLayer));
+}
 function clearCloudWaylinePreview(){
   ++waylinePreviewRequest;
+  waylinePreviewBounds=null;
+  $("wayline-preview-fit").hidden=true;
   if(waylinePreviewLayer){waylinePreviewLayer.clearLayers();if(map)map.removeLayer(waylinePreviewLayer);}
   $("wayline-preview-clear").hidden=true;
   if(map)mapWarning("Cloud-Wayline-Vorschau ausgeblendet. Keine Missionsdaten verändert.");
@@ -1203,6 +1220,8 @@ function clearCloudWaylinePreview(){
 async function previewCloudWayline(route,button){
   closeCloudOverview(true);
   const request=++waylinePreviewRequest;
+  waylinePreviewBounds=null;
+  $("wayline-preview-fit").hidden=true;
   if(waylinePreviewLayer){waylinePreviewLayer.clearLayers();if(map)map.removeLayer(waylinePreviewLayer);}
   $("wayline-preview-clear").hidden=true;
   button.disabled=true;
@@ -1222,7 +1241,9 @@ async function previewCloudWayline(route,button){
       if(!item||!item.geometry)continue;
       L.geoJSON({type:"Feature",geometry:item.geometry,properties:{}},{
         interactive:false,
-        pointToLayer:(_item,latlng)=>L.circleMarker(latlng,{radius:6,interactive:false})
+        style:()=>({color:"#ffb74d",weight:5,opacity:1}),
+        pointToLayer:(_item,latlng)=>L.circleMarker(latlng,{
+          radius:7,color:"#ffb74d",fillColor:"#fff",fillOpacity:1,interactive:false})
       }).addTo(waylinePreviewLayer);
     }
     $("wayline-preview-clear").hidden=false;
@@ -1230,8 +1251,13 @@ async function previewCloudWayline(route,button){
       typeof layer.getBounds==="function"?[layer.getBounds()]:[]);
     if(bounds.length){
       const merged=L.latLngBounds([]);
-      for(const bound of bounds)merged.extend(bound);
-      if(merged.isValid())map.fitBounds(merged.pad(.2),{maxZoom:16});
+      for(const bound of bounds)if(bound.isValid())merged.extend(bound);
+      if(merged.isValid()){
+        waylinePreviewBounds=merged;
+        $("wayline-preview-fit").hidden=false;
+        fitWaylineMapBounds(merged,()=>request===waylinePreviewRequest&&
+          waylinePreviewBounds===merged&&map.hasLayer(waylinePreviewLayer));
+      }
     }
     mapWarning("Schreibgeschützte Cloud-Vorschau: "+clean(data.name)+" · "+
       data.features.length+" Geometrie(n) aus "+clean(data.source)+
@@ -1476,7 +1502,11 @@ function switchTab(id){
   });
   const mapVisible=(id==="map-pane"||id==="geo-pane");
   $("map-pane").classList.toggle("active",mapVisible);
-  if(mapVisible&&map)setTimeout(()=>map.invalidateSize(),80);
+  if(mapVisible&&map){
+    // Recompute the visible map size before any new route fit; never pan on resize.
+    map.invalidateSize({pan:false});
+    setTimeout(()=>map?.invalidateSize({pan:false}),80);
+  }
   if(id==="waylines-pane"&&!waylineData&&!waylineAbort)loadWaylines();
 }
 async function loadWorkspace(){
@@ -2477,6 +2507,7 @@ function wire(){
   $("map-layer").addEventListener("change",e=>setMapLayer(e.target.value));
   $("map-home").addEventListener("click",centerOnForst);
   $("wayline-preview-clear").addEventListener("click",clearCloudWaylinePreview);
+  $("wayline-preview-fit").addEventListener("click",centerCloudWaylinePreview);
   $("pilot2-map-toggle").addEventListener("click",()=>togglePilot2MapLayer().catch(err=>mapWarning(errorMessage(err))));
   $("apply-point").addEventListener("click",()=>{
     const p=mission.waypoints[selected];if(!p)return;
