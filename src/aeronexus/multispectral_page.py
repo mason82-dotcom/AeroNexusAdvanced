@@ -113,7 +113,7 @@ th{color:var(--sub);font-weight:600}
 <a href="/media">DJI Medien</a>
 <a href="/thermal">Thermal</a>
 <span class="active" aria-current="page">Multispektral</span>
-</nav>
+<a href="/results">Ergebnisraster</a></nav>
 <span class="header-state" id="state" role="status" aria-live="polite">Lade Aufnahmen…</span>
 </header>
 <div class="layout">
