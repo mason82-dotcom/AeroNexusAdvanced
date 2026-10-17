@@ -114,6 +114,15 @@ curl --fail --show-error --cacert config/pki/ca.crt \
 So lässt sich die zuletzt beobachtete Diskrepanz HTTP 200 / DJI `code=-1`
 lokal eingrenzen, ohne vertrauliche Originalantworten weiterzugeben.
 
+**Pilot-2-Livetest vom 17.10.2026:** Der lokale DJI-Server beantwortete
+Wayline-Abfragen ohne `order_by` mit HTTP 200 / `code=-1`.
+Das Java-Log bestätigte `BindException` / `getWaylineListRequest.orderBy`
+`must not be null`. Die reguläre, lesende Abfrage mit
+`page=1&page_size=50&order_by=create_time asc` lieferte `code=0`.
+Die Diagnose verwendet deshalb dieselben Parameter wie der funktionierende
+Wayline-Leseadapter. Dies behebt die Anfragekompatibilität; eine Änderung am
+DJI-Backend oder an der Datenbank ist nicht erforderlich.
+
 ## Direktanzeige der Pilot-2-Topologie
 
 Im Mission Studio unter **Flottenstatus** kann die reine Gerätekopplung über

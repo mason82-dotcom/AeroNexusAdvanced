@@ -134,3 +134,24 @@ def test_diagnostics_invalid_response_is_not_ok():
     result = _get(p2.read_diagnostics, httpx.Response(200, text="not-json"))
     assert result["all_ok"] is False
     assert all(value["state"] == "invalid_response" for value in result["checks"].values())
+
+
+def test_diagnostics_wayline_query_uses_required_backend_ordering():
+    """The deployed DJI backend requires order_by; use the known working read request."""
+    seen = []
+
+    def handler(request):
+        assert request.method == "GET"
+        seen.append(request.url.path)
+        if request.url.path.endswith("/waylines"):
+            assert dict(request.url.params) == {
+                "page": "1", "page_size": str(p2.PAGE_SIZE),
+                "order_by": "create_time asc",
+            }
+        return httpx.Response(200, json={"code": 0, "data": {}})
+
+    result = _get(p2.read_diagnostics, handler)
+    assert len(seen) == 4
+    assert result["checks"]["waylines"] == {
+        "http_status": 200, "api_code": 0, "state": "ok"}
+    assert result["all_ok"] is True

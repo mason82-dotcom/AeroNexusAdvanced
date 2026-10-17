@@ -14,7 +14,7 @@ from uuid import UUID
 
 import httpx
 
-from .local_waylines import (ORIGIN, MAX_BODY, LocalWaylineError, credentials_path,
+from .local_waylines import (ORIGIN, MAX_BODY, PAGE_SIZE, LocalWaylineError, credentials_path,
                              handoff_enabled, load_credentials)
 
 CACHE_SECONDS = 20
@@ -242,7 +242,7 @@ async def read_diagnostics(credentials, *, transport=None):
     endpoints = {
         "session": ("/manage/api/v1/users/current", None),
         "waylines": (f"/wayline/api/v1/workspaces/{workspace}/waylines",
-                     {"page": 1, "page_size": 1}),
+                     {"page": 1, "page_size": PAGE_SIZE, "order_by": "create_time asc"}),
         "map_elements": (f"/map/api/v1/workspaces/{workspace}/element-groups", None),
         "topology": (f"/manage/api/v1/workspaces/{workspace}/devices/topologies", None),
     }
