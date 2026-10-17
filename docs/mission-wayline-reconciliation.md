@@ -395,3 +395,28 @@ der Satellitenkarte gezeichnet. Bestehende Missionen bleiben unverändert.
 Eine Weltansicht trotz dieser Korrektur kann auch durch sehr weit
 auseinanderliegende, aber syntaktisch gültige WPML-Koordinaten entstehen;
 dies ist anhand des konkreten KMZ-Geometrieumfangs separat zu prüfen.
+
+## Mobile Kartenansicht und einklappbare Bedienfelder
+
+Auf schmalen Browseransichten (bis 700 Pixel CSS-Breite) ist die
+Kartenwerkzeugleiste zunächst eingeklappt: „Werkzeuge“ öffnet beziehungsweise
+schließt die sekundären Kartenaktionen, während der Kartenfokus und eine
+verfügbare Cloud-Routenzentrierung sichtbar bleiben. Am Desktop bleiben die
+gewohnten Kartenwerkzeuge eingeblendet.
+
+„Kartenfokus“ bringt den Kartenbereich über eine fest positionierte Ansicht
+auf die verfügbare Gerätehöhe. Die normale Browsernavigation bleibt nutzbar;
+die App fordert ausdrücklich **keinen** Browser- oder System-Vollbildzugriff an.
+„Kartenfokus beenden“ stellt die normale geteilte Oberfläche wieder her,
+ohne den Missionseditor oder den Cloud-Layer zurückzusetzen. Leaflet
+misst nach jeder Umschaltung den Kartencontainer erneut.
+
+Die bei mehreren Waylines angezeigte Legende startet auf schmalen Bildschirmen
+minimiert. „Routen anzeigen“ blendet die bestehenden, einzeln ein- und
+ausblendbaren Routen auf. Route-Name, Farbe, Punktzahl und Geometrie-Status
+werden unverändert verwendet. Der Kartentext ist mobil auf eine Zeile
+begrenzt und kann über „Werkzeuge“ → „Hinweis zeigen“ erweitert werden.
+
+Dies sind ausschließlich Browseransichtsänderungen: keine neuen DJI-API-
+Aufrufe, keine Speicherung von Cloud-KMZ-Dateien, keine Missionsänderungen
+und keine Flugfreigabe. Visuelle Live-Abnahme auf Android steht noch aus.
