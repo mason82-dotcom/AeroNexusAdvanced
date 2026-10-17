@@ -195,7 +195,9 @@ class ThermalGeoIndex:
         read = failed = 0
         try:
             known = {row["id"]: row["etag"] for row in db.execute("SELECT id, etag FROM thermal_geo")}
-            records = [r for r in self.media.thermal_records() if r["bucket"] == bucket]
+            from .photo_catalog import PhotoCatalog
+            extra = PhotoCatalog(self.media).thermal_ids()
+            records = [r for r in self.media.thermal_records(extra) if r["bucket"] == bucket]
             with db:
                 current = {r["id"] for r in records}
                 for stale in set(known) - current:

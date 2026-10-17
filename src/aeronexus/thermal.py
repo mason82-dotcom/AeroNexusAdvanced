@@ -15,6 +15,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 import math
 import re
+import sqlite3
 import struct
 import threading
 
@@ -62,7 +63,7 @@ def jpeg_segments(data: bytes, *, partial: bool = False) -> dict:
     """
     if not isinstance(data, (bytes, bytearray)) or data[:2] != b"\xff\xd8":
         raise ThermalError("Not a JPEG image")
-    pos, xmp, app3, size, dji, truncated = 2, None, 0, None, False, False
+    pos, xmp, app3, size, dji, truncated, exif = 2, None, 0, None, False, False, None
     for _ in range(4096):
         if partial and pos + 4 > len(data):
             truncated = True
@@ -84,6 +85,8 @@ def jpeg_segments(data: bytes, *, partial: bool = False) -> dict:
         body = data[pos + 4:pos + 2 + length]
         if marker == 0xE1 and body.startswith(_XMP_HEADER) and xmp is None:
             xmp = body[len(_XMP_HEADER):].decode("utf-8", "replace")
+        elif marker == 0xE1 and body.startswith(b"Exif\0\0") and exif is None:
+            exif = bytes(body[6:])
         elif marker == 0xE3:
             app3 += len(body)
         elif marker == 0xE4 and b"iirp" in body[:16]:
@@ -95,7 +98,50 @@ def jpeg_segments(data: bytes, *, partial: bool = False) -> dict:
     else:
         raise ThermalError("Too many JPEG segments")
     return {"xmp": xmp, "raw_bytes": app3, "size": size, "dji_ir_header": dji,
-            "truncated": truncated}
+            "truncated": truncated, "exif": exif}
+
+
+_EXIF_TAGS = {0x9003: "date_time_original", 0xA405: "focal_length_35mm",
+              0xA002: "pixel_width", 0xA003: "pixel_height", 0x920A: "focal_length_mm"}
+
+
+def exif_fields(exif: bytes | None) -> dict:
+    """A few EXIF values (IFD0 -> Exif IFD), bounded; never raises on bad data."""
+    out: dict = {}
+    if not exif or len(exif) < 8 or exif[:4] not in (b"II*\0", b"MM\0*"):
+        return out
+    bo = "<" if exif[:2] == b"II" else ">"
+
+    def ifd(offset: int) -> dict:
+        entries = {}
+        if not 8 <= offset <= len(exif) - 2:
+            return entries
+        count = struct.unpack(bo + "H", exif[offset:offset + 2])[0]
+        for i in range(min(count, 256)):
+            pos = offset + 2 + 12 * i
+            if pos + 12 > len(exif):
+                break
+            tag, typ, n = struct.unpack(bo + "HHI", exif[pos:pos + 8])
+            raw = exif[pos + 8:pos + 12]
+            if typ == 3 and n == 1:
+                entries[tag] = struct.unpack(bo + "H", raw[:2])[0]
+            elif typ == 4 and n == 1:
+                entries[tag] = struct.unpack(bo + "I", raw)[0]
+            elif typ == 5 and n == 1:
+                ptr = struct.unpack(bo + "I", raw)[0]
+                if ptr + 8 <= len(exif):
+                    num, den = struct.unpack(bo + "II", exif[ptr:ptr + 8])
+                    entries[tag] = num / den if den else None
+            elif typ == 2 and n <= 64:
+                ptr = struct.unpack(bo + "I", raw)[0] if n > 4 else pos + 8
+                entries[tag] = exif[ptr:ptr + n].split(b"\0", 1)[0].decode("ascii", "replace")
+        return entries
+    root = ifd(struct.unpack(bo + "I", exif[4:8])[0])
+    sub = ifd(root.get(0x8769, 0)) if isinstance(root.get(0x8769), int) else {}
+    for tag, name in _EXIF_TAGS.items():
+        if tag in sub and sub[tag] not in (None, 0, ""):
+            out[name] = sub[tag]
+    return out
 
 
 _ATTR_RE = re.compile(r'([A-Za-z][\w-]*):([A-Za-z]\w*)="([^"]{0,200})"')
@@ -254,9 +300,19 @@ class ThermalService:
         except ThermalSdkError as exc:
             return {"available": False, "reason": str(exc)}
 
+    def extra_thermal_ids(self) -> set[str]:
+        """Infrared images recognised by metadata (photo catalogue), e.g. FlightHub
+        uploads ``org_*.jpg`` that do not carry the ``_T`` file-name suffix."""
+        from .photo_catalog import PhotoCatalog
+        try:
+            return PhotoCatalog(self.index).thermal_ids()
+        except (DjiMediaError, OSError, sqlite3.Error):
+            return set()
+
     def record(self, item_id: str) -> dict:
         record = self.index.get(item_id)
-        if record is None or not is_thermal_name(record["filename"]):
+        if record is None or not (is_thermal_name(record["filename"])
+                                  or item_id in self.extra_thermal_ids()):
             raise ThermalNotFound("Thermal image not indexed")
         return record
 
@@ -288,7 +344,8 @@ class ThermalService:
         return self.visual_ids([record])[record["id"]]
 
     def list(self, *, query="", limit=50, offset=0) -> dict:
-        result = self.index.list_thermal(query=query, limit=limit, offset=offset)
+        result = self.index.list_thermal(query=query, limit=limit, offset=offset,
+                                         extra_ids=self.extra_thermal_ids())
         records = self.index.get_many([item["id"] for item in result["media"]])
         pairs = self.visual_ids([records[i["id"]] for i in result["media"] if i["id"] in records])
         for item in result["media"]:

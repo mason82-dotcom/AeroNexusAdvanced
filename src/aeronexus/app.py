@@ -840,7 +840,7 @@ def thermal_status(request: Request, response: Response,
     service = _thermal_service(request, authorization)
     _no_cache(response)
     try:
-        listing = service.index.list_thermal(limit=1)
+        listing = service.index.list_thermal(limit=1, extra_ids=service.extra_thermal_ids())
     except (DjiMediaError, OSError, sqlite3.Error):
         listing = {"total": None, "last_scanned_at": None}
     return {"sdk": service.sdk_status(), "thermal_images": listing["total"],

@@ -287,16 +287,20 @@ class DjiMediaIndex:
         finally:
             db.close()
 
-    def list_thermal(self, *, query: str = "", limit: int = 50, offset: int = 0) -> dict:
-        """DJI infrared R-JPEGs (``*_T.JPG``), newest capture name first."""
+    def list_thermal(self, *, query: str = "", limit: int = 50, offset: int = 0,
+                     extra_ids: frozenset[str] | set[str] = frozenset()) -> dict:
+        """DJI infrared R-JPEGs (``*_T.JPG`` plus ``extra_ids`` recognised by their
+        metadata, e.g. FlightHub uploads ``org_*.jpg``), newest capture name first."""
         if not 1 <= limit <= 100 or not 0 <= offset <= 1_000_000 or len(query) > 120:
             raise DjiMediaError("Invalid thermal catalogue pagination")
         db = self._connect(write=False)
         if db is None:
             return {"media": [], "total": 0, "last_scanned_at": None}
         try:
-            where = " WHERE mime='image/jpeg' AND filename LIKE '%\\_T.JPG' ESCAPE '\\'"
-            args: list = []
+            ids = sorted(i for i in extra_ids if _ID_RE.fullmatch(i))[:30000]
+            where = (" WHERE mime='image/jpeg' AND (filename LIKE '%\\_T.JPG' ESCAPE '\\'"
+                     + (" OR id IN (" + ",".join("?" * len(ids)) + ")" if ids else "") + ")")
+            args: list = list(ids)
             if query:
                 escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                 where += " AND filename LIKE ? ESCAPE '\\'"
@@ -311,16 +315,30 @@ class DjiMediaIndex:
         finally:
             db.close()
 
-    def thermal_records(self) -> list[dict]:
+    def thermal_records(self, extra_ids: frozenset[str] | set[str] = frozenset()) -> list[dict]:
         """Internal records (with object keys) of all indexed thermal R-JPEGs."""
+        db = self._connect(write=False)
+        if db is None:
+            return []
+        ids = sorted(i for i in extra_ids if _ID_RE.fullmatch(i))[:30000]
+        try:
+            return [dict(row) for row in db.execute(
+                "SELECT id,bucket,object_key,filename,etag,size_bytes FROM media "
+                "WHERE mime='image/jpeg' AND (filename LIKE '%\\_T.JPG' ESCAPE '\\'"
+                + (" OR id IN (" + ",".join("?" * len(ids)) + ")" if ids else "") + ") "
+                "ORDER BY filename DESC", ids)]
+        finally:
+            db.close()
+
+    def jpeg_records(self) -> list[dict]:
+        """Internal records of all indexed JPEG photos (for the photo catalogue)."""
         db = self._connect(write=False)
         if db is None:
             return []
         try:
             return [dict(row) for row in db.execute(
                 "SELECT id,bucket,object_key,filename,etag,size_bytes FROM media "
-                "WHERE mime='image/jpeg' AND filename LIKE '%\\_T.JPG' ESCAPE '\\' "
-                "ORDER BY filename DESC")]
+                "WHERE mime='image/jpeg' ORDER BY filename")]
         finally:
             db.close()
 
