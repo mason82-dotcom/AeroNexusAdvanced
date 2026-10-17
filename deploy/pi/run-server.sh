@@ -15,6 +15,9 @@ set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 set +a
+# Never import another checkout through a stale systemd or .env PYTHONPATH.
+# This service must run the application from its own repository src tree.
+export PYTHONPATH="$ROOT/src"
 BIND="${AERONEXUS_BIND:-127.0.0.1}"
 PORT="${AERONEXUS_PORT:-8000}"
 ARGS=(-m uvicorn aeronexus.app:app --host "$BIND" --port "$PORT"
