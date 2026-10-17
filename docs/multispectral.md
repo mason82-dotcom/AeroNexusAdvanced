@@ -96,6 +96,41 @@ große Entfernungen – Nahaufnahmen zeigen Parallaxe zwischen den Bändern.
 - Live (17.10.2026): 3 Aufnahmen mit RTK-Position (Bodenaufnahmen, Kamera
   horizontal → Sichtkegel), NDVI-Median 0,56–0,57; 1 Innenaufnahme ohne GNSS.
 
+## 4-Band-GeoTIFF für QGIS (M3M-Stacking)
+
+Nach dem Vorbild von [mirrormapper/m3m-image-stacking](https://github.com/mirrormapper/m3m-image-stacking)
+(MIT): die vier Bänder einer Aufnahme als **ein** GeoTIFF, Bandfolge
+**NIR, Grün, Rot, RedEdge** (Band 1 ist NIR, nicht Rot).
+
+- Korrekturen: Vignettierung, Entzerrung (DewarpData), HMatrix-Ausrichtung,
+  Beschnitt der Warp-Ränder (50 px, höchstens 10 % je Seite).
+- **Produkte:** `reflectance` (relative Reflexion mit Sonnenlichtsensor,
+  float32, `nodata=nan`; gesperrt ohne gültigen Sonnenlichtsensor) oder `dn`
+  (uint16, Vignettierung auf Roh-DN wie im Original – kein Reflexionsprodukt).
+- **Feinausrichtung (DJI-Schritt 4)** – im Original offen: Translation per
+  Phasenkorrelation der Kantenbilder gegen NIR (bei voller Auflösung auf halber
+  Auflösung berechnet), nur bei klarem Korrelationsmaximum (≥ 8 σ) und
+  Versatz ≤ 30 px. Ermittelte Versätze stehen im TIFF (`RESIDUAL_SHIFTS`) und
+  im Antwort-Header `X-M3M-Residual-Shifts`.
+- **Georeferenz** (im Original nicht vorhanden): bei Nadir-Aufnahmen eine
+  näherungsweise affine Transformation (EPSG:4326) aus Position, Gimbal und
+  kalibrierter Brennweite über ebenem Gelände – zur Orientierung in QGIS,
+  kein Orthomosaik. Sonst ohne Georeferenz.
+- Format: gekacheltes TIFF (256 px), Deflate, Bandnamen und Tags
+  (`BAND_ORDER`, `PRODUCT`, `CORRECTIONS`, `DJI_CAPTURE_UUID`, GPS) in
+  `GDAL_METADATA`; mit GDAL 3.x/rasterio geprüft.
+- Ohne OpenCV/rasterio/GDAL (numpy + zlib); Entzerrung und Verschiebung
+  blockweise – Speicherspitze für volle Auflösung ca. 0,5 GB.
+- Oberfläche: Abschnitt „4-Band-GeoTIFF für QGIS“ im Multispektral-Tab.
+- API: `GET /api/v1/multispectral/captures/{uuid}/stack.tif?product=reflectance|dn&scale=1|2|4&refine=true&georef=true`
+- Lokale Ordner (wie `m3m-stack`):
+  `.venv/bin/python -m aeronexus.m3m_stack ORDNER -o AUSGABE [--product dn] [--scale 2] [--no-refine] [--no-georef] [--force]`
+  – Gruppierung über die CaptureUUID, auch für FlightHub-Dateinamen (`org_*.tiff`).
+- Live (17.10.2026, Aufnahme 15.10.2026 14:02): 2437×1815×4 in 12 s, 61 MB;
+  Restversätze nach HMatrix Grün 27,7 px, Rot 9,9 px, RedEdge 6,6 px
+  (Nahaufnahme, Parallaxe) – nach Feinausrichtung sichtbar weniger Farbsäume;
+  Tiefen-Parallaxe im Hintergrund bleibt. NDVI aus dem Stapel 0,574.
+
 ## API (Viewer-Zugriff wie Mission Studio)
 
 | Route | Inhalt |

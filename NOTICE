@@ -16,3 +16,10 @@ Adapted items (src/aeronexus):
 - flighthub_catalog.py: wayline/model/flight-task listings and the flight
   track GeoJSON Feature shape (fh2 task track --geojson)
 Only read-only functionality was adopted; no write or flight-control operations.
+
+mirrormapper/m3m-image-stacking (MIT License, Copyright (c) 2026 Mirrormapper)
+https://github.com/mirrormapper/m3m-image-stacking
+Feature set of the DJI Mavic 3M 4-band stack (band order NIR, Green, Red,
+RedEdge; vignetting, undistort and Calibrated HMatrix per DJI's Mavic 3M
+Image Processing Guide; warp-border crop; capture tags) in
+src/aeronexus/m3m_stack.py. Re-implemented with numpy; no code copied.
