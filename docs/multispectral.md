@@ -1,6 +1,6 @@
 # Multispektral-Modul DJI Mavic 3M (`/multispectral`)
 
-Stand: 17.10.2026 · Branch `feature/multispectral-m3m-20261017`
+Stand: 17.10.2026 · Multispektral-Qualitätssicherung
 
 Eigener Web-UI-Tab für die vier Multispektralbänder der Mavic 3M (Grün
 560 nm, Rot 650 nm, RedEdge 730 nm, NIR 860 nm; 16-Bit-TIFF 2592×1944) aus
@@ -17,7 +17,7 @@ dem schreibgeschützten MinIO-Medienindex.
   die ersten 256 KiB je Datei, inkrementell per ETag, keine MinIO-Schreibzugriffe.
 - Stand 17.10.2026: 4 vollständige 4-Band-Aufnahmen (3 × 15.10.2026 mit RTK
   und gültigem Sonnenlichtsensor, 1 Innenaufnahme vom 01.10.2026 ohne
-  Einstrahlungswert – wird mit Warnung angezeigt). Reine RGB-Aufnahmen ohne
+  Einstrahlungswert – bleibt mit Warnung sichtbar, Berechnung gesperrt). Reine RGB-Aufnahmen ohne
   Bänder werden nicht gelistet.
 
 ## Verarbeitung (DJI *Mavic 3M Image Processing Guide* v1.0, 08/2023)
@@ -31,6 +31,28 @@ dem schreibgeschützten MinIO-Medienindex.
 Schritte 3 und 4 werden als inverse Abbildung mit bilinearer Abtastung in
 numpy umgesetzt (kein OpenCV nötig). Ausgabe in 1296×972 (Standard),
 648×486 oder voller Auflösung.
+
+### Gültigkeit und Fehlerbehandlung
+
+- Sonnenlichtsensor: ausschließlich `LS_status=1` oder `2` und eine
+  `Irradiance > 1` werden zur Reflexionsberechnung zugelassen. Fehlende,
+  ungültige oder Platzhalterwerte sperren die betroffenen Bänder mit HTTP 422;
+  es wird kein künstlicher Ersatz für die Einstrahlung verwendet.
+- Pixel am/unter dem Schwarzwert, gesättigte Pixel und nicht positive oder
+  nicht endliche Reflexion werden als NaN ausgeschlossen. Indizes werden
+  nicht nachträglich auf −1…1 begrenzt; insbesondere LCI kann aufgrund seiner
+  anderen Nennerdefinition auch außerhalb dieses Bereichs liegen.
+- Singuläre/ungültige HMatrix, ungültige Dewarp-Brennweiten und abweichende
+  Bandrastergrößen ergeben kontrollierte Fehler statt interner Serverfehler.
+- Beim Aufnahme-, Ebenen- oder Auflösungswechsel werden Raster, Messungen
+  und Exportfreigaben sofort verworfen. Fehlgeschlagene Berechnungen können
+  daher kein altes Bild unter einem neuen Aufnahmenamen exportieren.
+  Verspätete Antworten überschreiben keine neuere Auswahl; CIR-Bänder sind
+  während des gesamten Abrufs an dieselbe Aufnahme gebunden.
+- Bereits gespeicherte NDVI-Übersichten werden durch eine neue
+  Verarbeitungsversion ungültig und müssen neu berechnet werden. Der
+  CLI-Bericht enthält `ndvi_failed`; einzelne fehlerhafte Aufnahmen verhindern
+  die Berechnung anderer Aufnahmen nicht. Bei Fehlern liefert die CLI Exitcode 1.
 
 **Grenzen:** Der gemeinsame Faktor ρ_NIR ist ohne Reflexions-Referenztafel
 unbekannt → Bandwerte sind *relative* Reflexion. NDVI, GNDVI, NDRE und LCI
@@ -55,12 +77,16 @@ große Entfernungen – Nahaufnahmen zeigen Parallaxe zwischen den Bändern.
 - Aufnahmepunkte, eingefärbt nach NDVI-Median (Rot–Gelb–Grün, grau = noch
   nicht berechnet); Tooltip mit Zeit, NDVI, Höhe, Pitch und Bodenauflösung;
   Klick wählt die Aufnahme.
-- Nadir-Aufnahmen (Pitch −75…−105°, Höhe > 1 m): Footprint und – optional –
-  das NDVI-Bild lagerichtig gedreht auf dem Footprint (Leaflet-Overlay,
+- Nadir-nahe Aufnahmen (Pitch −75…−105°, Höhe > 1 m): Footprint aus
+  Strahl-Boden-Schnittpunkten unter Berücksichtigung von Pitch und Yaw und – optional –
+  das NDVI-Bild auf allen vier Footprint-Ecken (projektives Dreiecksnetz, Leaflet-Overlay,
   max. 30 gleichzeitig). Schräg-/Bodenaufnahmen: Sichtkegel in Blickrichtung.
 - Sichtfeld aus der kalibrierten Brennweite im XMP (M3M 2170 px bei
-  2592×1944 → 61,7° × 48,3°, 73,5° diagonal); Bodenauflösung = Höhe / Brennweite.
-  Annahme: ebenes Gelände auf Startpunkthöhe.
+  2592×1944 → 61,7° × 48,3°, 73,5° diagonal); angezeigte Bodenauflösung ist
+  die größere zentrale Pixelabmessung `Höhe / (Brennweite · cos(Pitch+90°)²)`.
+  Annahme: ebenes Gelände auf Startpunkthöhe, kein Gimbal-Roll. Die Überlagerung
+  ist keine vermessungstaugliche Orthorektifizierung. Die bestehende
+  Thermografie-Rechteckprojektion bleibt unverändert.
 - NDVI-Übersichten werden als lokaler Cache im Katalog gespeichert, sobald
   der NDVI einer Aufnahme berechnet wurde; ändern sich Bänder (ETag), wird der
   Wert verworfen. Fehlende Übersichten: Schaltfläche „NDVI-Übersicht
@@ -91,9 +117,16 @@ Abhängigkeit: optionales Extra `pip install -e '.[multispectral]'` (numpy).
   Wand/Boden niedrig; leichte Farbsäume an nahen Ästen (Parallaxe).
 - Browser-UI: vom Anwender im Browser bestätigt (Bildansicht); Kartenansicht per Node geprüft.
 
+Die Live-Abnahme oben beschreibt den Stand vor der Qualitätssicherung.
+Die neuen Fehlerfälle sind mit synthetischen TIFFs, API-Tests und dem tatsächlich
+eingebetteten Viewer-JavaScript regressionsgetestet. Nach dem Update auf dem Pi
+den Katalog mit `.venv/bin/python -m aeronexus.multispectral --ndvi` aktualisieren,
+um gespeicherte Übersichten nach den neuen Regeln neu zu berechnen.
+
 ## Vorschläge
 
 - Reflexions-Referenztafel (Kalibrierpanel) zur absoluten Reflexion.
 - Mosaik/Orthofoto aus Flugserien (z. B. über OpenDroneMap) und Indexkarten
   auf der Operations-Karte.
 - Zonierung (Applikationskarten) aus NDVI-Klassen mit Export als Shapefile/GeoJSON.
+
