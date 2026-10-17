@@ -135,6 +135,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button data-tab="fleet-pane">Flottenstatus</button>
 <a href="/operations" style="color:#9edaff;padding:9px;text-decoration:none">Operations Center ↗</a>
 <a href="/status" style="color:#9edaff;padding:9px;text-decoration:none">Live-Dashboard ↗</a>
+<a href="/thermal" style="color:#9edaff;padding:9px;text-decoration:none">Thermografie ↗</a>
 </nav>
 <div class="auth"><span class="dot on" aria-hidden="true"></span>
 <span id="auth-message" class="auth-message" role="status" aria-live="polite">Direkter LAN-Zugriff · Daten werden geladen…</span>

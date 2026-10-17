@@ -206,6 +206,15 @@ Phase-20-Indizes unter `var/` bleiben unangetastet; für deren Umstieg ist
 ein expliziter Scan mit dem neuen Lesezugang erforderlich.
 Details: [Phase 21 – DJI-MinIO-Medien](docs/phase-21-dji-minio-media.md).
 
+## Thermografie (`/thermal`)
+
+Eigener Web-UI-Tab für radiometrische DJI-Wärmebilder (M3T/M4T R-JPEG) aus
+dem MinIO-Index. Temperaturen nur über das DJI Thermal SDK (`dji_irp`,
+auf dem Pi 5 via Box64): Paletten, Isotherme, Hot-/Coldspot, Punkt- und
+Bereichsmessung, Emissionsgrad & Co., PNG/CSV/JSON-Export. Installation:
+`deploy/pi/install-thermal-sdk.sh <dji_thermal_sdk_v1.8_*.zip>`.
+Details: [docs/thermography.md](docs/thermography.md).
+
 ## DEM-Hangneigung im 3D-Geländeviewer (Phase 20)
 
 Im Mission Studio lässt sich das importierte, auf maximal 48×48 Stützpunkte

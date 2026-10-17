@@ -281,6 +281,42 @@ class DjiMediaIndex:
         finally:
             db.close()
 
+    def list_thermal(self, *, query: str = "", limit: int = 50, offset: int = 0) -> dict:
+        """DJI infrared R-JPEGs (``*_T.JPG``), newest capture name first."""
+        if not 1 <= limit <= 100 or not 0 <= offset <= 1_000_000 or len(query) > 120:
+            raise DjiMediaError("Invalid thermal catalogue pagination")
+        db = self._connect(write=False)
+        if db is None:
+            return {"media": [], "total": 0, "last_scanned_at": None}
+        try:
+            where = " WHERE mime='image/jpeg' AND filename LIKE '%\\_T.JPG' ESCAPE '\\'"
+            args: list = []
+            if query:
+                escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                where += " AND filename LIKE ? ESCAPE '\\'"
+                args.append("%" + escaped + "%")
+            count = db.execute("SELECT COUNT(*) FROM media" + where, args).fetchone()[0]
+            rows = db.execute("SELECT * FROM media" + where +
+                              " ORDER BY filename DESC,id LIMIT ? OFFSET ?",
+                              [*args, limit, offset]).fetchall()
+            stamp = db.execute("SELECT MAX(completed_at) FROM scans").fetchone()[0]
+            return {"media": [self._public(row) for row in rows],
+                    "total": count, "last_scanned_at": stamp}
+        finally:
+            db.close()
+
+    def ids_by_filename(self, filename: str, *, limit: int = 2) -> list[str]:
+        if not isinstance(filename, str) or not 0 < len(filename) <= 240:
+            return []
+        db = self._connect(write=False)
+        if db is None:
+            return []
+        try:
+            return [row[0] for row in db.execute(
+                "SELECT id FROM media WHERE filename=? ORDER BY id LIMIT ?", (filename, limit))]
+        finally:
+            db.close()
+
     def summary(self) -> dict:
         db = self._connect(write=False)
         if db is None:

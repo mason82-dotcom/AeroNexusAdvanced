@@ -55,7 +55,8 @@ footer{color:#94adc7;font-size:12px;padding:10px 0}
 <div><div class="eyebrow">AERONEXUS ADVANCED · PHASE 20</div>
 <h1>DJI-MinIO-Medienindex</h1></div>
 <nav aria-label="Bereiche"><a href="/operations">Operations Center</a>
-<a href="/status">Live-Status</a><a href="/studio">Mission Studio</a></nav>
+<a href="/status">Live-Status</a><a href="/studio">Mission Studio</a>
+<a href="/thermal">Thermografie</a></nav>
 </header>
 <p>Schreibgeschützter Index der DJI-Pilot-2-Uploads. Originale verbleiben in MinIO.
 Aufnahmezeit, GPS-EXIF, Wärmebild- und Multispektraleigenschaften werden hier noch

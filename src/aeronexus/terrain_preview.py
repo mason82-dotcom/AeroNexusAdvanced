@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from secrets import token_hex
-from math import cos, hypot, isfinite, radians, sqrt
+from math import cos, isfinite, radians, sqrt
 import struct
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator

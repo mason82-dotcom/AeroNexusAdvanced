@@ -12,14 +12,15 @@ import pytest
 from aeronexus.status_page import render_page
 from aeronexus.studio_page import render_studio
 from aeronexus.operations_page import render_operations
+from aeronexus.thermal_page import render_thermal_page
 
 
-@pytest.mark.parametrize("page", ["studio", "status", "operations"])
+@pytest.mark.parametrize("page", ["studio", "status", "operations", "thermal"])
 def test_embedded_javascript_compiles_in_node(page):
     if shutil.which("node") is None:
         pytest.skip("Node.js is needed to validate embedded browser JavaScript")
     html = {"studio": render_studio, "status": lambda: render_page(30),
-            "operations": render_operations}[page]()
+            "operations": render_operations, "thermal": render_thermal_page}[page]()
     scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.DOTALL)
     assert len(scripts) == 1
     result = subprocess.run(

@@ -3,7 +3,6 @@
 Requires an externally obtained user token. No login or flight-control actions.
 """
 from dataclasses import dataclass
-from enum import StrEnum
 from uuid import uuid4
 import httpx
 from .providers import ProviderConfig, ProviderKind

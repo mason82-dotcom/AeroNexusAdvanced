@@ -20,6 +20,20 @@
 - Lokale vollständige Tests unter Python 3.12: **663 bestanden, 1 bekannte
   Starlette/httpx-Warnung**. CI auf dem neuen Branch separat prüfen.
 
+## Thermografie-Modul (Branch `feature/thermography-tsdk-20261017`)
+
+- Neuer Tab `/thermal` (Links in Operations, Studio, Live-Status, Medien).
+  Temperaturen ausschließlich über das DJI Thermal SDK v1.8; auf dem Pi 5
+  per Box64 (qemu scheitert an 16-KiB-Seiten). Installation ohne root via
+  `deploy/pi/install-thermal-sdk.sh`, signaturgeprüfte Debian-Pakete.
+- Live auf dem Pi geprüft: 2.072 Wärmebilder, M3T-Messung 0,8 s/Bild,
+  M4T-Super-Resolution-Bilder werden erkannt. Browser-Test steht noch aus.
+- Analyse-Befunde behoben: fest verdrahtete LAN-Adresse in
+  `lan_access.require_lan` und in der Studio-CSP (jetzt `AERONEXUS_LAN_HOST`
+  / `AERONEXUS_PORT`, nur gültige Adresse im Heimnetz), ungenutzte Imports.
+- Tests: **701 bestanden**, 1 bekannte Starlette/httpx-Warnung.
+- Details und Vorschläge: [thermography.md](thermography.md).
+
 ## Bestätigter Pi-Stand und Grenzen
 
 Der [Checkpoint vom 17.10.2026](project-checkpoint-2026-10-17.md) hält die
