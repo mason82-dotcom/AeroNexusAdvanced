@@ -97,7 +97,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <span id="timestamp">Noch keine Daten</span><br>
 <span id="feed">Live-Feed: –</span></div>
 </header>
-<div class="meta" id="poll-health" role="status">FlightHub-Synchronisierung noch nicht ermittelt.</div>
+<div class="meta" id="poll-health" role="status">Lokale Cloud-Verbindung wird geprüft.</div>
 <section class="grid" aria-label="Flottenkennzahlen">
 <div class="metric"><span>Geräte gesamt</span><b id="total">–</b></div>
 <div class="metric"><span>Drohnen</span><b id="aircraft">–</b></div>
@@ -115,8 +115,8 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 </section>
 <section class="panel">
 <h2>Lokaler Flottenzugriff</h2>
-<p class="subtle">Geräte, Telemetrie und Projektbibliothek werden im freigegebenen HTTPS-Heimnetz automatisch geladen. Keine Token-Eingabe erforderlich.</p>
-<span id="message" class="meta" role="status">Lade Gerätedetails und Bibliothek…</span>
+<p class="subtle">Geräte, MQTT-Telemetrie und die Routenbibliothek des lokalen Pilot-2-Cloud-Servers werden im freigegebenen HTTPS-Heimnetz gelesen.</p>
+<span id="message" class="meta" role="status">Lade lokale Cloud-Daten…</span>
 </section>
 <section class="panel">
 <h2>Geräte und Telemetrie</h2>
@@ -132,25 +132,14 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 </details>
 </section>
 <section class="panel" id="catalog-panel" hidden>
-<h2>FlightHub-Bibliothek</h2>
-<div class="subtle" id="catalog-info" role="status">Projektbibliothek wird automatisch geladen.</div>
+<h2>Lokale Pilot-2-Missionsbibliothek</h2>
+<p class="subtle">Routen aus dem lokalen DJI-Cloud-Server. Diese Ansicht liest nur Metadaten und sendet keine Missionen oder Flugbefehle.</p>
+<div class="subtle" id="catalog-info" role="status">Lese lokale Cloud-Waylines…</div>
 <section class="catalog-section" aria-labelledby="wayline-heading">
-<div class="catalog-heading"><h3 id="wayline-heading">Routen</h3><span class="catalog-count" id="wayline-count">–</span></div>
+<div class="catalog-heading"><h3 id="wayline-heading">Cloud-Waylines</h3><span class="catalog-count" id="wayline-count">–</span></div>
 <div class="catalog-grid" id="wayline-cards"></div>
-<details class="catalog-raw"><summary>Routentabelle anzeigen</summary>
-<div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Typ</th><th>Fluggerät</th><th>Linsen</th><th>Geändert</th><th>Größe</th></tr></thead><tbody id="waylines"></tbody></table></div>
-</details></section>
-<section class="catalog-section" aria-labelledby="model-heading">
-<div class="catalog-heading"><h3 id="model-heading">Karten-Modelle</h3><span class="catalog-count" id="model-count">–</span></div>
-<div class="catalog-grid" id="model-cards"></div>
-<details class="catalog-raw"><summary>Modelltabelle anzeigen</summary>
-<div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Typ</th><th>Auf Karte</th><th>Geändert</th><th>Größe</th></tr></thead><tbody id="models"></tbody></table></div>
-</details></section>
-<section class="catalog-section" aria-labelledby="task-heading">
-<div class="catalog-heading"><h3 id="task-heading">Flugaufträge</h3><span class="catalog-count" id="task-count">–</span></div>
-<div class="catalog-grid" id="task-cards"></div>
-<details class="catalog-raw"><summary>Auftragstabelle anzeigen</summary>
-<div class="scroller"><table class="compact"><thead><tr><th>Projekt</th><th>Name</th><th>Art</th><th>Status</th><th>Gestartet</th><th>Wegpunkte</th><th>Flugspur</th></tr></thead><tbody id="tasks"></tbody></table></div>
+<details class="catalog-raw"><summary>Technische Routentabelle anzeigen</summary>
+<div class="scroller"><table class="compact"><thead><tr><th>Name</th><th>Fluggerät</th><th>Typ</th><th>Geändert (UTC)</th></tr></thead><tbody id="waylines"></tbody></table></div>
 </details></section>
 </section>
 <footer>Zeitstempel = Eingang bei AeroNexus, nicht DJI-Ereigniszeit. Veraltete Messwerte sind keine Live-Werte. Die Anzeige ruft selbst keine DJI-Endpunkte auf.</footer>
@@ -191,137 +180,74 @@ const modelNames={"0-99-0":"Matrice 4E","0-99-1":"Matrice 4T","0-100-0":"Matrice
   "0-67-0":"Matrice 30","0-67-1":"Matrice 30T","0-89-0":"Matrice 350 RTK","0-60-0":"Matrice 300 RTK"};
 const templateNames={waypoint:"Wegpunkte",mapping_2d:"Fl\u00e4che 2D",mapping_3d:"Schr\u00e4g 3D",
   mapping_strip:"Korridor",facade:"Fassade",solid:"K\u00f6rper",mapping_gobject:"Objekt"};
-const taskStates={waiting:"Wartet",starting_failure:"Startfehler",executing:"L\u00e4uft",paused:"Pausiert",
-  terminated:"Abgebrochen",success:"Erfolgreich",suspended:"Ausgesetzt",timeout:"Zeit\u00fcberschreitung",
-  partially_done:"Teilweise",preparing:"Vorbereitung",unknown:"Unbekannt"};
-const taskTypes={immediate:"Sofort",timed:"Geplant",recurring:"Wiederkehrend",continuous:"Dauerhaft"};
-function size(b){return b===null||b===undefined?null:b>1048576?(b/1048576).toFixed(1)+" MB":(b/1024).toFixed(0)+" KB";}
 function date(sec){return sec?new Date(sec*1000).toISOString().slice(0,16).replace("T"," ")+" UTC":null;}
-function rowOf(body,values){const row=document.createElement("tr");values.forEach(v=>cell(row,v));body.appendChild(row);return row;}
-function placeholder(body,cols,text){const row=document.createElement("tr");const td=cell(row,text);td.colSpan=cols;td.className="subtle";body.appendChild(row);}
-async function downloadTrack(project,task,name){
-  const epoch=sessionEpoch;
-  try{
-    const r=await fetch("/api/v1/flighthub/projects/"+encodeURIComponent(project)+"/tasks/"+encodeURIComponent(task)+"/track",
-      {cache:"no-store"});
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    const geojson=await r.text();
-    if(epoch!==sessionEpoch)return; // disconnect must prevent late file downloads
-    const url=URL.createObjectURL(new Blob([geojson],{type:"application/geo+json"}));
-    const a=document.createElement("a");a.href=url;a.download=(name||"flugspur").replace(/[^A-Za-z0-9_-]+/g,"_")+".geojson";
-    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  }catch(e){if(epoch===sessionEpoch)byId("catalog-info").textContent="Flugspur nicht verf\u00fcgbar ("+e.message+").";}
-}
-
+const localRouteStates={
+  connected:"verbunden",not_configured:"nicht eingerichtet",awaiting_browser_session:"Warte auf vorhandene Cloud-Sitzung",
+  authentication_required:"Cloud-Anmeldung abgelaufen",configuration_error:"Konfigurationsfehler",
+  unavailable:"Cloud-Server nicht erreichbar",upstream_error:"Cloud-Server antwortet fehlerhaft",
+  invalid_response:"Ungültige Cloud-Antwort",business_error:"Cloud-Dienst meldet Fehler",
+  inventory_changed:"Routenbestand während des Abrufs verändert"
+};
 function catalogTag(card,label,value){
   if(value===null||value===undefined||value==="")return;
   const tags=card.querySelector(".catalog-tags");
-  cardEl(tags,"span","catalog-tag",label?label+": "+value:value);
+  cardEl(tags,"span","catalog-tag",label+": "+value);
 }
-function catalogCard(parent,title,project){
-  const card=cardEl(parent,"article","catalog-card");
-  cardEl(card,"h4","",title||"Ohne Namen");
-  cardEl(card,"div","catalog-meta","Projekt: "+project);
-  cardEl(card,"div","catalog-tags");
-  return card;
-}
-function catalogEmpty(parent,text){
-  cardEl(parent,"div","device-empty",text);
-}
-function renderCatalogCards(project,cards,counts){
-  const pname=project.name||project.project_id||"Unbekanntes Projekt";
-  for(const [kind,title] of [["waylines","Routen"],["models","Karten-Modelle"],["tasks","Flugaufträge"]]){
-    if(project[kind]===null){
-      catalogEmpty(cards[kind],pname+": "+title+" nicht abrufbar");
-      continue;
+function renderLocalWaylines(data) {
+  const body=byId("waylines"),cards=byId("wayline-cards");
+  body.replaceChildren();cards.replaceChildren();
+  const connected=data.state==="connected";
+  const routes=connected?data.waylines:[];
+  for(const route of routes){
+    if(!route||typeof route.name!=="string")throw new Error("Ungültiger Routeneintrag");
+    const model=modelNames[route.device_model_key]||route.device_model_key||"Modell unbekannt";
+    const kinds=(route.template_types||[]).map(t=>templateNames[t]||t).join(", ")||
+      ((route.template_type_codes||[]).length?"Unbekannter DJI-Template-Typ":"Nicht angegeben");
+    const changed=typeof route.updated_at_ms==="number"?
+      date(Math.floor(route.updated_at_ms/1000)):null;
+    const card=cardEl(cards,"article","catalog-card");
+    cardEl(card,"h4","",route.name);
+    cardEl(card,"div","catalog-meta",model);
+    cardEl(card,"div","catalog-tags");
+    catalogTag(card,"Typ",kinds);
+    catalogTag(card,"Geändert",changed);
+    const row=document.createElement("tr");
+    for(const value of [route.name,model,kinds,changed]){
+      const cell=document.createElement("td");cell.textContent=value||"–";row.appendChild(cell);
     }
-    if(!Array.isArray(project[kind]))throw new Error("Ungültige Bibliotheksdaten");
-    counts[kind]+=project[kind].length;
+    body.appendChild(row);
   }
-  for(const wayline of project.waylines||[]){
-    const card=catalogCard(cards.waylines,wayline.name,pname);
-    catalogTag(card,"Typ",(wayline.template_types||[]).map(t=>templateNames[t]||t).join(", "));
-    catalogTag(card,"Fluggerät",modelNames[wayline.device_model_key]||wayline.device_model_key);
-    catalogTag(card,"Linsen",(wayline.lenses||[]).join(", ").toUpperCase());
-    catalogTag(card,"Geändert",date(wayline.updated_at));
-    catalogTag(card,"Größe",size(wayline.size_bytes));
+  byId("wayline-count").textContent=connected?routes.length:"–";
+  if(!routes.length)cardEl(cards,"div","device-empty",connected?
+    "Keine Cloud-Waylines in diesem Workspace.":"Keine aktuellen Routen: "+(localRouteStates[data.state]||"Quelle unbekannt")+".");
+  let status="Lokaler Pilot-2-Cloud-Server: "+(localRouteStates[data.state]||"Status unbekannt");
+  if(connected){
+    status+=" · "+routes.length+" Rout(en)";
+    if(typeof data.reported_total==="number")status+=" von "+data.reported_total+" gemeldet";
+    if(data.pagination_complete===false)status+=" · Bestand unvollständig (Abruflimit)";
+    if(data.updated_at)status+=" · Stand: "+data.updated_at;
   }
-  for(const model of project.models||[]){
-    const card=catalogCard(cards.models,model.name,pname);
-    catalogTag(card,"Typ",model.file_type==="model_3d"?"3D":model.file_type==="model_2d"?"2D":model.file_type);
-    catalogTag(card,"Kartenanzeige",model.show_on_map?"Ja":"Nein");
-    catalogTag(card,"Geändert",model.updated_at_ms?date(Math.floor(model.updated_at_ms/1000)):null);
-    catalogTag(card,"Größe",size(model.size_bytes));
-  }
-  for(const task of project.tasks||[]){
-    const card=catalogCard(cards.tasks,task.name,pname);
-    catalogTag(card,"Art",taskTypes[task.task_type]||task.task_type);
-    catalogTag(card,"Status",taskStates[task.status]||task.status);
-    catalogTag(card,"Gestartet",task.run_at);
-    if(task.total_waypoints!==null&&task.total_waypoints!==undefined){
-      catalogTag(card,"Wegpunkte",(task.current_waypoint_index??0)+"/"+task.total_waypoints);
-    }
-    if(task.exceptions)catalogTag(card,"Auftragsmeldungen",task.exceptions);
-    if(task.uuid){
-      const button=cardEl(card,"button","","Flugspur als GeoJSON");
-      button.type="button";
-      button.addEventListener("click",()=>downloadTrack(project.project_id,task.uuid,task.name));
-    }
-  }
+  byId("catalog-info").textContent=status;
 }
-
 async function updateCatalog() {
   const epoch=sessionEpoch,request=++catalogRequest;
-  const lists={waylines:byId("waylines"),models:byId("models"),tasks:byId("tasks")};
-  const cards={waylines:byId("wayline-cards"),models:byId("model-cards"),tasks:byId("task-cards")};
   try{
-    const r=await fetch("/api/v1/flighthub/catalog",{cache:"no-store"});
+    const r=await fetch("/api/v1/local-cloud/waylines",{cache:"no-store"});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const data=await r.json();
     if(epoch!==sessionEpoch||request!==catalogRequest)return;
-    if(!Array.isArray(data.projects))throw new Error("Ungültige Bibliotheksantwort");
-    Object.values(lists).forEach(b=>b.replaceChildren());
-    Object.values(cards).forEach(b=>b.replaceChildren());
-    const counts={waylines:0,models:0,tasks:0};
+    if(typeof data.state!=="string"||!Array.isArray(data.waylines))throw new Error("Ungültige Cloud-Antwort");
+    renderLocalWaylines(data);
     byId("catalog-panel").hidden=false;
-    for(const p of data.projects){
-      const pname=p.name||p.project_id;
-      renderCatalogCards(p,cards,counts);
-      if(p.waylines===null)placeholder(lists.waylines,7,pname+": nicht lesbar");
-      for(const w of p.waylines||[])rowOf(lists.waylines,[pname,w.name,(w.template_types||[]).map(t=>templateNames[t]||t).join(", "),
-        modelNames[w.device_model_key]||w.device_model_key,(w.lenses||[]).join(", ").toUpperCase(),date(w.updated_at),size(w.size_bytes)]);
-      if(p.models===null)placeholder(lists.models,6,pname+": nicht lesbar");
-      for(const m of p.models||[])rowOf(lists.models,[pname,m.name,m.file_type==="model_3d"?"3D":m.file_type==="model_2d"?"2D":null,
-        m.show_on_map?"Ja":"Nein",m.updated_at_ms?date(Math.floor(m.updated_at_ms/1000)):null,size(m.size_bytes)]);
-      if(p.tasks===null)placeholder(lists.tasks,7,pname+": nicht lesbar");
-      for(const t of p.tasks||[]){
-        const row=rowOf(lists.tasks,[pname,t.name,taskTypes[t.task_type]||t.task_type,taskStates[t.status]||t.status,
-          t.run_at,t.total_waypoints===null?null:(t.current_waypoint_index??0)+"/"+t.total_waypoints]);
-        const td=document.createElement("td");const b=document.createElement("button");b.type="button";b.textContent="GeoJSON";
-        b.addEventListener("click",()=>downloadTrack(p.project_id,t.uuid,t.name));td.appendChild(b);row.appendChild(td);
-      }
-    }
-    for(const [key,b] of Object.entries(lists)){
-      if(!b.children.length)placeholder(b,key==="models"?6:7,key==="tasks"?
-        "Keine Flugauftr\u00e4ge in den letzten "+((data.projects[0]||{}).task_window_days||30)+" Tagen":"Keine Eintr\u00e4ge");
-      if(!cards[key].children.length)catalogEmpty(cards[key],key==="tasks"?
-        "Keine Flugauftr\u00e4ge in den letzten "+((data.projects[0]||{}).task_window_days||30)+" Tagen":"Keine Eintr\u00e4ge");
-    }
-    byId("wayline-count").textContent=counts.waylines;
-    byId("model-count").textContent=counts.models;
-    byId("task-count").textContent=counts.tasks;
-    byId("catalog-info").textContent=data.updated_at?"Stand: "+data.updated_at+" (Aktualisierung alle paar Minuten)":
-      "Noch nicht geladen (FlightHub-Polling aus oder erster Abruf l\u00e4uft).";
   }catch(e){
     if(epoch!==sessionEpoch||request!==catalogRequest)return;
-    Object.values(lists).forEach(b=>b.replaceChildren());
-    Object.values(cards).forEach(b=>b.replaceChildren());
-    byId("catalog-panel").hidden=true;
-    byId("catalog-info").textContent="Bibliothek nicht verf\u00fcgbar ("+e.message+").";
-    byId("message").textContent="Bibliothek nicht verfügbar ("+e.message+").";
+    byId("waylines").replaceChildren();
+    byId("wayline-cards").replaceChildren();
+    byId("wayline-count").textContent="–";
+    byId("catalog-panel").hidden=false;
+    byId("catalog-info").textContent="Lokale Routenbibliothek nicht abrufbar ("+e.message+").";
   }
 }
-
 function cardEl(parent,tag,className,text) {
   const el=document.createElement(tag);
   if(className)el.className=className;
@@ -454,20 +380,16 @@ async function updateSummary() {
     byId("stale").textContent=data.stale;
     byId("unknown").textContent=data.missing+data.unknown_age+data.clock_skew;
     byId("health").textContent=data.health_warnings;
-    byId("timestamp").textContent="Letzter Aufruf: "+data.server_time+" · Polling: "+data.polling;
-    const fh=data.flighthub||{};
-    byId("timestamp").textContent+=" · FlightHub: "+({ok:"OK",error:"Fehler",unknown:"unbekannt"}[fh.system_status]||"unbekannt");
-    const pollState={disabled:"deaktiviert",running:"Abruf läuft",idle:"bereit",error:"letzter Abruf fehlgeschlagen",stopped:"gestoppt"};
-    const lastOk=data.last_refresh_success_at;
-    const since=lastOk?Math.max(0,Math.floor((Date.parse(data.server_time)-Date.parse(lastOk))/1000)):null;
-    byId("poll-health").textContent="DJI-Polling: "+(pollState[data.polling]||data.polling)+
-      " · Letzter erfolgreicher Abruf: "+(lastOk?lastOk+" ("+since+" s zurück)":"noch keiner")+
-      " · Grenzwert für veraltete Telemetrie: "+data.stale_after_seconds+" s";
-
     const feed=data.live_feed||{state:"disabled"};
+    byId("timestamp").textContent="Letzter Aufruf: "+data.server_time+" · DJI Cloud API lokal";
+    byId("poll-health").textContent="MQTT: "+(feedStates[feed.state]||feed.state||"unbekannt")+
+      " · Letzte gültige Nachricht: "+(feed.last_message_at||"noch keine")+
+      " · "+(feed.accepted??0)+" akzeptiert / "+(feed.rejected??0)+" verworfen"+
+      " / "+(feed.outdated??0)+" veraltete Duplikate"+
+      " · Telemetrie-Frischegrenze: "+data.stale_after_seconds+" s";
     byId("feed").textContent="Live-Feed (DJI Cloud API): "+(feedStates[feed.state]||"unbekannt")+
       (feed.state==="disabled"?"":" · "+feed.accepted+" ok / "+feed.rejected+" verworfen");
-  } catch (_) {byId("timestamp").textContent="Status-API nicht erreichbar";byId("poll-health").textContent="DJI-Polling-Status nicht erreichbar";}
+  } catch (_) {byId("timestamp").textContent="Status-API nicht erreichbar";byId("poll-health").textContent="Cloud-API-Status nicht erreichbar";}
 }
 async function updateCloud() {
   try {
