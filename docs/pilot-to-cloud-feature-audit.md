@@ -19,7 +19,7 @@ lokal deployte Upstream-Version ihn fehlerfrei implementiert.
 | MQTT OSD / State | vorhandene lesende Integration | behalten |
 | Geräte-Topologie (GET `devices/topologies`) | keine direkte lokal-scoped Abfrage | **neu:** /api/v1/local-cloud/topology |
 | Situational Awareness / WebSocket Push | Status über andere Quellen; kein aktiver WebSocket-Replay | vorerst keine neue Server-WS; Poll/Cache der Topologie lesend |
-| Kartenobjekte (GET `element-groups`) | lokale Studio-Geometrien, keine Cloud-Mirror-Abfrage | **neu:** /api/v1/local-cloud/map-elements |
+| Kartenobjekte (GET `element-groups`) | lokale Studio-Geometrien, keine Cloud-Mirror-Abfrage | **neu:** /api/v1/local-cloud/map-elements mit manuell zuschaltbarer, nicht-interaktiver Studio-Kartenebene |
 | Kartenobjekte erstellen/ändern/löschen und WS-Verteilung | nicht implementiert | bewusst nicht automatisch: Cloud-Schreibzugriffe benötigen separates Berechtigungs-, Konflikt- und Versionierungsmodell |
 | Wayline-Liste | lokaler, paginierter, rein lesender GET | vorhanden; nur Metadaten, kein Inhaltsgleichheitsnachweis |
 | Wayline-Favoriten, Dubletten, Downloadlinks, STS, Upload-Callback | nicht Teil der schreibgeschützten Studio-Schnittstelle | Upstream muss geprüft werden; kein Blind-POST |
@@ -84,3 +84,12 @@ nicht im Terminalverlauf oder Chat veröffentlichen.
 Die neuen Endpunkte sind gegen Mock-Responses getestet; ein echter Pilot-2-
 Livetest bleibt erforderlich. Kein Service wird von diesem Branch gestartet,
 keine Datenbank verändert und kein Mission-Upload ausgelöst.
+
+## Studio-Kartenanzeige
+
+Im Mission Studio unter **Karte & Missionen** ist eine Schaltfläche
+`Pilot-2-Layer einblenden` vorhanden. Sie lädt die Karte **nur nach Klick**,
+zeichnet validierte GeoJSON-Geometrien nicht-interaktiv (kein versehentliches
+Einfügen eines Flug-Wegpunkts) und entfernt die Ebene jederzeit wieder.
+Die Ansicht bleibt getrennt von editierbaren Studio-Missionen, lokalen
+Geo-Objekten und Telemetrie; keine Speicherung oder Rückübertragung.
