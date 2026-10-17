@@ -180,6 +180,10 @@ def test_studio_preview_never_mutates_local_mission():
     assert '(waylinePreviewLayer&&map.hasLayer(waylinePreviewLayer))' in page
     assert '(cloudOverviewLayer&&map.hasLayer(cloudOverviewLayer))' in page
     assert 'waylinePreviewLayer=L.layerGroup()' in page
+    assert 'id="wayline-preview-fit"' in page
+    assert 'function centerCloudWaylinePreview()' in page
+    assert 'fitWaylineMapBounds(merged,()=>request===waylinePreviewRequest' in page
+    assert 'map.invalidateSize({pan:false})' in page
 
 
 

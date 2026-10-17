@@ -379,3 +379,19 @@ Start-/Endmarkierungen. Diese Punkte sind *keine* autorisierten
 Start-, Lande-, RTH- oder sonstigen Steuerpunkte. Die angezeigte
 Linienlänge ignoriert Höhenänderungen, Flugkurven und DJI-Aktionen und
 stellt **keine** planungs- oder flugsicherheitsrelevante Berechnung dar.
+
+## Mobile Leaflet-Zentrierung (Oktober 2026)
+
+Nach der Rückkehr von der Wayline-Bibliothek zur Karte wird die
+sichtbare Containergröße synchron neu gemessen (`invalidateSize` ohne Pan),
+und der KMZ-Kartenausschnitt erst nach zwei `requestAnimationFrame`-Zyklen
+berechnet. Dadurch kann `fitBounds` nicht mehr mit der alten Nullgröße
+des zuvor ausgeblendeten Leaflet-Containers ausgeführt werden. Alte
+Vorschauanforderungen können keine nachfolgend gewählte Route zentrieren.
+Der neue Kartenknopf „Cloud-Vorschau zentrieren“ wiederholt dieselbe
+Größenprüfung und Ausrichtung. Linien werden mit höherem Kontrast über
+der Satellitenkarte gezeichnet. Bestehende Missionen bleiben unverändert.
+
+Eine Weltansicht trotz dieser Korrektur kann auch durch sehr weit
+auseinanderliegende, aber syntaktisch gültige WPML-Koordinaten entstehen;
+dies ist anhand des konkreten KMZ-Geometrieumfangs separat zu prüfen.
