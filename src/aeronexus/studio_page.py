@@ -98,6 +98,12 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .terrain-toggles label{display:flex;flex-direction:row;align-items:center;gap:6px;margin:0}
 .terrain-toggles input[type=checkbox]{width:auto}
 .terrain-help{color:#a8c7dd;font-size:12px;line-height:1.6;margin:12px 0}
+.terrain-location{padding:11px;border:1px solid #3b5879;background:#10273c;border-radius:9px;margin:10px 0;font-size:12px;line-height:1.5}
+#terrain-profile-canvas{width:100%;max-height:190px;height:auto;display:block;background:#0d2233;border:1px solid #39516c;border-radius:8px}
+.terrain-geo-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;margin:12px 0}
+.terrain-geo-tools label{margin:0}
+.terrain-geo-tools button{white-space:nowrap}
+@media(max-width:700px){.terrain-geo-tools{grid-template-columns:1fr}}
 @media(max-width:700px){.terrain-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.terrain-stage{padding:12px}}
 .geo-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.geo-buttons button{flex:1}
 .editor-dirty{font-size:12px;padding:6px 9px;border-radius:7px;color:#a0efcf;background:#123e34;border:1px solid #316d56}
@@ -273,11 +279,21 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="terrain-toggles">
 <label><input id="terrain-color" type="checkbox" checked> Höhenfarben</label>
 <label><input id="terrain-wire" type="checkbox" checked> Gitternetz</label>
+<label><input id="terrain-geo-overlay" type="checkbox" checked> Geo-Objekte (nur EPSG:4326)</label>
 <button id="terrain-reset-view">Ansicht zurücksetzen</button>
 </div>
+<div id="terrain-georef-info" class="terrain-location" role="status">Keine WGS84-Georeferenz geladen. Geländedarstellung weiterhin möglich.</div>
 <canvas id="terrain-canvas-large" width="1000" height="590" role="img" aria-label="Interaktive orthografische Geländedarstellung"></canvas>
 <div id="terrain-large-message" class="terrain-help" role="status">Noch kein Höhenraster geladen. Links unter „Gelände aus GeoTIFF“ eine Datei auswählen und „3D-Vorschau“ drücken.</div>
-<p class="terrain-help">Höhenwerte bleiben in Metern; die wählbare Überhöhung betrifft nur die Darstellung, niemals die STL-Geometrie. Kein Geo-Objekt-Overlay, keine Hindernisprüfung und keine DJI-Flugfreigabe.</p>
+<div id="terrain-coordinate-probe" class="terrain-location" role="status">Klick auf die Geländeoberfläche: Rasterhöhe und WGS84-Position anzeigen (kein bekannter vertikaler Höhenbezug).</div>
+<h2>Höhenprofil einer gespeicherten Linie</h2>
+<div class="terrain-geo-tools">
+<label>Geo-Linie auswählen<select id="terrain-profile-object"><option value="">Linie auswählen…</option></select></label>
+<button id="terrain-profile-generate">Höhenprofil erzeugen</button>
+</div>
+<canvas id="terrain-profile-canvas" width="980" height="190" role="img" aria-label="Schematisches Profil der interpolierten DEM-Höhen"></canvas>
+<div id="terrain-profile-message" class="terrain-help" role="status">Nur gespeicherte Linien, deren Punkte vollständig innerhalb des WGS84-Rasters liegen, können ausgewertet werden.</div>
+<p class="terrain-help">Schematische EPSG:4326-Punktzuordnung nur für kleine nordorientierte Raster. Höhenwerte bleiben in Metern, ihre vertikale Referenz (z. B. Geoid oder Ellipsoid) ist unbekannt. Überhöhung betrifft nur die Darstellung, niemals STL-Daten. Keine Hindernisprüfung oder DJI-Flugfreigabe.</p>
 </div>
 </section>
 <section class="pane" id="media-pane">
@@ -314,7 +330,7 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
-let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainLoadSerial=0,studioSocket=null,studioFleetLoading=false;
+let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainGeo=null,terrainLoadSerial=0,terrainProfile=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
   $("auth-message").textContent=text;
