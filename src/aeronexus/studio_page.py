@@ -299,7 +299,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div id="map" role="application" aria-label="Interaktive Missionskarte"></div>
 <div class="map-bar">
 <select id="map-layer" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
-<button id="pilot2-map-toggle" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button><button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
+<button id="pilot2-map-toggle" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button><button id="wayline-preview-clear" hidden>Cloud-Vorschau schließen</button><button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
 </div>
 <div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
 </section>
@@ -423,7 +423,7 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
 const SATELLITE_TILE_URL="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 let map=null,lines=null,waypointsLayer=null,deviceLayer=null,pilot2MapLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
-let pilot2LayerVisible=false,pilot2LayerRequest=0;
+let pilot2LayerVisible=false,pilot2LayerRequest=0,waylinePreviewLayer=null,waylinePreviewRequest=0;
 let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainGeo=null,terrainLoadSerial=0,terrainProfile=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
@@ -638,7 +638,9 @@ function getMap(){
   geoLayer=L.layerGroup().addTo(map);surveyLayer=L.layerGroup().addTo(map);photoLayer=L.layerGroup().addTo(map);
   terrainFootprintLayer=L.layerGroup().addTo(map);
   pilot2MapLayer=L.layerGroup(); // Off by default. Never mutates editable mission layers.
+  waylinePreviewLayer=L.layerGroup(); // Read-only cloud preview, separate from mission.
   map.on("click",event=>{
+    if(waylinePreviewLayer&&map.hasLayer(waylinePreviewLayer))return; // no map edits during preview
     if(geoDraw){
       const lat=+event.latlng.lat.toFixed(7),lon=+(((((event.latlng.lng+540)%360)+360)%360)-180).toFixed(7);
       if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon))return;
@@ -1151,6 +1153,11 @@ function renderWaylines(){
     for(const value of [waylineModel(route.device_model_key),waylineType(route),waylineSource(route.provider),
       "Projekt / Workspace: "+clean(route.workspace_id||route.project_id),"Geändert: "+waylineTime(route),waylineCheck(route)])
       card.appendChild(els("p","",value));
+    if(route.provider==="pilot2-local-cloud"&&route.wayline_id){
+      const button=els("button","","Vorschau auf Karte (nur lesen)");
+      button.addEventListener("click",()=>previewCloudWayline(route,button));
+      card.appendChild(button);
+    }
     grid.appendChild(card);
   }
   if(waylineData&&!routes.length)grid.appendChild(els("p","empty",query||source!=="all"?"Keine Route passt zur Suche oder Quelle.":"Im aktuellen Datenstand sind keine Cloud-Routen enthalten. Quellenstatus oben beachten."));
@@ -1158,6 +1165,55 @@ function renderWaylines(){
   $("wayline-page").textContent=waylineData?`Seite ${waylinePage} von ${pages}`:"Seite –";
   $("wayline-prev").disabled=!waylineData||waylinePage<=1;$("wayline-next").disabled=!waylineData||waylinePage>=pages;
 }
+function clearCloudWaylinePreview(){
+  ++waylinePreviewRequest;
+  if(waylinePreviewLayer){waylinePreviewLayer.clearLayers();if(map)map.removeLayer(waylinePreviewLayer);}
+  $("wayline-preview-clear").hidden=true;
+  if(map)mapWarning("Cloud-Wayline-Vorschau ausgeblendet. Keine Missionsdaten verändert.");
+}
+async function previewCloudWayline(route,button){
+  const request=++waylinePreviewRequest;
+  button.disabled=true;
+  $("wayline-state").className="status";
+  $("wayline-state").textContent="KMZ-Vorschau wird schreibgeschützt gelesen…";
+  try{
+    const response=await api("/api/v1/local-cloud/waylines/"+
+      encodeURIComponent(route.wayline_id)+"/preview");
+    const data=await response.json();
+    if(request!==waylinePreviewRequest)return;
+    if(data.state!=="connected")throw new Error("Vorschau nicht verfügbar: "+clean(data.state));
+    if(!Array.isArray(data.features)||!data.features.length)throw new Error("Keine darstellbare KMZ-Geometrie");
+    switchTab("map-pane");getMap();
+    if(!map||!waylinePreviewLayer)throw new Error("Karte nicht verfügbar");
+    waylinePreviewLayer.clearLayers();waylinePreviewLayer.addTo(map);
+    for(const item of data.features){
+      if(!item||!item.geometry)continue;
+      L.geoJSON({type:"Feature",geometry:item.geometry,properties:{}},{
+        interactive:false,
+        pointToLayer:(_item,latlng)=>L.circleMarker(latlng,{radius:6,interactive:false})
+      }).addTo(waylinePreviewLayer);
+    }
+    $("wayline-preview-clear").hidden=false;
+    const bounds=waylinePreviewLayer.getLayers().flatMap(layer=>
+      typeof layer.getBounds==="function"?[layer.getBounds()]:[]);
+    if(bounds.length){
+      const merged=L.latLngBounds([]);
+      for(const bound of bounds)merged.extend(bound);
+      if(merged.isValid())map.fitBounds(merged.pad(.2),{maxZoom:16});
+    }
+    mapWarning("Schreibgeschützte Cloud-Vorschau: "+clean(data.name)+" · "+
+      data.features.length+" Geometrie(n) aus "+clean(data.source)+
+      ". Keine Bearbeitung, keine Flugfreigabe.");
+  }catch(error){
+    if(request!==waylinePreviewRequest)return;
+    $("wayline-state").className="status error";
+    $("wayline-state").textContent=errorMessage(error)+
+      " · Cloud-KMZ bleibt unverändert. Kein Import in den Editor.";
+  }finally{
+    button.disabled=false;
+  }
+}
+
 function waylineSourceState(data){
   const state=data.local_pilot?.state||"not_configured";
   const labels={not_configured:"nicht eingerichtet",awaiting_browser_session:"wartet auf vorhandene Cloud-Sitzung",configuration_error:"Konfiguration prüfen",
@@ -2190,6 +2246,7 @@ function wire(){
   $("map-zoom-in").addEventListener("click",()=>map?.zoomIn());$("map-zoom-out").addEventListener("click",()=>map?.zoomOut());
   $("map-layer").addEventListener("change",e=>setMapLayer(e.target.value));
   $("map-home").addEventListener("click",centerOnForst);
+  $("wayline-preview-clear").addEventListener("click",clearCloudWaylinePreview);
   $("pilot2-map-toggle").addEventListener("click",()=>togglePilot2MapLayer().catch(err=>mapWarning(errorMessage(err))));
   $("apply-point").addEventListener("click",()=>{
     const p=mission.waypoints[selected];if(!p)return;

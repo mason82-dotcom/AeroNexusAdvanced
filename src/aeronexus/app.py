@@ -61,7 +61,8 @@ from .studio_events import serve_studio_events
 from .lan_access import lan_host, lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
 from .mission_reconciliation import compare_missions
-from .local_waylines import LocalWaylineReader
+from .local_waylines import LocalWaylineReader, load_credentials, credentials_path
+from .pilot2_wayline_preview import read_preview
 from .pilot2_readonly import Pilot2ReadOnlyReader
 from .local_waylines import Credentials, LocalWaylineError
 from .local_session import LocalSessionHandoff, handoff_origin
@@ -452,6 +453,38 @@ async def local_cloud_waylines(request: Request, response: Response,
         "pagination_complete": result.get("pagination_complete"),
         "updated_at": result.get("updated_at"),
     }
+
+
+@app.get("/api/v1/local-cloud/waylines/{wayline_id}/preview")
+async def local_cloud_wayline_preview(wayline_id: str, request: Request, response: Response,
+                                      authorization: str | None = Header(default=None)) -> dict:
+    """Preview an inventoried local cloud KMZ; returns only bounded GeoJSON."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        from uuid import UUID
+        canonical = str(UUID(wayline_id))
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(status_code=404, detail="Wayline not found") from None
+    inventory = await app.state.local_waylines.read()
+    if inventory["state"] != "connected":
+        return {"state": inventory["state"], "features": []}
+    if not inventory.get("pagination_complete"):
+        return {"state": "incomplete_inventory", "features": []}
+    available = {route["wayline_id"]: route for route in inventory["waylines"]}
+    if canonical not in available:
+        raise HTTPException(status_code=404, detail="Wayline not found")
+    try:
+        credentials = load_credentials(credentials_path())
+        if credentials is None or credentials.workspace_id != inventory["workspace_id"]:
+            return {"state": "authentication_required", "features": []}
+        preview = await asyncio.wait_for(read_preview(credentials, canonical), timeout=22)
+    except LocalWaylineError as exc:
+        return {"state": str(exc), "features": []}
+    except (httpx.HTTPError, OSError, TimeoutError):
+        return {"state": "unavailable", "features": []}
+    return {"state": "connected", "wayline_id": canonical,
+            "name": available[canonical]["name"], **preview}
 
 
 @app.get("/api/v1/local-cloud/map-elements")
