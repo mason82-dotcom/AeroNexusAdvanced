@@ -82,30 +82,51 @@ def ground_sample_m(meta: dict) -> float | None:
     return 2 * dist * math.tan(math.radians(view[0]) / 2) / _raster(meta)[0]
 
 
-def footprint(meta: dict) -> list[list[float]] | None:
-    """Ground corners [[lat, lon] x4] (top-left, top-right, bottom-right,
-    bottom-left of the image) for near-nadir images, else None."""
-    pos, gimbal = meta.get("position"), meta.get("gimbal") or {}
-    view = _thermal_fov(meta)
-    if not pos or view is None:
+def _offset(lat0: float, lon0: float, north: float, east: float) -> list[float]:
+    return [round(lat0 + north / EARTH_M_PER_DEG, 8),
+            round(lon0 + east / (EARTH_M_PER_DEG * math.cos(math.radians(lat0))), 8)]
+
+
+def ground_footprint(position: dict | None, gimbal: dict | None, hfov_deg: float,
+                     vfov_deg: float) -> list[list[float]] | None:
+    """Ground corners [[lat, lon] x4] (image top-left, top-right, bottom-right,
+    bottom-left) of a near-nadir image over flat terrain, else None."""
+    gimbal = gimbal or {}
+    if not position:
         return None
-    height, pitch = pos.get("relative_altitude_m"), gimbal.get("pitch_deg")
-    yaw = gimbal.get("yaw_deg")
+    height, pitch, yaw = (position.get("relative_altitude_m"), gimbal.get("pitch_deg"),
+                          gimbal.get("yaw_deg"))
     if (not isinstance(height, (int, float)) or height <= 1 or not isinstance(pitch, (int, float))
             or abs(pitch + 90) > NADIR_TOLERANCE_DEG or not isinstance(yaw, (int, float))):
         return None
-    half_r = height * math.tan(math.radians(view[0]) / 2)  # image x (right)
-    half_f = height * math.tan(math.radians(view[1]) / 2)  # image up = flight forward
+    half_r = height * math.tan(math.radians(hfov_deg) / 2)  # image x (right)
+    half_f = height * math.tan(math.radians(vfov_deg) / 2)  # image up = flight forward
     y = math.radians(yaw)
     fwd, right = (math.cos(y), math.sin(y)), (-math.sin(y), math.cos(y))  # (north, east)
-    lat0, lon0 = pos["latitude"], pos["longitude"]
-    corners = []
-    for f, r in ((half_f, -half_r), (half_f, half_r), (-half_f, half_r), (-half_f, -half_r)):
-        north = f * fwd[0] + r * right[0]
-        east = f * fwd[1] + r * right[1]
-        corners.append([round(lat0 + north / EARTH_M_PER_DEG, 8),
-                        round(lon0 + east / (EARTH_M_PER_DEG * math.cos(math.radians(lat0))), 8)])
-    return corners
+    return [_offset(position["latitude"], position["longitude"],
+                    f * fwd[0] + r * right[0], f * fwd[1] + r * right[1])
+            for f, r in ((half_f, -half_r), (half_f, half_r), (-half_f, half_r), (-half_f, -half_r))]
+
+
+def view_cone(position: dict | None, gimbal: dict | None, hfov_deg: float, *,
+              length_m: float = 15.0) -> list[list[float]] | None:
+    """Triangle [[lat, lon] x3] showing the horizontal viewing direction of an
+    oblique image (camera position and the two edges of the field of view)."""
+    yaw = (gimbal or {}).get("yaw_deg")
+    if not position or not isinstance(yaw, (int, float)):
+        return None
+    lat0, lon0 = position["latitude"], position["longitude"]
+    points = [[round(lat0, 8), round(lon0, 8)]]
+    for edge in (-hfov_deg / 2, hfov_deg / 2):
+        a = math.radians(yaw + edge)
+        points.append(_offset(lat0, lon0, length_m * math.cos(a), length_m * math.sin(a)))
+    return points
+
+
+def footprint(meta: dict) -> list[list[float]] | None:
+    """Thermal image footprint (see ground_footprint)."""
+    view = _thermal_fov(meta)
+    return None if view is None else ground_footprint(meta.get("position"), meta.get("gimbal"), *view)
 
 
 def geometry(meta: dict) -> dict:

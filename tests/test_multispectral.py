@@ -1,4 +1,5 @@
 """DJI Mavic 3M multispectral: TIFF/XMP parsing, DJI radiometry, alignment, catalogue, API."""
+import math
 import struct
 
 import numpy as np
@@ -20,11 +21,13 @@ W, H = 40, 30
 
 def xmp(band="NIR", uuid=UUID, irradiance=900.0, gain=2.0, exposure=1000, sga=1.0,
         lat="+49.1", lon="+8.5", model="M3M", vignetting="0,0,0,0,0,0",
-        hmatrix="1,0,0,0,1,0,0,0,1", dewarp="2023-01-09;1000,1000,0,0,0,0,0,0,0"):
+        hmatrix="1,0,0,0,1,0,0,0,1", dewarp="2023-01-09;1000,1000,0,0,0,0,0,0,0",
+        focal=20, alt="+30.0", pitch="-90.0", yaw="+0.0"):
     return (f'<x:xmpmeta><rdf:Description tiff:Model="{model}" xmp:CreateDate="2026-10-15T14:02:40+02:00" '
             f'drone-dji:ImageSource="MS_{band}_CAMERA" drone-dji:GpsStatus="RTK" '
             f'drone-dji:GpsLatitude="{lat}" drone-dji:GpsLongitude="{lon}" '
-            f'drone-dji:RelativeAltitude="+30.0" drone-dji:GimbalPitchDegree="-90.0" '
+            f'drone-dji:RelativeAltitude="{alt}" drone-dji:GimbalPitchDegree="{pitch}" '
+            f'drone-dji:GimbalYawDegree="{yaw}" drone-dji:CalibratedFocalLength="{focal}" '
             f'drone-dji:CaptureUUID="{uuid}" drone-dji:BandName="{band}" drone-dji:BandFreq="860(+/-26)nm" '
             f'drone-dji:BlackLevel="3200" drone-dji:SensorGain="{gain}" drone-dji:ExposureTime="{exposure}" '
             f'drone-dji:SensorGainAdjustment="{sga}" drone-dji:Irradiance="{irradiance}" drone-dji:LS_status="1" '
@@ -244,3 +247,58 @@ def test_page_static_and_linked_everywhere(api):
     for page in (render_operations(), render_studio(), render_page(30), render_dji_media_page(),
                  render_thermal_page()):
         assert 'href="/multispectral"' in page
+
+
+# ------------------------------------------------------------------ map ----
+
+def test_map_items_footprint_gsd_and_ndvi_cache(ms):
+    ms.catalog.scan(ms.client, "dji-cloud")
+    capture = ms.catalog.capture(UUID)
+    assert capture["optics"]["hfov_deg"] == pytest.approx(90.0)  # 2*atan(20/20)
+    item = ms.map_items()["items"][0]
+    assert item["footprint"] and item["view_cone"] is None and item["ndvi"] is None
+    lats = [p[0] for p in item["footprint"]]
+    lons = [p[1] for p in item["footprint"]]
+    assert (max(lats) - min(lats)) * 111_320 == pytest.approx(2 * 30 * 0.75, rel=1e-3)  # north-up
+    assert (max(lons) - min(lons)) * 111_320 * math.cos(math.radians(49.1)) == pytest.approx(60, rel=1e-3)
+    assert item["ground_sample_cm"] == pytest.approx(30 / 20 * 100)
+    ms.analysis(UUID, "ndvi", scale=4)
+    cached = ms.map_items()["items"][0]["ndvi"]
+    assert cached["median"] == pytest.approx(ms.analysis(UUID, "ndvi", scale=4)["stats"]["median"])
+    ms.client.items["wayline/org_a_1.tiff"] = (band(NIR + 1000, band="NIR"), "changed")
+    ms.media.scan(ms.client, "dji-cloud")
+    ms.catalog.scan(ms.client, "dji-cloud")
+    assert ms.map_items()["items"][0]["ndvi"] is None  # stale summary is not shown
+    assert ms.compute_missing_summaries() == 1
+
+
+def test_oblique_capture_gets_view_cone(tmp_path, monkeypatch):
+    monkeypatch.setenv("AERONEXUS_WORKSPACE_DIR", str(tmp_path / "ws"))
+    items = {f"o/{b}.tif": (band(20000, band=b, pitch="+0.0", alt="+0.0", yaw="+90.0"), b)
+             for b in ("Green", "Red", "RedEdge", "NIR")}
+    client = FakeMinio(items)
+    index = DjiMediaIndex(tmp_path / "ws")
+    index.scan(client, "dji-cloud")
+    svc = MultispectralService(index, settings_factory=lambda: type("S", (), {"bucket": "dji-cloud"})(),
+                               client_factory=lambda s: client)
+    svc.catalog.scan(client, "dji-cloud")
+    item = svc.map_items()["items"][0]
+    assert item["footprint"] is None and item["ground_sample_cm"] is None
+    apex, left, right = item["view_cone"]
+    assert left[1] > apex[1] and right[1] > apex[1]  # looking east
+
+
+def test_catalog_rereads_after_metadata_version_change(ms, monkeypatch):
+    ms.catalog.scan(ms.client, "dji-cloud")
+    assert ms.catalog.scan(ms.client, "dji-cloud")["read"] == 0
+    import aeronexus.multispectral as module
+    monkeypatch.setattr(module, "META_VERSION", "999")
+    assert ms.catalog.scan(ms.client, "dji-cloud")["read"] == 6  # incl. the non-M3M TIFF
+
+
+def test_map_api(api):
+    r = api.get("/api/v1/multispectral/map", headers=HEADERS)
+    assert r.status_code == 200 and r.json()["items"][0]["capture_uuid"] == UUID
+    assert api.get("/api/v1/multispectral/map").status_code == 401
+    csp = api.get("/multispectral").headers["content-security-policy"]
+    assert "https://cdn.jsdelivr.net" in csp and "tile.openstreetmap.org" in csp

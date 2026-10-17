@@ -965,9 +965,10 @@ def multispectral_page(request: Request, response: Response) -> str:
     _no_cache(response)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-        "img-src 'self' blob: data:; connect-src 'self'; "
-        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+        "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' blob: data: https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
     return render_multispectral_page()
 
@@ -981,6 +982,18 @@ def multispectral_captures(request: Request, response: Response,
         captures = service.catalog.captures()
         return {"captures": captures, "total": len(captures),
                 "scanned_at": service.catalog.scanned_at()}
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+
+
+@app.get("/api/v1/multispectral/map")
+def multispectral_map(request: Request, response: Response,
+                      authorization: str | None = Header(default=None)) -> dict:
+    """Capture positions, nadir footprints / view cones and cached NDVI summaries."""
+    service = _ms_service(request, authorization)
+    _no_cache(response)
+    try:
+        return service.map_items()
     except _MS_ERRORS as exc:
         raise _ms_http_error(exc) from exc
 
