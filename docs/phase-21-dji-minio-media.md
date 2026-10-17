@@ -76,7 +76,7 @@ mkdir -p "$HOME/minio-binaries"
 cd "$HOME/minio-binaries"
 curl -fL --retry 3 -o mc   https://dl.min.io/client/mc/release/linux-arm64/mc
 curl -fL --retry 3 -o mc.sha256sum   https://dl.min.io/client/mc/release/linux-arm64/mc.sha256sum
-sha256sum -c mc.sha256sum
+echo "$(awk '{print $1}' mc.sha256sum)  mc" | sha256sum --check --status && echo 'SHA256 geprüft'
 chmod 700 mc
 ./mc --version
 ~~~
