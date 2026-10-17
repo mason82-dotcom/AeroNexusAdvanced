@@ -46,7 +46,7 @@ def test_projected_geo_is_not_misrepresented_as_wgs84(monkeypatch):
 
 @pytest.mark.parametrize("transform",[
     (179.999,.01,0,49.2,0,-.01),
-    (8.5,.5,0,49.2,0,-.001),
+    (8.5,.25,0,80.0,0,-.001),
 ])
 def test_unsafe_wgs84_extents_do_not_generate_overlay_coordinates(monkeypatch,transform):
     stub_gdal(monkeypatch,shape=(4,4),transform=transform)
