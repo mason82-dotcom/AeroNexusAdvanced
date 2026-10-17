@@ -25,7 +25,7 @@ from .pilot2_wayline_preview import (
     _download_kmz, _xml_root, parse_preview_kmz,
 )
 from .studio_workspace import WorkspaceError
-from .wpml_export import KML_NS, WPML_NS, MODELS, WaypointMission, _num
+from .wpml_export import KML_NS, WPML_NS, MODELS, WaypointMission, _num, waypoints_for_export
 
 K = "{" + KML_NS + "}"
 W = "{" + WPML_NS + "}"
@@ -220,10 +220,7 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
         None if any(n is None for n in speeds)
         else all(n == Decimal(_num(mission.speed_mps)) for n in speeds)
     )
-    expected_actions = [wp.take_photo for wp in (
-        __import__("aeronexus.wpml_export", fromlist=["waypoints_for_export"])
-        .waypoints_for_export(mission)
-    )]
+    expected_actions = [wp.take_photo for wp in waypoints_for_export(mission)]
     if (route["other_action_count"] or route["start_actions_present"]
             or any(wp["action_count"] > 1 for wp in route["waypoints"])):
         comparisons["takePhotoPositions"] = None
