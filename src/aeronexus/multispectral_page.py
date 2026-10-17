@@ -40,6 +40,11 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .item{display:block;width:100%;text-align:left;margin:6px 0;background:#142842;border:1px solid #33506d;border-radius:9px;padding:9px}
 .item:hover,.item.active{border-color:#76bfff;background:#214362}
 .item b{display:block;font-size:13px}.item small{display:block;color:#b5cae1;font-size:11px;margin-top:3px}
+.capture-row{display:flex;align-items:center;gap:8px}.capture-row .item{flex:1;min-width:0}
+.capture-choice{display:flex;align-items:center;justify-content:center;min-width:32px;min-height:40px}
+.package-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px}
+.ortho-controls{flex:none;margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.ortho-controls summary{cursor:pointer;font-weight:600}.ortho-body{max-height:340px;overflow-y:auto;padding-top:8px}
 .band{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;margin-right:3px;border:1px solid #4e6a84}
 .band.on{color:#0b1323;background:var(--mint);border-color:var(--mint)}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border:1px solid #486d8b;border-radius:999px}
@@ -95,6 +100,14 @@ th{color:var(--sub);font-weight:600}
 <h2 id="list-title">M3M-Aufnahmen</h2>
 <div class="sub">Bänder werden über die CaptureUUID zusammengeführt (auch FlightHub-Uploads und SD-Importe).</div>
 <div class="scroll" id="list" style="margin-top:8px"></div>
+<details class="ortho-controls"><summary>Orthomosaik mit Metashape</summary><div class="ortho-body">
+<label class="sub" for="ortho-mode">Exportmodus</label>
+<select id="ortho-mode"><option value="rgb">RGB-Orthomosaik</option><option value="multispectral">MS-Rohbandmosaike</option></select>
+<p class="note">3–100 überlappende Aufnahmen derselben Flugserie markieren. Der Pi erstellt ein Paket (max. 4 GiB). Berechnung auf einem Arbeitsrechner mit aktivierter Metashape-Professional-Lizenz. MS-Rohbandmosaike sind keine NDVI-Karte.</p>
+<div class="row"><button id="ortho-export" type="button" disabled>Paket vorbereiten (0)</button><button id="ortho-refresh" type="button">Pakete aktualisieren</button></div>
+<div id="ortho-state" class="note" role="status" aria-live="polite"></div>
+<div id="ortho-packages"></div>
+</div></details>
 </section>
 
 <section class="panel" aria-labelledby="viewer-title">
@@ -176,6 +189,7 @@ th{color:var(--sub);font-weight:600}
 "use strict";
 const $=id=>document.getElementById(id);
 let captures=[],current=null,data=null,W=0,H=0,cir=null,spots=[],tool="point",drag=null,busy=0;
+const orthoSelection=new Set();let orthoPending=false,orthoListGeneration=0;
 const CMAPS={
   rdylgn:[[0,165,0,38],[.25,244,109,67],[.5,255,255,191],[.75,102,189,99],[1,0,104,55]],
   viridis:[[0,68,1,84],[.25,59,82,139],[.5,33,145,140],[.75,94,201,98],[1,253,231,37]],
@@ -202,6 +216,10 @@ async function loadCaptures(){
     const r=await api("/api/v1/multispectral/captures");captures=r.captures||[];
     const list=$("list");list.replaceChildren();
     for(const c of captures){
+      const row=el("div",null,"capture-row"),choice=el("label",null,"capture-choice"),check=el("input");
+      check.type="checkbox";check.dataset.orthoCapture=c.capture_uuid;check.checked=orthoSelection.has(c.capture_uuid);
+      check.disabled=orthoPending;check.setAttribute("aria-label","Für Metashape auswählen: "+(c.captured_at||c.capture_uuid));
+      check.addEventListener("change",()=>{if(check.checked)orthoSelection.add(c.capture_uuid);else orthoSelection.delete(c.capture_uuid);orthoState();});choice.append(check);
       const b=el("button",null,"item");b.type="button";b.dataset.id=c.capture_uuid;
       const t=c.captured_at?new Date(c.captured_at).toLocaleString("de-DE"):"Zeit unbekannt";
       b.append(el("b",t));
@@ -210,11 +228,49 @@ async function loadCaptures(){
       const irr=Object.values(c.bands).map(x=>x.irradiance).filter(x=>typeof x==="number");
       b.append(el("small",[c.position?(c.position.gps_status||"GNSS"):"kein GNSS",irr.length?"Sonne "+Math.round(Math.min(...irr))+"–"+Math.round(Math.max(...irr)):"",c.rgb?"mit RGB":""].filter(Boolean).join(" · ")));
       if(c.warnings.length)b.append(el("small","⚠ "+c.warnings.length+" Hinweis(e)"));
-      b.addEventListener("click",()=>select(c));list.append(b);
+      b.addEventListener("click",()=>select(c));row.append(choice,b);list.append(row);
     }
+    for(const id of orthoSelection)if(!captures.some(c=>c.capture_uuid===id))orthoSelection.delete(id);
+    orthoState();
     $("state").textContent=captures.length?`${captures.length} Aufnahmen · Katalog ${r.scanned_at?new Date(r.scanned_at).toLocaleString("de-DE"):"–"}`:"Keine M3M-Aufnahmen – auf dem Pi: .venv/bin/python -m aeronexus.multispectral";
   }catch(e){$("state").textContent="Katalog nicht verfügbar: "+e.message;}
 }
+
+function orthoState(){
+  const n=orthoSelection.size,b=$("ortho-export");b.disabled=orthoPending||n<3||n>100;
+  b.textContent=orthoPending?"Paket wird vorbereitet…":`Paket vorbereiten (${n})`;
+  $("ortho-mode").disabled=orthoPending;
+  for(const input of document.querySelectorAll("input[data-ortho-capture]"))input.disabled=orthoPending;
+}
+async function orthoRequest(path,options){
+  const r=await fetch(path,{cache:"no-store",credentials:"same-origin",...options});
+  if(!r.ok){let message="HTTP "+r.status;try{const b=await r.json();if(typeof b.detail==="string")message=b.detail;}catch(e){}throw new Error(message);}
+  return r.status===204?null:r.json();
+}
+async function loadPackages(){
+  const generation=++orthoListGeneration,result=await orthoRequest("/api/v1/multispectral/metashape/packages");
+  if(generation!==orthoListGeneration)return;
+  const box=$("ortho-packages");box.replaceChildren();
+  for(const p of result.packages||[]){
+    if(!/^[0-9a-f]{32}$/.test(p.id))continue;
+    const row=el("div",null,"package-row"),link=el("a",`${p.mode==="rgb"?"RGB":"MS-Rohbänder"} · ${p.captures} Aufnahmen · ${Math.ceil(p.size_bytes/1048576)} MiB herunterladen`);
+    link.href=`/api/v1/multispectral/metashape/packages/${p.id}/file`;link.download=`aeronexus-metashape-${p.id}.zip`;
+    const remove=el("button","Paket löschen");remove.type="button";
+    remove.addEventListener("click",async()=>{remove.disabled=true;try{await orthoRequest(`/api/v1/multispectral/metashape/packages/${p.id}`,{method:"DELETE"});await loadPackages();}
+      catch(e){$("ortho-state").textContent="Paket konnte nicht gelöscht werden: "+e.message;remove.disabled=false;}});
+    row.append(link,remove);box.append(row);
+  }
+}
+$("ortho-export").addEventListener("click",async()=>{
+  if(orthoPending||orthoSelection.size<3||orthoSelection.size>100)return;
+  const body={capture_uuids:[...orthoSelection],mode:$("ortho-mode").value};
+  orthoPending=true;orthoState();$("ortho-state").textContent="Originale werden als Arbeitskopien verpackt. Große Pakete können einige Minuten benötigen.";
+  try{await orthoRequest("/api/v1/multispectral/metashape/packages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    await loadPackages();$("ortho-state").textContent="Paket bereit. Herunterladen, auf dem Arbeitsrechner entpacken und README.txt befolgen. Pakete werden eine Stunde vorgehalten.";
+  }catch(e){$("ortho-state").textContent="Paket nicht bestätigt: "+e.message+". Mit ‚Pakete aktualisieren‘ vorhandene Pakete prüfen.";}
+  finally{orthoPending=false;orthoState();}
+});
+$("ortho-refresh").addEventListener("click",()=>loadPackages().catch(e=>{$("ortho-state").textContent="Pakete nicht abrufbar: "+e.message;}));
 
 function select(c){
   current=c;spots=[];renderSpots();
@@ -500,6 +556,7 @@ for(const id of ["stack-product","stack-scale","stack-refine"])$(id).addEventLis
 window.addEventListener("resize",fit);
 $("range-mode").value="veg";
 loadCaptures();
+loadPackages().catch(e=>{$("ortho-state").textContent="Pakete nicht abrufbar: "+e.message;});
 </script>
 </body>
 </html>
@@ -508,4 +565,5 @@ loadCaptures();
 
 def render_multispectral_page() -> str:
     return HTML
+
 

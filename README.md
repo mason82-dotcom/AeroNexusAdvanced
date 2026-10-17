@@ -279,6 +279,17 @@ docker build -t aeronexusadvanced:dev .
 docker run --rm -p 127.0.0.1:8000:8000 aeronexusadvanced:dev
 ```
 
+## Optional Metashape orthomosaic workflow
+
+The Multispectral page can package 3–100 selected M3M captures for an external
+Agisoft Metashape Professional worker. The Pi exports read-only copies; it does
+not install Metashape or start reconstruction. RGB and independent MS raw-band
+mosaics are supported. Raw-band outputs are not calibrated reflectance/NDVI
+products and tiled GeoTIFFs are not automatically certified COGs.
+
+See [Metashape integration](docs/metashape-integration.md) for the separately
+installed GeoSense processor, license requirements, export limits and worker use.
+
 ## Security limitations
 
 - No DJI flight commands or remote configuration writes.
