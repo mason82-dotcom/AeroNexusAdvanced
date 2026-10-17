@@ -41,6 +41,8 @@ from .multispectral import (LAYERS, MultispectralBusy, MultispectralError, Multi
 from .multispectral_page import render_multispectral_page
 from .thermal_flights import ThermalFlights, ThermalJobRunning
 from .media_sync import read_status as read_media_sync_status
+from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, MetashapePackageNotFound,
+                               list_packages, package_path, prepare_package, remove_package)
 from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
 from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
@@ -1138,6 +1140,68 @@ def multispectral_grid(capture_uuid: str, layer: str, request: Request,
                              "X-Grid-Width": str(grid.shape[1]), "X-Grid-Height": str(grid.shape[0])})
 
 
+class MetashapePackageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    capture_uuids: list[str] = Field(min_length=3, max_length=100)
+    mode: str = Field(default="rgb", pattern="^(rgb|multispectral)$")
+
+
+@app.get("/api/v1/multispectral/metashape/packages")
+def metashape_packages(request: Request, response: Response,
+                       authorization: str | None = Header(default=None)) -> dict:
+    service = _ms_service(request, authorization)
+    _no_cache(response)
+    try:
+        return {"packages": list_packages(service), "execution": "external_worker"}
+    except (OSError, WorkspaceError) as exc:
+        raise HTTPException(503, "Private export workspace unavailable") from exc
+
+
+@app.post("/api/v1/multispectral/metashape/packages", status_code=201)
+def metashape_prepare_package(body: MetashapePackageRequest, request: Request, response: Response,
+                              authorization: str | None = Header(default=None)) -> dict:
+    service = _ms_service(request, authorization)
+    _no_cache(response)
+    try:
+        return prepare_package(service, body.capture_uuids, body.mode)
+    except MetashapeExportBusy as exc:
+        raise HTTPException(503, str(exc), headers={"Retry-After": "10"}) from exc
+    except MetashapeExportError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+    except WorkspaceError as exc:
+        raise HTTPException(503, "Private export workspace unavailable") from exc
+
+
+@app.get("/api/v1/multispectral/metashape/packages/{job_id}/file")
+def metashape_download_package(job_id: str, request: Request,
+                               authorization: str | None = Header(default=None)):
+    service = _ms_service(request, authorization)
+    try:
+        path = package_path(service, job_id)
+    except MetashapePackageNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (OSError, WorkspaceError) as exc:
+        raise HTTPException(503, "Private export workspace unavailable") from exc
+    return FileResponse(path, media_type="application/zip", filename=f"aeronexus-metashape-{job_id}.zip",
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                                 "Referrer-Policy": "no-referrer"})
+
+
+@app.delete("/api/v1/multispectral/metashape/packages/{job_id}", status_code=204)
+def metashape_delete_package(job_id: str, request: Request,
+                             authorization: str | None = Header(default=None)) -> None:
+    service = _ms_service(request, authorization)
+    try:
+        remove_package(service, job_id)
+    except MetashapePackageNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (OSError, WorkspaceError) as exc:
+        raise HTTPException(503, "Private export workspace unavailable") from exc
+
+
 @app.post("/api/v1/flight/command", status_code=403)
 def blocked_flight_command() -> None:
     raise HTTPException(status_code=403, detail="Flight commands disabled by default")
+
