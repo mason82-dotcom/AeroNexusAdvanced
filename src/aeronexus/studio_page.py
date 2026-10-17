@@ -1291,7 +1291,9 @@ function terrainDrapePolyline(points,grid){
   const maxSegments=1024;
   const lengths=points.slice(1).map((point,i)=>
     Math.hypot(point.row-points[i].row,point.col-points[i].col));
-  const wanted=lengths.map(len=>Math.max(1,Math.ceil(len*3)));
+  // Use an even subdivision count so midpoint terrain peaks are not
+  // systematically skipped when the straight segment crosses a summit.
+  const wanted=lengths.map(len=>len===0?1:Math.max(2,2*Math.ceil(len*1.5)));
   const totalWanted=wanted.reduce((sum,count)=>sum+count,0);
   let remaining=maxSegments;
   const result=[{...points[0]}];
