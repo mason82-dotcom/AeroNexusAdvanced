@@ -8,8 +8,9 @@
 | Bereich | Stand | PR |
 |---|---|---|
 | DJI-Medienkatalog (MinIO, read-only) und Laufzeitdiagnose | gemergt, auf dem Pi live | #19 (via #20) |
-| Thermografie `/thermal`: DJI Thermal SDK (Box64 auf dem Pi), Messwerkzeuge, Export | gemergt, im Browser bestätigt | #20 |
-| Thermografie: Karte, Overlay mit Sichtbild, PV-Inspektion (IEC TS 62446-3 als Orientierung) | gemergt, im Browser bestätigt | #21 |
+| Thermal `/thermal`: DJI Thermal SDK (Box64 auf dem Pi), Messwerkzeuge, Export | gemergt, im Browser bestätigt | #20 |
+| Thermal: Karte, Overlay mit Sichtbild, PV-Inspektion (IEC TS 62446-3 als Orientierung) | gemergt, im Browser bestätigt | #21 |
+| Thermal: Umbenennung, Flugauswertung (Hintergrundjob, Hotspot-Rangliste), Karten-Färbung, Wärmebild-Overlay | Branch `feature/thermal-rename-batch-20261017` | – |
 | Multispektral `/multispectral` (DJI Mavic 3M): NDVI, GNDVI, NDRE, LCI, CIR | gemergt, im Browser bestätigt | #22 |
 | Multispektral-Karte: Aufnahmepunkte, Footprints/Sichtkegel, NDVI-Übersicht | gemergt | #23 |
 | Multispektral-Qualität: Sonnenlichtsensor-Sperre, Sättigungsmaske, geneigte Projektion | gemergt | #25 |
@@ -58,7 +59,7 @@
   (`read_indexed_object`) für Thermal und Multispektral.
 - Tests: **724 bestanden**. Details: [multispectral.md](multispectral.md).
 
-## Thermografie: Karte, Overlay, PV-Inspektion (PR #21)
+## Thermal: Karte, Overlay, PV-Inspektion (PR #21)
 
 - Karte: Geo-Index (`python -m aeronexus.thermal_geo`, Range-Reads) live
   aufgebaut – 2.058 M3T-Bilder mit Position und Footprint, 14 ohne GNSS.
@@ -68,7 +69,7 @@
   Abnahme mit echten PV-Aufnahmen steht aus.
 - Tests: **711 bestanden**.
 
-## Thermografie-Modul (PR #20)
+## Thermal-Modul (PR #20)
 
 - Neuer Tab `/thermal` (Links in Operations, Studio, Live-Status, Medien).
   Temperaturen ausschließlich über das DJI Thermal SDK v1.8; auf dem Pi 5
@@ -80,7 +81,7 @@
   `lan_access.require_lan` und in der Studio-CSP (jetzt `AERONEXUS_LAN_HOST`
   / `AERONEXUS_PORT`, nur gültige Adresse im Heimnetz), ungenutzte Imports.
 - Tests: **701 bestanden**, 1 bekannte Starlette/httpx-Warnung.
-- Details und Vorschläge: [thermography.md](thermography.md).
+- Details und Vorschläge: [thermal.md](thermal.md).
 
 ## Bestätigter Pi-Stand und Grenzen
 

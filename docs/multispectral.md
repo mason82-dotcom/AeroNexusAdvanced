@@ -85,8 +85,8 @@ große Entfernungen – Nahaufnahmen zeigen Parallaxe zwischen den Bändern.
   2592×1944 → 61,7° × 48,3°, 73,5° diagonal); angezeigte Bodenauflösung ist
   die größere zentrale Pixelabmessung `Höhe / (Brennweite · cos(Pitch+90°)²)`.
   Annahme: ebenes Gelände auf Startpunkthöhe, kein Gimbal-Roll. Die Überlagerung
-  ist keine vermessungstaugliche Orthorektifizierung. Die bestehende
-  Thermografie-Rechteckprojektion bleibt unverändert.
+  ist keine vermessungstaugliche Orthorektifizierung. Seit PR #26 nutzt die
+  Thermal-Karte dieselbe Projektion geneigter Kameras.
 - NDVI-Übersichten werden als lokaler Cache im Katalog gespeichert, sobald
   der NDVI einer Aufnahme berechnet wurde; ändern sich Bänder (ETag), wird der
   Wert verworfen. Fehlende Übersichten: Schaltfläche „NDVI-Übersicht

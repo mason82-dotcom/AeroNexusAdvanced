@@ -84,7 +84,7 @@ th{color:var(--sub);font-weight:600}
 <a href="/studio">Mission Studio</a>
 <a href="/status">Live-Status</a>
 <a href="/media">DJI Medien</a>
-<a href="/thermal">Thermografie</a>
+<a href="/thermal">Thermal</a>
 <span class="active" aria-current="page">Multispektral</span>
 </nav>
 <span class="header-state" id="state" role="status" aria-live="polite">Lade Aufnahmen…</span>
