@@ -59,6 +59,7 @@ from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, 
 from .studio_events import serve_studio_events
 from .lan_access import lan_host, lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
+from .mission_reconciliation import compare_missions
 from .mission_csv import MAX_CSV_BYTES, MissionCsvError, preview_csv
 from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
@@ -620,6 +621,16 @@ def studio_create_mission(mission: WaypointMission, request: Request,
         return _studio_workspace(request, authorization).save_mission(mission)
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
+
+
+@app.get("/api/v1/studio/missions/reconciliation")
+def studio_mission_reconciliation(request: Request, response: Response,
+                                  authorization: str | None = Header(default=None)) -> dict:
+    _no_cache(response)
+    workspace = _studio_workspace(request, authorization)
+    runtime = app.state.status_runtime
+    return compare_missions(workspace.list_missions(), runtime.catalog,
+                            runtime.summary()["flighthub"]["catalog_updated_at"])
 
 
 @app.post("/api/v1/studio/missions/preview.csv")

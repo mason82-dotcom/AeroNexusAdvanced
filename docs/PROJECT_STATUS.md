@@ -1,12 +1,39 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026 – `main` mit PR #34, #5 und #24.
+**Stand:** 17. Oktober 2026 – `main` @ `60b5431` einschließlich PR #37.
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
-## Laufender Änderungsstand: Cloud-API-Telemetrie 1.18
+## Laufender Änderungsstand: Missionsprofile und Wayline-Abgleich
 
-Basis `main` @ `bf9ed75` (einschließlich #36), Branch
-`fix/cloud-api-118-telemetry-20261017`. Noch kein Pi-Deployment dieses Standes.
+Basis `main` @ `60b5431`, Branch `fix/mission-wayline-consistency-20261017`.
+Noch nicht auf dem Pi installiert.
+
+- Studio-Profile für M3E/M3T/M3M/M3TA zusätzlich zu M4E/M4T; Geräteauswahl
+  aus derselben Tabelle wie der Export. Keine neuen Kamera-/Mapping-Modi.
+- Vollständiger Struktur-/Wertabgleich beider KMZ-XML-Dateien beim Import;
+  nicht verlustfrei darstellbare Parameter werden abgelehnt. Nachweisbare
+  Fehler bei abweichender RTH-Höhe und individueller Geschwindigkeit behoben.
+- Geschützte GET-API `/api/v1/studio/missions/reconciliation` vergleicht lokale
+  Entwürfe und bereits gelesene FlightHub-Metadaten. Namen bleiben unbestätigte
+  Kandidaten; Modellkonflikte, Quellen-/Listenlimits und fehlende Task-Verbindung
+  sind explizit. Keine Synchronisation, kein Cloud-Schreiben.
+- Die lokale Pilot-2-Cloud-Wayline-Bibliothek ist noch keine Quelle des Berichts.
+  Inhalt/Prüfsumme und echte Pi-Bestände sind nicht verifiziert.
+- Lokale Gesamtsuite Python 3.12: **1029 bestanden, 1 bestehender GDAL-Test
+  mangels osgeo übersprungen, 1 bekannte Starlette/httpx-Warnung**.
+  Neue Prüfungen für alle Profile, manipulierte XML-Parameter, Zugriffsschutz
+  und unveränderte lokale Missionsdateien beim lesenden Abgleich.
+- Statischer UI-Audit ohne Befund. Echter Browserlauf offen: kein Chromium;
+  Browserdownload lieferte defekte Archive. Pi-/Pilot-2-Abnahme separat.
+
+Vertrag und Pi-Lesebefehl: [Missionen und Waylines](mission-wayline-reconciliation.md).
+
+## Gemergt und auf dem Pi installiert: Cloud-API-Telemetrie 1.18
+
+PR #37 wurde in `main` @ `60b5431` gemergt. Anwenderausgabe vom 17.10.2026
+bestätigt Pi-Installation, **89 fokussierte Tests**, Dienst `active` und
+HTTPS `/health`: `{"status":"ok","service":"aeronexusadvanced"}`.
+Geräte-Live-Abnahme der zusätzlichen Telemetrie steht weiterhin aus.
 
 - Zusätzliche validierte OSD-/State-Eigenschaften unter `cloud_details`;
   dynamische Nutzlasten sowie Kamera-/IR-Zustände der Mavic-3-Enterprise-Reihe.

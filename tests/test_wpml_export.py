@@ -271,3 +271,80 @@ def test_closed_route_enforces_500_total_executed_wpml_points():
 def test_closed_route_requires_strict_boolean():
     with pytest.raises(ValidationError):
         draft(close_route="true")
+
+
+@pytest.mark.parametrize("model,values", [
+    ("mavic3e", (77, 0, 66, 0)), ("mavic3t", (77, 1, 67, 0)),
+    ("mavic3m", (77, 2, 68, 0)), ("mavic3ta", (77, 3, 129, 0)),
+    ("matrice4e", (99, 0, 88, 0)), ("matrice4t", (99, 1, 89, 0)),
+])
+def test_all_mission_profiles_preserve_aircraft_payload_and_actions(model, values):
+    original = closed_draft(drone_model=model)
+    data = export_kmz(original, timestamp_ms=123)
+    for root in files(original):
+        for tag, expected in zip(("droneEnumValue", "droneSubEnumValue", "payloadEnumValue", "payloadSubEnumValue"), values):
+            assert root.find(".//" + W + tag).text == str(expected)
+    assert import_kmz(data).model_dump() == original.model_dump()
+
+
+def mutated_kmz(member, mutate):
+    data = export_kmz(draft(), timestamp_ms=123)
+    output = BytesIO()
+    with ZipFile(BytesIO(data)) as source, ZipFile(output, "w") as target:
+        for path in source.namelist():
+            root = ET.fromstring(source.read(path))
+            if path == member:
+                mutate(root)
+            target.writestr(path, ET.tostring(root))
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("member,tag,value", [
+    ("waylines.wpml", "globalRTHHeight", "100"),
+    ("template.kml", "globalRTHHeight", "100"),
+    ("waylines.wpml", "waypointSpeed", "12"),
+    ("template.kml", "autoFlightSpeed", "12"),
+    ("template.kml", "droneSubEnumValue", "0"),
+    ("template.kml", "takeOffSecurityHeight", "70"),
+    ("waylines.wpml", "exitOnRCLost", "goContinue"),
+    ("template.kml", "exitOnRCLost", "goContinue"),
+    ("waylines.wpml", "waypointHeadingMode", "fixed"),
+    ("waylines.wpml", "waypointTurnDampingDist", "5"),
+    ("waylines.wpml", "payloadPositionIndex", "1"),
+    ("template.kml", "useGlobalSpeed", "0"),
+    ("template.kml", "gimbalPitchAngle", "-90"),
+    ("template.kml", "coordinateMode", "EGM96"),
+    ("waylines.wpml", "actionTriggerType", "betweenAdjacentPoints"),
+    ("waylines.wpml", "actionGroupEndIndex", "1"),
+    ("waylines.wpml", "fileSuffix", "changed"),
+])
+def test_import_rejects_every_unrepresentable_setting(member, tag, value):
+    def mutate(root):
+        root.find(".//" + W + tag).text = value
+    with pytest.raises(ValueError):
+        import_kmz(mutated_kmz("wpmz/" + member, mutate))
+
+
+@pytest.mark.parametrize("variant", ["duplicate_config", "unknown_action_param", "attribute", "extra_folder"])
+def test_import_rejects_extra_or_ambiguous_structure(variant):
+    from copy import deepcopy
+    def mutate(root):
+        doc = root.find(K + "Document")
+        if variant == "duplicate_config":
+            doc.append(deepcopy(doc.find(W + "missionConfig")))
+        elif variant == "unknown_action_param":
+            ET.SubElement(root.find(".//" + W + "actionActuatorFuncParam"), W + "useGlobalPayloadLensIndex").text = "0"
+        elif variant == "attribute":
+            doc.set("unknown", "value")
+        else:
+            ET.SubElement(doc, K + "Folder")
+    with pytest.raises(ValueError):
+        import_kmz(mutated_kmz("wpmz/waylines.wpml", mutate))
+
+
+def test_import_allows_pretty_print_and_independent_creation_times():
+    def mutate(root):
+        root.find(".//" + W + "createTime").text = "100"
+        root.find(".//" + W + "updateTime").text = "200"
+        ET.indent(root)
+    assert import_kmz(mutated_kmz("wpmz/template.kml", mutate)).model_dump() == draft().model_dump()

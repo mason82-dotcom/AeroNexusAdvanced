@@ -73,7 +73,7 @@ or redesigned by this change. Visual context: [DESIGN.md](DESIGN.md).
 
 ## Sources and domain rules
 
-- `src/aeronexus/wpml_export.py`: WGS84, Matrice 4T/4E, uniform mission height
+- `src/aeronexus/wpml_export.py`: WGS84, Mavic 3E/3T/3M/3TA and Matrice 4T/4E, uniform mission height
   relative to start, maximum 500 executed waypoints, explicit return-point rule.
 - `src/aeronexus/app.py`: existing bearer or explicit direct HTTPS-LAN access;
   local mission save API is the persistence owner; DJI flight commands blocked.
@@ -111,3 +111,25 @@ Native dialog focus containment and Escape are used. Close returns focus to the
 opener. Errors focus a textual status. All new controls and status text are
 German, except explicit file column identifiers. No product flow introduced
 here calls alert/confirm/prompt.
+
+# Mission Studio: Geräteprofile und KMZ-Abgleich
+
+Fachlicher Vertrag: `docs/mission-wayline-reconciliation.md`; Profil- und
+Dateisemantik: `src/aeronexus/wpml_export.py`. Die native, beschriftete
+Geräteauswahl bleibt der bestehende Eigentümer; ihre Popup-Geometrie und
+Tastaturbedienung gehören weiterhin dem Betriebssystem. Optionen werden aus
+der Export-Profiltabelle gerendert. Bestehende Auswahl-, Undo-, Speicher-,
+Lade- und Fehlerpfade werden wiederverwendet, ohne neue Dialoge oder Tokens.
+Vergleichbares Steuerelement ist die Auswahl „Mission beenden“ im selben Panel.
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+|---|---|---|---|---|
+| Select/Listbox | `mission-model` native select | `wpml_export.MODELS` / `MODEL_LABELS` | Sechs benannte Profile, Plattform-Popup | HTML-Vertrag, API-Roundtrip; Browser offen |
+| Form | Bestehende `getForm` / `syncForm` | `WaypointMission` | Modellwahl bleibt bei CSV-Punktübernahme erhalten | Bestehende JS-Tests und neue Profiltests |
+| Toast | Bestehende `notice` / `errorMessage` | Studio-Statusregion | Fehler bei nicht darstellbaren KMZ-Dateien | API-Rejection-/Persistenztests |
+| CRUD | Bestehende Missions-API / `Workspace` | `app.py`, `studio_workspace.py` | Explizites lokales Speichern, keine DJI-Uploads | Speichern/Laden/Export/Re-Import für M3-Profile |
+
+Der neue Metadatenbericht ist API-only; keine neue UI-Lade-/Navigationslogik.
+Namensgleichheit darf keine bestätigte Identität, Synchronisation oder
+Flugauftragszuordnung anzeigen. Die Browserauswahl mit Tastatur und im schmalen
+Viewport ist noch nicht real geprüft; keine umfassende UI-Zertifizierung.
