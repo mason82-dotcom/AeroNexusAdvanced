@@ -93,7 +93,7 @@ def test_no_post_while_disabled(monkeypatch):
     calls = []
     transport = httpx.MockTransport(handler_factory(calls))
     with pytest.raises(UploadError, match="upload_disabled"):
-        asyncio.run(upload(plan(), CREDS, transport=transport))
+        asyncio.run(upload(plan(), CREDS, expected_model="mavic3m", transport=transport))
     assert not calls
 
 
@@ -131,9 +131,81 @@ def test_dont_retry_or_assume_success(monkeypatch, post_code, after, network_fai
         calls, post_code=post_code, after=after, network_failure=network_failure))
     if expected:
         with pytest.raises(UploadError, match=expected):
-            asyncio.run(upload(plan(), CREDS, transport=transport))
+            asyncio.run(upload(plan(), CREDS, expected_model="mavic3m", transport=transport))
     else:
-        result = asyncio.run(upload(plan(), CREDS, transport=transport))
+        result = asyncio.run(upload(plan(), CREDS, expected_model="mavic3m", transport=transport))
         assert result["state"] == "submitted_unverified"
         assert result["verified"] is False
     assert sum(m == "POST" for m, _ in calls) == 1
+
+
+def test_expected_m3m_profile_blocks_wrong_aircraft_without_any_http(monkeypatch):
+    monkeypatch.setenv("AERONEXUS_PILOT_WAYLINE_UPLOAD_ENABLED", "1")
+    calls = []
+    with pytest.raises(UploadError, match="model_mismatch"):
+        asyncio.run(upload(
+            plan(), CREDS, expected_model="matrice4t",
+            transport=httpx.MockTransport(handler_factory(calls))))
+    assert calls == []
+
+
+def test_model_confirmation_is_required_for_every_live_upload(monkeypatch):
+    monkeypatch.setenv("AERONEXUS_PILOT_WAYLINE_UPLOAD_ENABLED", "1")
+    calls = []
+    with pytest.raises(UploadError, match="expected_model_required"):
+        asyncio.run(upload(
+            plan(), CREDS,
+            transport=httpx.MockTransport(handler_factory(calls))))
+    assert calls == []
+
+
+def test_read_only_preflight_does_not_post_even_with_upload_flag_enabled(monkeypatch):
+    from aeronexus.pilot_wayline_upload import check_cloud
+    monkeypatch.setenv("AERONEXUS_PILOT_WAYLINE_UPLOAD_ENABLED", "1")
+    calls = []
+    result = asyncio.run(check_cloud(
+        plan(), CREDS, transport=httpx.MockTransport(handler_factory(calls))))
+    assert result["state"] == "connected"
+    assert result["pagination_complete"]
+    assert [method for method, _ in calls] == ["GET", "GET"]
+
+
+def test_wrong_device_model_cannot_verify_new_cloud_wayline(monkeypatch):
+    monkeypatch.setenv("AERONEXUS_PILOT_WAYLINE_UPLOAD_ENABLED", "1")
+    calls = []
+    delegate = handler_factory(calls)
+    def wrong_model(request):
+        response = delegate(request)
+        if request.method == "GET" and request.url.path.endswith("/waylines"):
+            payload = response.json()
+            if payload["data"]["list"]:
+                payload["data"]["list"][0]["drone_model_key"] = "0-99-1"
+                return httpx.Response(200, json=payload)
+        return response
+    result = asyncio.run(upload(
+        plan(), CREDS, expected_model="mavic3m",
+        transport=httpx.MockTransport(wrong_model)))
+    assert result["state"] == "submitted_unverified"
+    assert result["verified"] is False
+    assert sum(method == "POST" for method, _ in calls) == 1
+
+
+def test_incomplete_post_upload_inventory_does_not_verify(monkeypatch):
+    monkeypatch.setenv("AERONEXUS_PILOT_WAYLINE_UPLOAD_ENABLED", "1")
+    calls = []
+    delegate = handler_factory(calls)
+    def partial_list(request):
+        response = delegate(request)
+        if request.method == "GET" and request.url.path.endswith("/waylines") and any(
+                method == "POST" for method, _ in calls):
+            payload = response.json()
+            payload["data"]["pagination"]["total"] = 501
+            payload["data"]["list"] = []
+            # The adapter rejects this as inconsistent; it must never report success.
+            return httpx.Response(200, json=payload)
+        return response
+    result = asyncio.run(upload(
+        plan(), CREDS, expected_model="mavic3m",
+        transport=httpx.MockTransport(partial_list)))
+    assert result["verified"] is False
+    assert sum(method == "POST" for method, _ in calls) == 1
