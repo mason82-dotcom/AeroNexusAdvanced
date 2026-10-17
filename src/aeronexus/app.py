@@ -606,14 +606,16 @@ async def studio_terrain_geotiff(request:Request,response:Response,
         content.extend(chunk)
         if len(content)>8*1024*1024:
             raise HTTPException(status_code=413,detail="Maximum GeoTIFF upload 8 MiB")
+    geo_info={}
     try:
-        grid=geotiff_preview(bytes(content))
+        grid=geotiff_preview(bytes(content),geo_info=geo_info)
     except TerrainUnavailable as exc:
         raise HTTPException(status_code=503,detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422,detail=str(exc)) from exc
     _no_cache(response)
-    return {"grid":grid.model_dump(),"overview":terrain_overview(grid)}
+    return {"grid":grid.model_dump(),"overview":terrain_overview(grid),
+            "geo":geo_info or None}
 
 
 @app.post("/api/v1/studio/terrain/export.stl")
