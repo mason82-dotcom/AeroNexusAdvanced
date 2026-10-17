@@ -140,7 +140,8 @@ def test_band_scale_offset_and_statistics_are_bounded(results):
     item = results.list()["items"][0]
     stats = results.statistics(item["id"])
     assert stats["min"] == stats["max"] == 25
-    assert stats["p02"] < stats["p98"]
+    assert stats["p02"] == stats["p98"] == 25
+    assert stats["display_low"] < stats["display_high"]
     assert stats["approximate"] and stats["sample_count"] <= 256 * 256
     rgba = decode_png(results.tile(item["id"], *xyz(), low=0, high=50, palette="gray"))
     assert np.all(rgba[rgba[:, :, 3] == 255, 0] == 127)
