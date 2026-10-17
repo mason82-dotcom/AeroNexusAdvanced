@@ -24,6 +24,8 @@
 | Fotokatalog `/media` (M3E/M3T/M4T/M3M nach Metadaten), HTTP-Kompression, CSP-/Mobil-Korrekturen | gemergt, auf dem Pi live geprüft | #34 |
 | CSV-Wegpunkte im Mission Studio: Vorschau, Zeilenfehler, Rückgängig ([CSV-Import](mission-csv-import.md)) | gemergt; Browser-Abnahme am Pi bestanden (Chromium, Desktop und 390 px) | #24 |
 | Cloud API 2: strikte `online`-Auswertung (unbekannt statt offline), x86_64-Rollout-Doku | gemergt | #5 |
+| MediaMTX im lokalen DJI-Cloud-Stack (ohne Logins, nur Heimnetz) | gemergt, auf dem Pi aktiv | #35 |
+| Livestream in `/operations` (WebRTC über Gateway-Signalisierung) | Branch, auf dem Pi live geprüft | – |
 
 - Basisprüfung bei `7a9edf4`: **857 bestanden, 1 übersprungen**, 1 bekannte
   Starlette/httpx-Warnung; GitHub Actions für diesen Commit erfolgreich.

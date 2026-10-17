@@ -57,6 +57,10 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .list-card b{display:block;overflow-wrap:anywhere}
 .list-card small{display:block;font-size:11px;color:#b5cae1;margin-top:4px;overflow-wrap:anywhere}
 .badge{display:inline-block;font-size:11px;padding:3px 8px;border:1px solid #486d8b;border-radius:999px}
+.live-panel{flex:0 0 auto}
+#live-video{display:block;width:100%;aspect-ratio:16/9;background:#050b16;border:1px solid var(--line);border-radius:9px;margin-top:8px;object-fit:contain}
+#live-video[hidden]{display:none}
+.live-controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.live-controls select{flex:1 1 150px;min-width:0}
 .badge.good{color:var(--mint);border-color:#327f6b}.badge.warn{color:var(--amber);border-color:#806844}.badge.bad{color:var(--red);border-color:#984b5d}
 #project-filter{width:100%;min-width:0;margin:10px 0 3px}
 #map-wrap{position:relative;min-height:320px;flex:1;overflow:hidden;border-radius:8px}
@@ -187,6 +191,18 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 </section>
 </div>
 <div class="column right">
+<section class="panel live-panel" id="live-panel" aria-labelledby="live-title">
+<div class="row between"><div><div class="eyebrow">Livestream · lokal (MediaMTX)</div>
+<h2 id="live-title" style="margin:0">Kamerabild</h2></div><span id="live-badge" class="badge">Prüfe…</span></div>
+<div class="live-controls">
+<select id="live-select" aria-label="Livestream wählen"><option value="">Kein Livestream aktiv</option></select>
+<button id="live-start" type="button" disabled>Ansehen</button>
+<button id="live-stop" type="button" hidden>Stopp</button>
+<button id="live-full" type="button" hidden title="Vollbild">⛶</button>
+</div>
+<video id="live-video" muted playsinline autoplay hidden aria-label="Livestream des Fluggeräts"></video>
+<div id="live-state" class="sub" role="status" aria-live="polite">Livestream in DJI Pilot 2 oder in der Cloud-Weboberfläche starten (H.264).</div>
+</section>
 <section class="panel grow">
 <div class="eyebrow">DJI-Cockpit (nur lesen)</div>
 <h2 id="cockpit-name">Keine Drohne ausgewählt</h2>
@@ -703,6 +719,121 @@ function renderTracks(){
   }
   if(selected.length>150)add(body,"div","sub","Anzeige auf 150 Flugaufträge begrenzt.");
 }
+// ------------------------------------------------------------------ livestream
+// Signalling goes through this HTTPS gateway; video flows directly from MediaMTX
+// (WebRTC, DTLS-SRTP over UDP). Watching sends nothing to the aircraft.
+const live={streams:[],current:null,pc:null,session:null,gen:0,stats:null,lastBytes:0,lastTime:0};
+const browserH264=(()=>{try{return RTCRtpReceiver.getCapabilities("video").codecs
+  .some(c=>/h264/i.test(c.mimeType));}catch(e){return false;}})();
+function liveBadge(text,cls){const b=$("live-badge");b.textContent=text;b.className="badge"+(cls?" "+cls:"");}
+async function refreshLive(){
+  let data;
+  try{data=await getJSON("/api/v1/live/streams");}
+  catch(error){liveBadge("Unbekannt","warn");message("live-state","Livestream-Status nicht abrufbar: "+error.message);return;}
+  live.streams=Array.isArray(data.streams)?data.streams:[];
+  const select=$("live-select"),keep=select.value||live.current;
+  select.replaceChildren();
+  if(!live.streams.length){
+    const o=document.createElement("option");o.value="";
+    o.textContent=data.available?"Kein Livestream aktiv":"Livestream-Server nicht erreichbar";select.appendChild(o);
+  }
+  for(const st of live.streams){
+    const o=document.createElement("option");o.value=st.id;
+    o.textContent=st.label+(st.tracks.length?" ("+st.tracks.join(", ")+")":"");select.appendChild(o);
+  }
+  const preferred=live.streams.find(st=>st.id===keep)||live.streams.find(st=>{
+    const d=devices.find(x=>deviceKey(x)===currentDevice);return d&&st.label.startsWith(d.name+" ");})||live.streams[0];
+  if(preferred)select.value=preferred.id;
+  $("live-start").disabled=!preferred;
+  if(live.current&&!live.streams.some(st=>st.id===live.current))stopLive("Der Livestream wurde beendet.");
+  if(!live.current){
+    if(!data.available){liveBadge("Server aus","warn");message("live-state","MediaMTX läuft nicht (Cloud-Stack: Dienst mediamtx).");}
+    else if(!live.streams.length){liveBadge("Kein Stream");message("live-state","Livestream in DJI Pilot 2 oder in der Cloud-Weboberfläche starten (H.264).");}
+    else{liveBadge(live.streams.length+" aktiv","good");message("live-state",streamHint(preferred));}
+  }
+}
+function streamHint(st){
+  if(!st)return "";
+  if(!st.browser_playable)return "Codec "+(st.tracks.join(", ")||"unbekannt")+" ist im Browser nicht abspielbar – in DJI Pilot 2 H.264 wählen.";
+  if(st.tracks.includes("H264")&&!st.tracks.some(t=>t!=="H264"&&t!=="Opus"&&t!=="MPEG-4 Audio")&&!browserH264)
+    return "Dieser Browser kann kein H.264 per WebRTC (z. B. Chromium ohne Codecs) – Chrome, Edge oder Android verwenden.";
+  return "Bereit · Video läuft direkt per WebRTC vom Pi, ohne Umweg über DJI.";
+}
+function iceComplete(pc,ms){
+  return new Promise(resolve=>{
+    if(pc.iceGatheringState==="complete")return resolve();
+    const done=()=>{if(pc.iceGatheringState==="complete")resolve();};
+    pc.addEventListener("icegatheringstatechange",done);setTimeout(resolve,ms);
+  });
+}
+async function startLive(){
+  const id=$("live-select").value;if(!id)return;
+  await stopLive();
+  const gen=++live.gen,pc=new RTCPeerConnection();live.pc=pc;
+  liveBadge("Verbinde…");message("live-state","WebRTC-Verbindung wird aufgebaut…");
+  $("live-start").disabled=true;$("live-stop").hidden=false;
+  pc.addTransceiver("video",{direction:"recvonly"});pc.addTransceiver("audio",{direction:"recvonly"});
+  pc.ontrack=event=>{
+    if(gen!==live.gen)return;
+    const video=$("live-video");
+    if(!(video.srcObject instanceof MediaStream))video.srcObject=new MediaStream();
+    video.srcObject.addTrack(event.track);video.hidden=false;$("live-full").hidden=false;
+  };
+  pc.onconnectionstatechange=()=>{
+    if(gen!==live.gen)return;
+    if(pc.connectionState==="connected"){liveBadge("Live","good");}
+    if(pc.connectionState==="failed"){liveBadge("Fehler","bad");
+      message("live-state","Keine Medienverbindung (UDP 8189 im LAN erreichbar?).");}
+  };
+  try{
+    await pc.setLocalDescription(await pc.createOffer());
+    await iceComplete(pc,2000);
+    const response=await fetch("/api/v1/live/streams/"+encodeURIComponent(id)+"/whep",
+      {method:"POST",headers:{"Content-Type":"application/sdp"},body:pc.localDescription.sdp,cache:"no-store"});
+    if(!response.ok){
+      let detail="";try{detail=(await response.json()).detail;}catch(e){}
+      throw new Error(detail||"HTTP "+response.status);
+    }
+    const session=response.headers.get("X-Live-Session"),answer=await response.text();
+    if(gen!==live.gen){closeSession(id,session);return;}
+    live.current=id;live.session=session;
+    await pc.setRemoteDescription({type:"answer",sdp:answer});
+    live.lastBytes=0;live.lastTime=0;live.stats=window.setInterval(()=>liveStats(gen),2000);
+    message("live-state","Verbunden – Bild erscheint in wenigen Sekunden.");
+  }catch(error){
+    if(gen!==live.gen)return;
+    await stopLive();liveBadge("Fehler","bad");message("live-state","Wiedergabe nicht möglich: "+error.message);
+  }
+}
+async function liveStats(gen){
+  if(gen!==live.gen||!live.pc)return;
+  const stats=await live.pc.getStats();
+  stats.forEach(s=>{
+    if(s.type!=="inbound-rtp"||s.kind!=="video")return;
+    const now=s.timestamp,bytes=s.bytesReceived||0;
+    const rate=live.lastTime?(bytes-live.lastBytes)*8/((now-live.lastTime)/1000)/1e6:null;
+    live.lastBytes=bytes;live.lastTime=now;
+    const st=live.streams.find(x=>x.id===live.current);
+    message("live-state",[st?st.label:null,s.frameWidth&&s.frameHeight?s.frameWidth+"×"+s.frameHeight:null,
+      s.framesPerSecond?Math.round(s.framesPerSecond)+" fps":null,rate!==null?rate.toFixed(1)+" Mbit/s":null]
+      .filter(Boolean).join(" · "));
+  });
+}
+function closeSession(id,session){
+  if(!id||!session)return;
+  fetch("/api/v1/live/streams/"+encodeURIComponent(id)+"/whep/"+encodeURIComponent(session),
+    {method:"DELETE",keepalive:true}).catch(()=>{});
+}
+async function stopLive(reason){
+  live.gen++;
+  if(live.stats){window.clearInterval(live.stats);live.stats=null;}
+  const {pc,current,session}=live;live.pc=live.current=live.session=null;
+  if(pc)pc.close();
+  closeSession(current,session);
+  const video=$("live-video");video.srcObject=null;video.hidden=true;
+  $("live-full").hidden=true;$("live-stop").hidden=true;$("live-start").disabled=!$("live-select").value;
+  if(reason){liveBadge("Beendet");message("live-state",reason);}
+}
 async function getJSON(path){
   const response=await fetch(path,{cache:"no-store"});
   if(!response.ok)throw new Error("HTTP "+response.status);
@@ -883,7 +1014,17 @@ function wire(){
   initializeMap();
   refreshAll();
   window.setInterval(refreshAll,15000);
-  window.addEventListener("pagehide",()=>{stopped=true;});
+  $("live-start").addEventListener("click",startLive);
+  $("live-stop").addEventListener("click",()=>stopLive("Wiedergabe gestoppt."));
+  $("live-select").addEventListener("change",()=>{
+    const st=live.streams.find(x=>x.id===$("live-select").value);
+    $("live-start").disabled=!st;if(!live.current)message("live-state",streamHint(st));
+  });
+  $("live-full").addEventListener("click",()=>{const v=$("live-video");
+    (v.requestFullscreen?v.requestFullscreen():v.webkitEnterFullscreen&&v.webkitEnterFullscreen());});
+  refreshLive();
+  window.setInterval(refreshLive,10000);
+  window.addEventListener("pagehide",()=>{stopped=true;stopLive();});
 }
 wire();
 </script>

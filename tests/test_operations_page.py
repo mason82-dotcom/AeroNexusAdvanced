@@ -20,6 +20,13 @@ class Tags(HTMLParser):
         self.tags.append((tag, dict(attrs)))
 
 
+
+def _writes_except_live_playback(page: str) -> list[str]:
+    """Write-like fetches other than the WebRTC playback offer/teardown."""
+    import re
+    calls = re.findall(r'fetch\(([^;]{0,200}?)method:"(POST|PUT|PATCH|DELETE)"', page)
+    return [c for c, _ in calls if '"/api/v1/live/streams/"' not in c]
+
 def test_quad_area_contains_project_map_cockpit_waylines_and_flight_tracks():
     page = render_operations()
     tags = Tags()
@@ -101,7 +108,8 @@ def test_library_and_tracks_are_read_only_and_scoped_to_cached_tasks():
     assert "Promise.allSettled" in page
     assert "window.setInterval(refreshAll,15000)" in page
     assert "fetch(path,{cache:\"no-store\"})" in page
-    assert 'method:"POST"' not in page
+    assert _writes_except_live_playback(page) == []
+    assert page.count('method:"POST"') == 1 and page.count('method:"DELETE"') == 1
     assert "innerHTML" not in page
     assert "localStorage" not in page
     assert "URLSearchParams" not in page
@@ -291,7 +299,7 @@ def test_live_mqtt_status_panel_is_explicit_and_read_only():
     assert 'fetch(path,{cache:"no-store"})' in page
     assert "mqtt://" not in page
     assert "wss://" not in page
-    assert 'method:"POST"' not in page
+    assert _writes_except_live_playback(page) == []
 
 
 def test_live_cockpit_keeps_source_identity_for_mqtt_and_flighthub():

@@ -46,6 +46,7 @@ from .multispectral_page import render_multispectral_page
 from .thermal_flights import ThermalFlights, ThermalJobRunning
 from .media_sync import read_status as read_media_sync_status
 from .photo_catalog import PhotoCatalog
+from .livestream import LiveError, LiveNotFound, LiveStreams, LiveUnavailable
 from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, MetashapePackageNotFound,
                                list_packages, package_path, prepare_package, remove_package)
 from .raster_results import (RasterResults, RasterError, RasterUnavailable,
@@ -339,6 +340,72 @@ def photo_map(request: Request, response: Response,
         return catalog.map_items(model=model, camera=camera, flight=flight)
     except (OSError, sqlite3.Error, DjiMediaError) as exc:
         raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
+
+
+def _live_streams() -> LiveStreams:
+    try:
+        return LiveStreams()
+    except ValueError as exc:  # misconfigured (non-loopback) MediaMTX URL
+        raise HTTPException(status_code=503, detail="Livestream not configured") from exc
+
+
+def _live_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, LiveNotFound):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, LiveError):
+        return HTTPException(status_code=422, detail=str(exc))
+    return HTTPException(status_code=503, detail="Livestream-Server (MediaMTX) nicht erreichbar")
+
+
+def _device_names() -> dict[str, str]:
+    runtime = getattr(app.state, "status_runtime", None)
+    try:
+        return {d.device_id: d.name for d in runtime.inventory.devices()} if runtime else {}
+    except AttributeError:
+        return {}
+
+
+@app.get("/api/v1/live/streams")
+async def live_streams(request: Request, response: Response,
+                       authorization: str | None = Header(default=None)) -> dict:
+    """Active MediaMTX streams (opaque ids, device names; never stream paths)."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    live = _live_streams()
+    try:
+        streams = await asyncio.to_thread(live.streams, _device_names())
+    except LiveUnavailable:
+        return {"available": False, "streams": []}
+    return {"available": True, "streams": streams}
+
+
+@app.post("/api/v1/live/streams/{stream_id}/whep", status_code=201)
+async def live_whep_offer(stream_id: str, request: Request,
+                          authorization: str | None = Header(default=None),
+                          content_type: str | None = Header(default=None)) -> Response:
+    """Relay a WebRTC (WHEP) offer; media then flows directly from MediaMTX."""
+    _require_viewer_access(request, authorization)
+    # application/sdp is not a CORS-safelisted type: cross-site pages cannot post here.
+    if (content_type or "").split(";")[0].strip().lower() != "application/sdp":
+        raise HTTPException(status_code=415, detail="Content-Type application/sdp required")
+    body = await request.body()
+    try:
+        answer, session = await asyncio.to_thread(_live_streams().offer, stream_id, body)
+    except (LiveError, LiveUnavailable) as exc:
+        raise _live_http_error(exc) from exc
+    return Response(content=answer, status_code=201, media_type="application/sdp",
+                    headers={"X-Live-Session": session, "Cache-Control": "no-store"})
+
+
+@app.delete("/api/v1/live/streams/{stream_id}/whep/{session}", status_code=204)
+async def live_whep_close(stream_id: str, session: str, request: Request,
+                          authorization: str | None = Header(default=None)) -> Response:
+    _require_viewer_access(request, authorization)
+    try:
+        await asyncio.to_thread(_live_streams().close, stream_id, session)
+    except (LiveError, LiveUnavailable) as exc:
+        raise _live_http_error(exc) from exc
+    return Response(status_code=204)
 
 @app.get("/api/v1/flighthub/catalog")
 async def flighthub_catalog(request: Request, response: Response,
