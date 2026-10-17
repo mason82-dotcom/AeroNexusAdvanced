@@ -177,7 +177,8 @@ def test_studio_preview_never_mutates_local_mission():
     assert "saveMission" not in section
     assert "mission.waypoints" not in section
     assert "innerHTML" not in section
-    assert 'if(waylinePreviewLayer&&map.hasLayer(waylinePreviewLayer))return' in page
+    assert '(waylinePreviewLayer&&map.hasLayer(waylinePreviewLayer))' in page
+    assert '(cloudOverviewLayer&&map.hasLayer(cloudOverviewLayer))' in page
     assert 'waylinePreviewLayer=L.layerGroup()' in page
 
 
