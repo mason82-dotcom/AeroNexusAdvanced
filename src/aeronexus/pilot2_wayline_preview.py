@@ -4,7 +4,9 @@ The DJI signed URL is validated but NEVER followed. Its path and query are
 fetched exclusively from a fixed local MinIO socket, with the original signed
 Host header preserved. No writes, flight commands or raw KMZ responses.
 """
+import argparse
 import asyncio
+import json
 from io import BytesIO
 import ipaddress
 import os
@@ -16,7 +18,8 @@ from zipfile import BadZipFile, ZipFile
 
 import httpx
 
-from .local_waylines import ORIGIN, Credentials, LocalWaylineError
+from .local_waylines import (ORIGIN, Credentials, LocalWaylineError,
+                             credentials_path, load_credentials, read_waylines)
 
 MAX_KMZ = 4 * 1024 * 1024
 MAX_MEMBER = 2 * 1024 * 1024
@@ -126,9 +129,20 @@ def parse_preview_kmz(data: bytes) -> dict:
                 raise LocalWaylineError("invalid_archive")
             if sum(i.file_size for i in infos) > MAX_KMZ:
                 raise LocalWaylineError("invalid_archive")
-            names = {i.filename for i in infos}
-            route = archive.read("wpmz/waylines.wpml") if "wpmz/waylines.wpml" in names else None
-            template = archive.read("wpmz/template.kml") if "wpmz/template.kml" in names else None
+            selected = {info.filename: info for info in infos
+                        if info.filename in {"wpmz/waylines.wpml", "wpmz/template.kml"}}
+            def read_bounded(name):
+                member = selected.get(name)
+                if member is None:
+                    return None
+                # Never trust ZIP declared sizes alone; cap actual decompression.
+                with archive.open(member) as reader:
+                    body = reader.read(MAX_MEMBER + 1)
+                if len(body) > MAX_MEMBER:
+                    raise LocalWaylineError("invalid_archive")
+                return body
+            route = read_bounded("wpmz/waylines.wpml")
+            template = read_bounded("wpmz/template.kml")
     except (BadZipFile, OSError, RuntimeError, EOFError):
         raise LocalWaylineError("invalid_archive") from None
     if route is not None:
@@ -207,3 +221,59 @@ async def read_preview(credentials: Credentials, wayline_id: str, *, transport=N
                     raise LocalWaylineError("invalid_archive")
                 content.extend(chunk)
     return parse_preview_kmz(bytes(content))
+
+
+
+async def diagnose_previews(limit: int = 1, *, preview_reader=None, inventory_reader=None) -> dict:
+    """Opt-in local CLI probe: index/status only, never names, UUIDs or signed URLs."""
+    if type(limit) is not int or not 1 <= limit <= 8:
+        raise ValueError("limit must be between 1 and 8")
+    try:
+        credentials = load_credentials(credentials_path())
+    except LocalWaylineError:
+        return {"inventory_state": "configuration_error", "results": []}
+    if credentials is None:
+        return {"inventory_state": "not_configured", "results": []}
+    read_inventory = inventory_reader or read_waylines
+    read_one = preview_reader or read_preview
+    try:
+        inventory = await asyncio.wait_for(read_inventory(credentials), timeout=15)
+    except LocalWaylineError as exc:
+        return {"inventory_state": str(exc), "results": []}
+    except (httpx.HTTPError, OSError, TimeoutError):
+        return {"inventory_state": "unavailable", "results": []}
+    if not inventory.get("pagination_complete"):
+        return {"inventory_state": "incomplete_inventory", "results": []}
+    selected = inventory["waylines"][:limit]
+    checks = []
+    for index, route in enumerate(selected, start=1):
+        try:
+            geometry = await asyncio.wait_for(
+                read_one(credentials, route["wayline_id"]), timeout=22)
+            checks.append({"index": index, "state": "connected",
+                           "feature_count": len(geometry["features"]),
+                           "point_count": geometry["point_count"],
+                           "source": geometry["source"]})
+        except LocalWaylineError as exc:
+            checks.append({"index": index, "state": str(exc)})
+        except (httpx.HTTPError, OSError, TimeoutError):
+            checks.append({"index": index, "state": "unavailable"})
+    return {"inventory_state": "connected", "reported_total": inventory["reported_total"],
+            "pagination_complete": True, "results": checks}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Lesender KMZ-Vorschautest für bis zu acht inventarisierte Pilot-2-Waylines. "
+                    "Keine IDs, Namen, Tokens oder signierten URLs in der Ausgabe.")
+    parser.add_argument("--limit", type=int, choices=range(1, 9), default=1,
+                        metavar="1..8", help="Anzahl zu prüfender Cloud-Waylines (Standard: 1)")
+    args = parser.parse_args()
+    result = asyncio.run(diagnose_previews(args.limit))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result["inventory_state"] == "connected" and all(
+        entry["state"] == "connected" for entry in result["results"]) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

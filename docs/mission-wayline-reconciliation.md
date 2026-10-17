@@ -293,3 +293,31 @@ Wichtig: Das lokale Backend muss MinIO signierte Links zur
 gewünschten Wayline liefern. Andere Storage-Origins werden bewusst
 verweigert, nicht automatisch freigeschaltet. Der Pi-Liveabruf
 muss separat bestätigt werden.
+
+
+## Datenschutzschonender Live-Test auf dem Raspberry Pi
+
+Das zusätzliche Kommando ist ausschließlich lesend und verwendet die bereits
+privat gespeicherte Session. Es prüft zunächst die vollständige paginierte
+Wayline-Liste und anschließend **standardmäßig nur die erste** gefundene Route.
+Die Ausgabe nennt ausschließlich den laufenden Index, einen abstrakten
+Fehlerzustand sowie bei erfolgreichem Abruf Geometrie-/Punktanzahl und Dateiquelle.
+Route-Namen, -UUIDs, Token, S3-URLs und Roh-KMZ werden weder ausgegeben noch
+auf die Festplatte geschrieben.
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+set -a
+source .env
+set +a
+.venv/bin/python -m aeronexus.pilot2_wayline_preview --limit 1
+```
+
+Nach erfolgreichem Einzeltest können mit `--limit 8` bis zu acht inventarisierte
+Routen geprüft werden. Bei nicht vollständigem Inventar oder fehlender Sitzung
+wird kein KMZ-Dateiabruf ausgelöst. Mögliche Statuswerte sind etwa
+`connected`, `storage_origin_rejected`, `storage_unavailable`,
+`invalid_archive`, `unsupported_geometry` und `unavailable`.
+`storage_origin_rejected` wird nicht durch Abschalten der URL-Prüfung
+umgangen. Der echte Pi-Abruf und die Speicherlinkkompatibilität stehen
+noch zur Abnahme aus.

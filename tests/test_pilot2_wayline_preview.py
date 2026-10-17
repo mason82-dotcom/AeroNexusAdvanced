@@ -179,3 +179,64 @@ def test_studio_preview_never_mutates_local_mission():
     assert "innerHTML" not in section
     assert 'if(waylinePreviewLayer&&map.hasLayer(waylinePreviewLayer))return' in page
     assert 'waylinePreviewLayer=L.layerGroup()' in page
+
+
+
+def test_archive_declared_and_actual_decompression_are_bounded():
+    content = BytesIO()
+    with ZipFile(content, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("wpmz/waylines.wpml", b"x" * (pv.MAX_MEMBER + 1))
+    with pytest.raises(lw.LocalWaylineError, match="^invalid_archive$"):
+        pv.parse_preview_kmz(content.getvalue())
+
+
+def test_cli_probe_success_is_sanitized(monkeypatch, capsys):
+    monkeypatch.setattr(pv, "load_credentials", lambda _: CREDS)
+    async def inventory(credentials):
+        assert credentials == CREDS
+        return {"waylines": [{"wayline_id": WAYLINE, "name": "Private wayline"}],
+                "reported_total": 1, "pagination_complete": True}
+    async def preview(credentials, route):
+        assert route == WAYLINE
+        return {"features": [{"geometry": {"type": "Point",
+                                          "coordinates": [8.6, 49.1]}}],
+                "source": "waylines.wpml", "point_count": 1}
+    result = asyncio.run(pv.diagnose_previews(
+        1, preview_reader=preview, inventory_reader=inventory))
+    assert result == {"inventory_state": "connected", "reported_total": 1,
+                      "pagination_complete": True,
+                      "results": [{"index": 1, "state": "connected",
+                                   "feature_count": 1, "point_count": 1,
+                                   "source": "waylines.wpml"}]}
+    assert CREDS.access_token not in json.dumps(result)
+    assert WAYLINE not in json.dumps(result)
+    assert "Private wayline" not in json.dumps(result)
+
+
+def test_cli_probe_errors_are_coded_without_sensitive_strings(monkeypatch):
+    monkeypatch.setattr(pv, "load_credentials", lambda _: CREDS)
+    async def inventory(_):
+        return {"waylines": [{"wayline_id": WAYLINE, "name": "private route"}],
+                "reported_total": 1, "pagination_complete": True}
+    async def failed(_, __):
+        raise lw.LocalWaylineError("storage_origin_rejected")
+    result = asyncio.run(pv.diagnose_previews(
+        1, preview_reader=failed, inventory_reader=inventory))
+    assert result["results"] == [{"index": 1, "state": "storage_origin_rejected"}]
+    assert WAYLINE not in json.dumps(result)
+
+
+def test_cli_probe_refuses_incomplete_inventory_and_missing_credentials(monkeypatch):
+    monkeypatch.setattr(pv, "load_credentials", lambda _: CREDS)
+    async def inventory(_):
+        return {"waylines": [{"wayline_id": WAYLINE}],
+                "reported_total": 9, "pagination_complete": False}
+    assert asyncio.run(pv.diagnose_previews(
+        inventory_reader=inventory)) == {"inventory_state": "incomplete_inventory",
+                                         "results": []}
+    monkeypatch.setattr(pv, "load_credentials", lambda _: None)
+    assert asyncio.run(pv.diagnose_previews()) == {
+        "inventory_state": "not_configured", "results": []}
+    for bad in (0, 9, True, "2"):
+        with pytest.raises(ValueError):
+            asyncio.run(pv.diagnose_previews(bad))
