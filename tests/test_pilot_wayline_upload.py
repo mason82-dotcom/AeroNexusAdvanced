@@ -64,7 +64,7 @@ def handler_factory(calls, *, post_code=0, after=True, invalid_session=False,
         assert request.url.path == (
             f"/wayline/api/v1/workspaces/{WID}/waylines/file/upload")
         assert b'filename="' + plan().filename.encode() + b'"' in request.content
-        assert b"wpmz/" not in request.content  # KMZ binary, not plaintext XML
+        assert b"PK\x03\x04" in request.content  # zipped KMZ sent, not XML plaintext
         if network_failure:
             raise httpx.ReadTimeout("server could have accepted the upload")
         return httpx.Response(200, json={
