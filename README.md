@@ -217,6 +217,16 @@ Aufnahmepunkten und Footprints, Overlay mit dem Sichtbild sowie PV-Inspektion
 `deploy/pi/install-thermal-sdk.sh <dji_thermal_sdk_v1.8_*.zip>`.
 Details: [docs/thermography.md](docs/thermography.md).
 
+## Multispektral DJI Mavic 3M (`/multispectral`)
+
+Eigener Web-UI-Tab für M3M-Bänder (Grün, Rot, RedEdge, NIR) aus dem
+MinIO-Index, über die CaptureUUID zu Aufnahmen gruppiert. Verarbeitung nach
+DJIs *Mavic 3M Image Processing Guide* (Schwarzwert, Gain, Belichtung,
+Vignettierung, Entzerrung, HMatrix-Ausrichtung, Sonnenlichtsensor); NDVI,
+GNDVI, NDRE, LCI, CIR-Falschfarben, Messwerkzeuge und Export. Katalog:
+`.venv/bin/python -m aeronexus.multispectral`; Abhängigkeit
+`pip install -e '.[multispectral]'`. Details: [docs/multispectral.md](docs/multispectral.md).
+
 ## DEM-Hangneigung im 3D-Geländeviewer (Phase 20)
 
 Im Mission Studio lässt sich das importierte, auf maximal 48×48 Stützpunkte

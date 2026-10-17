@@ -59,6 +59,10 @@ class DjiMediaError(ValueError):
     """Safe to show in diagnostics without revealing MinIO credentials."""
 
 
+class DjiMediaChanged(DjiMediaError):
+    """Object differs from the index (size/ETag); a rescan is required."""
+
+
 def media_id(bucket: str, key: str) -> str:
     return hashlib.sha256((bucket + "\0" + key).encode("utf-8")).hexdigest()
 
@@ -318,6 +322,20 @@ class DjiMediaIndex:
         finally:
             db.close()
 
+    def multispectral_candidates(self) -> list[dict]:
+        """Internal records of TIFF bands and M3M RGB/preview JPEGs (_D/_F)."""
+        db = self._connect(write=False)
+        if db is None:
+            return []
+        try:
+            return [dict(row) for row in db.execute(
+                "SELECT id,bucket,object_key,filename,etag,size_bytes FROM media "
+                "WHERE mime='image/tiff' OR (mime='image/jpeg' AND ("
+                "filename LIKE '%\\_D.JPG' ESCAPE '\\' OR filename LIKE '%\\_F.JPG' ESCAPE '\\')) "
+                "ORDER BY filename")]
+        finally:
+            db.close()
+
     def ids_by_filename(self, filename: str, *, limit: int = 2) -> list[str]:
         if not isinstance(filename, str) or not 0 < len(filename) <= 240:
             return []
@@ -361,6 +379,29 @@ class DjiMediaIndex:
             return dict(row) if row is not None else None
         finally:
             db.close()
+
+
+def read_indexed_object(record: dict, settings: "MinioMediaSettings", client, *,
+                        max_bytes: int) -> bytes:
+    """Bounded read of an indexed object; refuses stale index entries.
+
+    Raises DjiMediaChanged when size/ETag differ from the index (reindex)."""
+    if settings.bucket != record["bucket"]:
+        raise DjiMediaChanged("DJI media bucket changed")
+    if record["size_bytes"] > max_bytes:
+        raise DjiMediaError("DJI media object too large for processing")
+    head = client.stat_object(record["bucket"], record["object_key"])
+    if head.size != record["size_bytes"] or head.etag != record["etag"]:
+        raise DjiMediaChanged("DJI media changed; reindex required")
+    stream = client.get_object(record["bucket"], record["object_key"])
+    try:
+        data = stream.read(max_bytes + 1)
+    finally:
+        stream.close()
+        stream.release_conn()
+    if len(data) != record["size_bytes"]:
+        raise DjiMediaChanged("DJI media changed; reindex required")
+    return data
 
 
 def main(argv: list[str] | None = None) -> int:

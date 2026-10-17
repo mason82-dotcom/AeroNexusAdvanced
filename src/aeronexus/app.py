@@ -30,12 +30,15 @@ from .status_page import render_page
 from .studio_page import render_studio
 from .operations_page import render_operations
 from .studio_workspace import Workspace, WorkspaceError, MAX_MEDIA_BYTES, MEDIA_TYPES
-from .minio_media_index import (DjiMediaIndex, DjiMediaError, MinioMediaSettings,
+from .minio_media_index import (DjiMediaChanged, DjiMediaIndex, DjiMediaError, MinioMediaSettings,
                                 minio_client, BROWSER_PREVIEW_MIMES,
                                 MAX_BROWSER_PREVIEW_BYTES)
 from .geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
 from .thermal import ThermalChanged, ThermalError, ThermalNotFound, ThermalService
 from .thermal_page import render_thermal_page
+from .multispectral import (LAYERS, MultispectralError, MultispectralNotFound,
+                            MultispectralService)
+from .multispectral_page import render_multispectral_page
 from .thermal_geo import ThermalGeoIndex
 from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
@@ -930,6 +933,88 @@ def thermal_temperatures(media_id: str, request: Request,
         "Referrer-Policy": "no-referrer",
         "X-Thermal-Width": str(measurement.width), "X-Thermal-Height": str(measurement.height),
     })
+
+
+# Multispectral (DJI Mavic 3M): bands from the read-only MinIO index, processed
+# per DJI's M3M Image Processing Guide. Catalogue scans run explicitly on the Pi.
+def _ms_service(request: Request, authorization: str | None) -> MultispectralService:
+    workspace = _studio_workspace(request, authorization)
+    service = getattr(app.state, "ms_service", None)
+    if service is None or service.media.root != workspace.root:
+        service = app.state.ms_service = MultispectralService(DjiMediaIndex(workspace.root))
+    return service
+
+
+def _ms_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, MultispectralNotFound):
+        return HTTPException(status_code=404, detail="Multispectral capture or band not indexed")
+    if isinstance(exc, DjiMediaChanged):
+        return HTTPException(status_code=409, detail="DJI media changed; reindex required")
+    if isinstance(exc, MultispectralError):
+        return HTTPException(status_code=422, detail=str(exc))
+    return HTTPException(status_code=503, detail="DJI media unavailable")
+
+
+_MS_ERRORS = (MultispectralError, DjiMediaError, OSError, sqlite3.Error)
+
+
+@app.get("/multispectral", response_class=HTMLResponse, include_in_schema=False)
+def multispectral_page(request: Request, response: Response) -> str:
+    if lan_mode_enabled():
+        require_lan(request)
+    _no_cache(response)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "img-src 'self' blob: data:; connect-src 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    )
+    return render_multispectral_page()
+
+
+@app.get("/api/v1/multispectral/captures")
+def multispectral_captures(request: Request, response: Response,
+                           authorization: str | None = Header(default=None)) -> dict:
+    service = _ms_service(request, authorization)
+    _no_cache(response)
+    try:
+        captures = service.catalog.captures()
+        return {"captures": captures, "total": len(captures),
+                "scanned_at": service.catalog.scanned_at()}
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+
+
+@app.get("/api/v1/multispectral/captures/{capture_uuid}/layers/{layer}")
+def multispectral_layer(capture_uuid: str, layer: str, request: Request, response: Response,
+                        scale: int = Query(default=2, ge=1, le=4),
+                        authorization: str | None = Header(default=None)) -> dict:
+    service = _ms_service(request, authorization)
+    if layer not in LAYERS:
+        raise HTTPException(status_code=404, detail="Unknown layer")
+    _no_cache(response)
+    try:
+        return service.analysis(capture_uuid, layer, scale=scale)
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+
+
+@app.get("/api/v1/multispectral/captures/{capture_uuid}/layers/{layer}/grid")
+def multispectral_grid(capture_uuid: str, layer: str, request: Request,
+                       scale: int = Query(default=2, ge=1, le=4),
+                       authorization: str | None = Header(default=None)) -> Response:
+    """Row-major float32 little-endian grid (NaN = outside sensor / invalid)."""
+    service = _ms_service(request, authorization)
+    if layer not in LAYERS:
+        raise HTTPException(status_code=404, detail="Unknown layer")
+    try:
+        _, grid = service.layer(capture_uuid, layer, scale=scale)
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+    return Response(content=grid.astype("<f4").tobytes(), media_type="application/octet-stream",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                             "Referrer-Policy": "no-referrer",
+                             "X-Grid-Width": str(grid.shape[1]), "X-Grid-Height": str(grid.shape[0])})
 
 
 @app.post("/api/v1/flight/command", status_code=403)
