@@ -28,6 +28,11 @@ def test_cloud_overview_has_explicit_button_and_private_readonly_layers():
     assert "cloudOverviewLayer.addLayer(entry.layer)" in block
     assert "if(generation!==cloudOverviewGeneration" in block
     assert 'style:()=>({color:entry.color' in block
+    assert 'cloudOverviewLineStats(data.features)' in block
+    assert 'cloudOverviewFormatDistance(entry.distanceMeters)' in block
+    assert 'fillColor:"#ffffff"' in block
+    assert 'fillColor:entry.color' in block
+    assert "Linienlänge = horizontale WGS84-Segmentstrecke" in page
     assert "fitCloudRoutes(entry)" in block
     assert 'cloudOverviewLayer=L.layerGroup()' in page
     assert '(cloudOverviewLayer&&map.hasLayer(cloudOverviewLayer))' in page
@@ -59,7 +64,14 @@ class Group {
 const map={layers:[],lastBounds:null,addLayer(l){if(!this.layers.includes(l))this.layers.push(l)},
  removeLayer(l){this.layers=this.layers.filter(x=>x!==l)},
  hasLayer(l){return this.layers.includes(l)},fitBounds(b){this.lastBounds=b}};
+const markers=[];
 const L={layerGroup:()=>new Group(),featureGroup:()=>new Group(),
+ circleMarker:(coords,options)=>{
+   assert.equal(options.interactive,false);
+   assert.ok(options.color.startsWith('#'));
+   markers.push({coords,options});
+   return {addTo(parent){parent.addLayer(this);return this}};
+ },
  geoJSON:(feature,options)=>{assert.equal(options.interactive,false);
    assert.match(options.style().color,/^#/);
    return {addTo(parent){parent.addLayer(this);return this}} },
@@ -78,6 +90,7 @@ const main=new Function('$','els','api','map','L','switchTab','getMap','mapWarni
  'cloudOverviewGeneration','cloudOverviewController','cloudOverviewRoutes',
  'CLOUD_OVERVIEW_COLORS','waylinePreviewRequest',logic+
  '\nreturn {openCloudOverview,closeCloudOverview,renderCloudOverview,fitCloudRoutes,'+
+ 'cloudOverviewLineStats,cloudOverviewFormatDistance,'+
  'setData(d){waylineData=d},getRoutes(){return cloudOverviewRoutes},getLayer(){return cloudOverviewLayer}};');
 const overview=main($,els,api,map,L,()=>{},()=>{},s=>warn.push(s),e=>e.message,v=>String(v??'–'),
  new Group(),new Group(),0,null,[],
@@ -93,6 +106,31 @@ overview.setData({waylines:routes,local_pilot:{state:'connected',pagination_comp
  assert.equal(overview.getRoutes().filter(x=>x.state==='connected').length,7);
  assert.equal(overview.getRoutes().filter(x=>x.state!=='connected').length,1);
  assert.equal(overview.getRoutes()[0].pointCount,6);
+ const first=overview.getRoutes()[0];
+ assert.equal(first.lineCount,1);
+ assert.equal(first.segmentCount,1);
+ assert.ok(first.distanceMeters>100000&&first.distanceMeters<150000);
+ assert.match(overview.cloudOverviewFormatDistance(first.distanceMeters),/km/);
+ assert.equal(markers.length,14);
+ assert.deepEqual(markers[0].coords,[49,8]);
+ assert.deepEqual(markers[1].coords,[50,9]);
+ assert.equal(markers[0].options.fillColor,"#ffffff");
+ assert.match($('cloud-overview-status').textContent,/Linienlängen/);
+ const two=overview.cloudOverviewLineStats([
+   {geometry:{type:'LineString',coordinates:[[8,49],[9,50]]}},
+   {geometry:{type:'Polygon',coordinates:[[[0,0],[1,0],[1,1],[0,0]]]}},
+   {geometry:{type:'LineString',coordinates:[[13,54],[13,54.001]]}}
+ ]);
+ assert.equal(two.lineCount,2);
+ assert.equal(two.segmentCount,2);
+ assert.equal(two.endpoints.length,2);
+ assert.ok(two.distanceMeters>100000&&two.distanceMeters<150000);
+ assert.equal(overview.cloudOverviewLineStats([{geometry:{type:'Point',coordinates:[8,49]}}]).distanceMeters,null);
+ const dateline=overview.cloudOverviewLineStats([
+   {geometry:{type:'LineString',coordinates:[[179.9,49],[-179.9,49]]}}
+ ]);
+ assert.ok(dateline.distanceMeters>10000&&dateline.distanceMeters<25000);
+ assert.equal(overview.cloudOverviewFormatDistance(null),"keine Linienlänge");
  assert.equal(new Set(overview.getRoutes().map(x=>x.color)).size,8);
  assert.match($('cloud-overview-status').textContent,/7\/8 Routen gelesen/);
  assert.equal($('cloud-overview-panel').hidden,false);
