@@ -223,7 +223,10 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <label>DEM-GeoTIFF (max. 8 MiB)<input type="file" id="terrain-file" accept=".tif,.tiff,image/tiff"></label>
 <div class="geo-buttons"><button id="terrain-preview" class="primary">3D-Vorschau</button><button id="terrain-export" disabled>STL exportieren</button></div>
 <canvas id="terrain-canvas" width="320" height="210" role="img" aria-label="Drehbare schematische 3D-Höhenraster-Vorschau"></canvas>
-<div class="geo-buttons"><button id="terrain-open-large" disabled>Interaktive Großansicht öffnen</button></div>
+<div class="geo-buttons">
+<button id="terrain-open-large" disabled>Interaktive Großansicht öffnen</button>
+<button id="terrain-show-map" disabled>Geländeausschnitt auf Karte</button>
+</div>
 <div id="terrain-message" class="note" role="status">Lokales GDAL erforderlich. Höhenmodell nur Visualisierung und 3D-Modell – nicht zur Flugfreigabe.</div>
 </aside>
 <aside class="side" id="media-panel" hidden>
@@ -329,7 +332,7 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Fixed initial view of Forst (Baden), postal code 76694, approximate town centre.
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
-let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
+let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
 let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainGeo=null,terrainLoadSerial=0,terrainProfile=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
@@ -542,6 +545,7 @@ function getMap(){
   });
   waypointsLayer=L.layerGroup().addTo(map);deviceLayer=L.layerGroup().addTo(map);
   geoLayer=L.layerGroup().addTo(map);surveyLayer=L.layerGroup().addTo(map);photoLayer=L.layerGroup().addTo(map);
+  terrainFootprintLayer=L.layerGroup().addTo(map);
   map.on("click",event=>{
     if(geoDraw){
       const lat=+event.latlng.lat.toFixed(7),lon=+(((((event.latlng.lng+540)%360)+360)%360)-180).toFixed(7);
@@ -1200,6 +1204,33 @@ function terrainProjection(grid,view,width,height){
 }
 // Phase 19: WGS84 sample centres, bounded; never infer lat/lon from a
 // projected CRS or attach unknown vertical datums to elevation values.
+function terrainGeoBounds(grid,geo){
+  if(!grid||!geo||geo.crs!=="EPSG:4326")return null;
+  const rows=grid.heights_m.length,cols=grid.heights_m[0].length;
+  const south=geo.north_lat+(rows-1)*geo.lat_step_deg;
+  const east=geo.west_lon+(cols-1)*geo.lon_step_deg;
+  if(![south,east,geo.north_lat,geo.west_lon].every(Number.isFinite))return null;
+  return [[south,geo.west_lon],[geo.north_lat,east]];
+}
+function terrainDrawMapFootprint(){
+  if(!map||!terrainFootprintLayer)return;
+  terrainFootprintLayer.clearLayers();
+  const bounds=terrainGeoBounds(terrainGrid,terrainGeo);
+  if(!bounds)return;
+  L.rectangle(bounds,{color:"#ffd282",weight:2,fillOpacity:0.04,dashArray:"6 6"})
+    .bindTooltip("GeoTIFF: WGS84-Rasterpunktmitten (nicht volle Pixelränder)")
+    .addTo(terrainFootprintLayer);
+}
+function terrainShowOnMap(){
+  const bounds=terrainGeoBounds(terrainGrid,terrainGeo);
+  if(!bounds){$("terrain-message").textContent="Für dieses Raster fehlen geeignete EPSG:4326-Koordinaten.";return;}
+  switchTab("map-pane");
+  getMap();
+  if(!map)return;
+  terrainDrawMapFootprint();
+  map.fitBounds(L.latLngBounds(bounds).pad(0.15),{maxZoom:18});
+  notice("GeoTIFF-Rasterpunktmitten auf Karte hervorgehoben. Nur geografische Vorschau.");
+}
 function terrainGridPoint(grid,geo,location){
   if(!grid||!geo||geo.crs!=="EPSG:4326"||!location)return null;
   if(!Number.isFinite(location.latitude)||!Number.isFinite(location.longitude)||
@@ -1517,6 +1548,8 @@ async function previewTerrain(){
   if(loadSerial!==terrainLoadSerial)return;
   terrainGrid=data.grid;
   terrainGeo=data.geo||null;
+  $("terrain-show-map").disabled=!terrainGeo;
+  terrainDrawMapFootprint();
   terrainProfile=null;
   terrainRefreshProfileOptions();
   terrainDrawProfile(null);
@@ -1644,6 +1677,7 @@ function wire(){
     terrainLoadSerial++;
     terrainGrid=null;
     terrainGeo=null;
+    terrainDrawMapFootprint();
     terrainProfile=null;
     terrainRefreshProfileOptions();
     $("terrain-coordinate-probe").textContent="Noch kein Geländepunkt ausgewählt.";
@@ -1651,10 +1685,12 @@ function wire(){
     $("terrain-profile-message").textContent="Noch kein Höhenprofil geladen.";
     $("terrain-export").disabled=true;
     $("terrain-open-large").disabled=true;
+    $("terrain-show-map").disabled=true;
     $("terrain-large-message").textContent="Noch kein Höhenraster geladen. Bitte 3D-Vorschau starten.";
     drawTerrainPreview(null);
   });
   $("terrain-open-large").addEventListener("click",()=>switchTab("terrain-pane"));
+  $("terrain-show-map").addEventListener("click",terrainShowOnMap);
   $("terrain-reset-view").addEventListener("click",terrainResetView);
   for(const key of ["azimuth","tilt","zoom","exaggeration","color","wire","geo-overlay"]){
     $("terrain-"+key).addEventListener("input",terrainControlChanged);
