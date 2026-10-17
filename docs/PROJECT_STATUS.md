@@ -20,6 +20,16 @@
 - Lokale vollständige Tests unter Python 3.12: **663 bestanden, 1 bekannte
   Starlette/httpx-Warnung**. CI auf dem neuen Branch separat prüfen.
 
+## Multispektral-Modul M3M (Branch `feature/multispectral-m3m-20261017`)
+
+- Neuer Tab `/multispectral` (Links in allen Oberflächen). Bänder per
+  CaptureUUID gruppiert; DJI-M3M-Rechenweg inkl. Entzerrung und
+  HMatrix-Ausrichtung in numpy; NDVI/GNDVI/NDRE/LCI/CIR.
+- Live: 4 vollständige Aufnahmen, NDVI 1296×972 in ca. 2 s.
+- Refactoring: gemeinsamer ETag-geprüfter MinIO-Objektleser
+  (`read_indexed_object`) für Thermal und Multispektral.
+- Tests: **724 bestanden**. Details: [multispectral.md](multispectral.md).
+
 ## Thermografie: Karte, Overlay, PV-Inspektion (Branch `feature/thermal-map-overlay-pv-20261017`)
 
 - Karte: Geo-Index (`python -m aeronexus.thermal_geo`, Range-Reads) live

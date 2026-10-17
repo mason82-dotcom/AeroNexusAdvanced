@@ -18,7 +18,8 @@ import re
 import struct
 import threading
 
-from .minio_media_index import DjiMediaError, DjiMediaIndex, media_id
+from .minio_media_index import (DjiMediaChanged, DjiMediaError, DjiMediaIndex, media_id,
+                                read_indexed_object)
 from .thermal_sdk import MAX_IMAGE_BYTES, MeasureParams, ThermalSdk, ThermalSdkError
 
 
@@ -215,23 +216,12 @@ class Measurement:
 
 
 def _read_object(record: dict, settings, client) -> bytes:
-    """Bounded read of an indexed object; refuses stale index entries."""
-    if settings.bucket != record["bucket"]:
-        raise ThermalChanged("DJI media bucket changed")
-    if record["size_bytes"] > MAX_IMAGE_BYTES:
-        raise ThermalError("Thermal image too large")
-    head = client.stat_object(record["bucket"], record["object_key"])
-    if head.size != record["size_bytes"] or head.etag != record["etag"]:
-        raise ThermalChanged("DJI media changed; reindex required")
-    stream = client.get_object(record["bucket"], record["object_key"])
     try:
-        data = stream.read(MAX_IMAGE_BYTES + 1)
-    finally:
-        stream.close()
-        stream.release_conn()
-    if len(data) != record["size_bytes"]:
-        raise ThermalChanged("DJI media changed; reindex required")
-    return data
+        return read_indexed_object(record, settings, client, max_bytes=MAX_IMAGE_BYTES)
+    except DjiMediaChanged as exc:
+        raise ThermalChanged(str(exc)) from exc
+    except DjiMediaError as exc:
+        raise ThermalError(str(exc)) from exc
 
 
 class ThermalService:
