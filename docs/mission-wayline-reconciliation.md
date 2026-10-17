@@ -320,8 +320,14 @@ wird kein KMZ-Dateiabruf ausgelöst. Mögliche Statuswerte sind etwa
 `connected`, `storage_origin_rejected`, `storage_unavailable`,
 `invalid_archive`, `unsupported_geometry` und `unavailable`.
 `storage_origin_rejected` wird nicht durch Abschalten der URL-Prüfung
-umgangen. Der echte Pi-Abruf und die Speicherlinkkompatibilität stehen
-noch zur Abnahme aus.
+umgangen.
+
+**Pi-Liveabnahme:** Der Nutzer hat alle acht Wayline-KMZ über die lesende
+Diagnose erfolgreich geprüft (`connected` bei 8/8). Aus den acht
+`waylines.wpml`-Dateien wurden insgesamt 13 Geometrien und 750
+Koordinatenvorkommen extrahiert. Der Download über den lokalen DJI-Service
+und MinIO ist damit für diesen Bestand bestätigt. Eine Browserprüfung der
+Gesamtkarte bleibt separat erforderlich.
 
 ## Gemeinsame Kartenübersicht von bis zu acht Pilot-2-Waylines
 
@@ -353,3 +359,23 @@ werden in editierbare Missionen oder den WPML-Export übernommen.
 Die KMZ-Vorschau gibt ausdrücklich keine Flugfreigabe und liest keine
 DJI-Flugaktionen aus. Die Funktion wurde automatisiert getestet;
 eine reale Browserprüfung auf dem Pi ist zusätzlich erforderlich.
+
+## Geometrischer Routenvergleich im gemeinsamen Kartenpanel
+
+Das Panel zeigt zusätzlich je erfolgreicher Wayline die Anzahl der
+Linien und Liniensegmente sowie eine *näherungsweise horizontale*
+WGS84-Linienlänge. Die Distanz ergibt sich aus Haversine-Großkreisbögen
+zwischen aufeinanderfolgenden Koordinaten innerhalb jeder
+`LineString`-Geometrie (Erdradius 6.371.008,8 m). Es wird ausdrücklich
+**keine** Strecke zwischen unterschiedlichen WPML-Ordnern ergänzt.
+Polygonumfänge und isolierte Punkte werden nicht in diese Zahl
+hineingerechnet. Überlappungen zwischen verschiedenen Routen werden
+in der Gesamtsumme nicht herausgerechnet.
+
+Zur Orientierung zeigt ein weiß gefüllter Kreis den Beginn, ein farbig
+gefüllter Kreis das Ende einer dargestellten Liniengeometrie. Bei
+mehreren Linien innerhalb einer Wayline gibt es entsprechend mehrere
+Start-/Endmarkierungen. Diese Punkte sind *keine* autorisierten
+Start-, Lande-, RTH- oder sonstigen Steuerpunkte. Die angezeigte
+Linienlänge ignoriert Höhenänderungen, Flugkurven und DJI-Aktionen und
+stellt **keine** planungs- oder flugsicherheitsrelevante Berechnung dar.
