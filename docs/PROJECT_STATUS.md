@@ -5,6 +5,18 @@
 
 ## Aktueller Entwicklungsstand
 
+- CSV-Wegpunktimport im Branch `feature/studio-csv-import-20261017`:
+  authentifizierte Vorschau ohne Speicherung, explizite Trenn-/Dezimalzeichen,
+  Zeilenfehler, Karten-/Tabellenprüfung und reversible Übernahme in den aktuellen
+  Missionsentwurf. Missionswerte und gespeicherte ID bleiben erhalten;
+  Speichern erfolgt separat. Nach Abgleich mit `main` einschließlich PR #23:
+  vollständige lokale Suite **761 bestanden**,
+  eine bekannte Starlette/httpx-Warnung. Browser-/Pi-Abnahme steht aus:
+  Chromium-Download in der Arbeitsumgebung nicht verfügbar. Veröffentlichung
+  auf GitHub am 17.10.2026 ausdrücklich durch den Nutzer bestätigt; kein Merge
+  und kein Pi-Deployment im Rahmen dieser Veröffentlichung.
+  Details und Abnahme: [CSV-Import](mission-csv-import.md).
+
 - Phase 21 aus PR #18 mit dem Phase-20-Medienkatalog von `main`
   zusammengeführt: `/media` und Mission Studio verwenden denselben privaten
   SQLite-Index und denselben dedizierten MinIO-Lesezugang. Der Root-basierte
