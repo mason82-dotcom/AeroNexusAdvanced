@@ -17,16 +17,16 @@ def test_run_server_ignores_foreign_pythonpath(tmp_path: Path) -> None:
     (root / "src").mkdir()
 
     env_file = root / ".env"
-    env_file.write_text("PYTHONPATH=/tmp/other-checkout/src\\n", encoding="utf-8")
+    env_file.write_text("PYTHONPATH=/tmp/other-checkout/src\n", encoding="utf-8")
     env_file.chmod(0o600)
 
     fake_python = root / ".venv/bin/python"
     fake_python.parent.mkdir(parents=True)
     fake_python.write_text(
-        "#!" + sys.executable + "\\n"
-        "import json, os, sys\\n"
+        "#!" + sys.executable + "\n"
+        "import json, os, sys\n"
         "print(json.dumps({'pythonpath': os.environ.get('PYTHONPATH'), "
-        "'arguments': sys.argv[1:]}))\\n",
+        "'arguments': sys.argv[1:]}))\n",
         encoding="utf-8",
     )
     fake_python.chmod(0o755)
