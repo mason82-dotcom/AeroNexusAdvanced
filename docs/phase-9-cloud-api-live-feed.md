@@ -5,10 +5,12 @@ DJI Pilot 2 on the remote controller (RC Plus 2 / RC Pro) connects to its EMQX
 broker and pushes telemetry ("OSD") about once per second. AeroNexusAdvanced
 can subscribe to that telemetry and show it in the status dashboard.
 
-Status at last verified Pi setup (2026-10-16): disabled on the dev Pi
+Historical status at the 2026-10-16 Pi setup: disabled on the dev Pi
 (`AERONEXUS_CLOUD_MQTT_ENABLED=0`); FlightHub 2 (phase 10) is the
 active source. Do not infer that an EMQX broker or Pilot 2 Cloud API workspace
-is running merely because the MQTT consumer is implemented.
+is running merely because the MQTT consumer is implemented. For newer recorded
+deployment evidence see `PROJECT_STATUS.md`; this implementation does not
+change the running Pi configuration.
 
 ## What it does
 
@@ -26,21 +28,25 @@ is running merely because the MQTT consumer is implemented.
   and `nonce`.
 - The device type is derived from the OSD properties (aircraft: `mode_code`,
   `elevation`, `position_state`, `battery{}`; remote controller:
-  `capacity_percent` / `wireless_link`). Unrecognized messages are ignored.
+  `capacity_percent` / `wireless_link` / live status). Known devices can also
+  send partial property-only OSD packets; documented camera payload indexes
+  can establish an aircraft. Unrecognized messages are ignored.
 - Every message is validated with the same strict canonical schema as
   FlightHub telemetry. An invalid message is dropped completely and never
   partially applied. Partial OSD pushes keep previously received values.
   Optional `state` packets update only **already registered OSD devices**
   and only an allowlist of canonical telemetry fields. Unknown state-only
-  serials and unrelated DJI data are ignored; secrets, credentials, payload
-  attributes, `device_secret` and `nonce` are never stored.
+  serials and unrelated DJI data are ignored. Additional properties use the
+  strict `cloud_details` allowlist, never raw payload storage. Secrets,
+  credentials, IMEI, SIM identifiers, battery serials, `device_secret` and
+  `nonce` are never stored.
   RTK `is_fixed` allows documented numeric codes and bounded string enums
   such as `not_started`, without interpreting them as a fix confirmation.
 - Position `0/0` (DJI's "no position") is shown as "no location".
 - Devices land in the local inventory under provider `dji-cloud-api`,
   project `aeronexus` (limit: 50 devices).
 - Anonymous counters (`live_feed` in `/api/v1/status/summary`):
-  state, accepted, rejected, ignored, last message time. No serial numbers.
+  state, accepted, rejected, ignored, outdated, last message time. No serial numbers.
 
 Feed states: `connecting`, `connected`, `subscribed` (receiving),
 `subscription_denied` (ACL), `auth_failed` (account missing/wrong password),
@@ -131,11 +137,11 @@ control, firmware-write or camera-configuration APIs.
    `flighthub-public-v2` provider in `/status`. No automatic source
    selection, DJI pairing, mission upload or flight control is done.
 
-**Freshness caveat:** the current inventory tracks receive age per
-*device*, not independently per OSD and state property. A state update can
-refresh the device receive timestamp while leaving older OSD values
-unchanged. Do not use displayed freshness as a flight-safety guarantee;
-keep state opt-in until separate per-field timestamps are implemented.
+The current implementation tracks receive and source age per property.
+State updates never renew OSD liveness or unrelated fields. See the explicit
+ordering, compatibility and expiry rules in
+[Cloud API 1.18 telemetry](cloud-api-118-telemetry.md). State remains opt-in;
+this change does not grant broker permissions or activate subscriptions.
 
 This is **not** an official FlightHub 2 On-Premises deployment. DJI Pilot 2
 third-party Cloud API onboarding requires its own workspace, app ID/key,

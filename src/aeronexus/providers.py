@@ -74,3 +74,5 @@ class DeviceSnapshot:
     elevation_m: float | None = None
     home_distance_m: float | None = None
     flight_mode_code: int | None = None
+    # Validated additional MQTT properties, never raw DJI payloads.
+    cloud_details: dict | None = None

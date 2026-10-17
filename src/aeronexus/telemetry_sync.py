@@ -8,6 +8,7 @@ from math import isfinite
 
 from .inventory import Inventory
 from .providers import DeviceSnapshot, ProviderKind
+from .cloud_api_details import validate_details
 
 
 class TelemetrySyncError(ValueError):
@@ -30,7 +31,7 @@ _NUMERIC_FIELDS = {
 }
 _COUNT_FIELDS = frozenset({"total_flight_sorties", "rtk_satellites", "gps_satellites",
                            "flight_mode_code"})
-_ALLOWED = frozenset({"device_id", "online", "rtk_state"}) | frozenset(_NUMERIC_FIELDS) | _COUNT_FIELDS
+_ALLOWED = frozenset({"device_id", "online", "rtk_state", "cloud_details"}) | frozenset(_NUMERIC_FIELDS) | _COUNT_FIELDS
 
 
 def parse_snapshot(provider: ProviderKind, record: Mapping) -> DeviceSnapshot:
@@ -73,6 +74,7 @@ def parse_snapshot(provider: ProviderKind, record: Mapping) -> DeviceSnapshot:
         raise TelemetrySyncError("Invalid RTK state")
     return DeviceSnapshot(
         provider=provider, device_id=device_id, online=online, rtk_state=rtk,
+        cloud_details=validate_details(record.get("cloud_details")),
         **values,
     )
 

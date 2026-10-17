@@ -3,6 +3,29 @@
 **Stand:** 17. Oktober 2026 – `main` mit PR #34, #5 und #24.
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
+## Laufender Änderungsstand: Cloud-API-Telemetrie 1.18
+
+Basis `main` @ `bf9ed75` (einschließlich #36), Branch
+`fix/cloud-api-118-telemetry-20261017`. Noch kein Pi-Deployment dieses Standes.
+
+- Zusätzliche validierte OSD-/State-Eigenschaften unter `cloud_details`;
+  dynamische Nutzlasten sowie Kamera-/IR-Zustände der Mavic-3-Enterprise-Reihe.
+- M3E, M3T, M3M und M3TA anhand dokumentierter Kameraindizes berücksichtigt;
+  gemeinsame Decoder für M4E/M4T sowie RC Pro Enterprise und RC Plus 2.
+  Modellhinweise sind keine neue Topologieerfassung. M3M-NDVI bleibt dateibasiert.
+- Empfangs-/Quellzeit pro Feld; State erneuert keine alten Akku-/GPS-Werte.
+  Ältere/gleiche Quellzeiten überschreiben keine bereits datierten Felder.
+  Veraltete Werte sind im aktuellen API-Messsatz null, mit Zeitnachweis separat
+  in `last_known_telemetry` verfügbar. Alte FlightHub-Datenpfade bleiben erhalten.
+- Gesamtsuite lokal, Python 3.12: **989 bestanden, 1 GDAL-Test mangels
+  `osgeo.gdal` übersprungen, 1 bekannte Starlette/httpx-Warnung**.
+  Die 43 neuen Regressionen prüfen auch Teilpakete, Datenschutz und API-Schutz.
+- MQTT bleibt Subscribe-only; State weiterhin Opt-in. Keine DRC-/HMS-
+  Freischaltung, keine neuen Brokerrechte und keine DJI-Flugbefehle.
+
+Details, offizielle Quellen, API-Vertrag und Grenzen:
+[Cloud API 1.18 und Mavic-3-Serie](cloud-api-118-telemetry.md).
+
 ## Aktueller Stand auf `main`
 
 | Bereich | Stand | PR |
