@@ -432,6 +432,26 @@ async def live_whep_close(stream_id: str, session: str, request: Request,
         raise _live_http_error(exc) from exc
     return Response(status_code=204)
 
+@app.get("/api/v1/local-cloud/waylines")
+async def local_cloud_waylines(request: Request, response: Response,
+                               authorization: str | None = Header(default=None)) -> dict:
+    """Read-only Pilot 2 Cloud route metadata; no FlightHub dependency.
+
+    The existing session adapter is scoped to local loopback and returns
+    only normalized wayline metadata, never access tokens or storage links.
+    """
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    result = await app.state.local_waylines.read()
+    return {
+        "state": result["state"],
+        "waylines": result.get("waylines", []),
+        "reported_total": result.get("reported_total"),
+        "pagination_complete": result.get("pagination_complete"),
+        "updated_at": result.get("updated_at"),
+    }
+
+
 @app.get("/api/v1/flighthub/catalog")
 async def flighthub_catalog(request: Request, response: Response,
                             authorization: str | None = Header(default=None)) -> dict:
