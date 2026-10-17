@@ -76,11 +76,61 @@ Das Skript arbeitet ohne root und außerhalb des Repositorys:
 - Browser-UI: JavaScript per Node geprüft; manuelle Prüfung in Chrome/Android
   steht noch aus.
 
+## Karte der Wärmebilder (Ansicht „Karte“)
+
+- Privater Geo-Index `thermal_geo.sqlite3` (0600, Workspace) mit
+  Whitelist-XMP je Wärmebild. Aufbau ausdrücklich auf dem Pi:
+  `.venv/bin/python -m aeronexus.thermal_geo` – liest per HTTP-Range nur die
+  ersten 256 KiB je Objekt, überspringt unveränderte ETags, entfernt Einträge,
+  die nicht mehr im Medienindex sind. Erstscan: 2.072 Bilder in ca. 51 s.
+- Karte (Leaflet, Satellit/OSM): Aufnahmepunkte, Tooltip mit Höhe, Pitch und
+  Bodenauflösung; Klick öffnet das Bild. Ab Zoom 17 Bodenabdeckung
+  (Footprint) aller Nadir-Aufnahmen (Pitch −75…−105°), das gewählte Bild
+  hervorgehoben.
+- Footprint/Bodenauflösung aus relativer Höhe, Gimbal-Yaw/-Pitch und
+  diagonalem Sichtfeld laut DJI-Datenblatt (M3T/M30T IR 61°, M4T IR 45°;
+  Weitwinkel 84° bzw. 82°). Annahme: ebenes Gelände auf Startpunkthöhe –
+  Planungshilfe, keine Orthorektifizierung.
+- `GET /api/v1/thermal/map`: Positionen, Footprints (ohne Objektschlüssel).
+
+## Overlay Wärmebild/Sichtbild (Ansicht „Overlay“)
+
+- Das zugehörige Sichtbild (`_V`/`_W`) wird auf den Ausschnitt des
+  IR-Sichtfelds zugeschnitten (Verhältnis der Sichtfelder) und unter das
+  Wärmebild gelegt; Regler für Deckkraft, Skalierung (±30 %) und Versatz
+  gleichen die Parallaxe zwischen den Kameras aus.
+- Geprüft mit einer echten M3T-Aufnahme (44 m, Nadir): Kanten des Sichtbilds
+  liegen ohne Korrektur auf den Straßenrändern im Wärmebild.
+
+## PV-Inspektion (Orientierung an IEC TS 62446-3)
+
+- Werkzeug „PV-Bereich“: Rechteck um die Module. Referenz = Median des
+  Bereichs; Anomalien = zusammenhängende Flächen (4er-Nachbarschaft) ≥
+  Referenz + Erkennungsschwelle (Standard 3 K, min. 4 Pixel).
+- ΔT-Klassen (einstellbar, Standard < 10 K / 10–20 K / ≥ 20 K): verbreitete
+  Praxis-Auslegung; **nicht** aus dem Normtext verifiziert (kostenpflichtig).
+  Vor Verwendung gegen IEC TS 62446-3:2017 und Prüfauftrag abgleichen. Die
+  Einstufung (Fehlerbild, Klasse) trifft ein qualifizierter Thermograf;
+  Musterangaben (Hotspot, Einzelzelle, Zellstreifen, großflächig) sind
+  geometrische Hinweise aus Zellgröße und Bodenauflösung.
+- Prüfliste Messbedingungen: Einstrahlung ≥ 600 W/m², Wind ≤ 28 km/h,
+  Bewölkung ≤ 2/8, Blickwinkel zur Modulnormalen ≤ 30° (aus Gimbal und
+  Modulneigung/-ausrichtung), ≥ 5 px je Zellkante, Emissionsgrad gesetzt
+  (Modulglas ca. 0,85), radiometrische Daten. Eingaben, die nicht aus dem
+  Bild ableitbar sind (Einstrahlung, Wind, Bewölkung), trägt der Prüfer ein.
+- Plausibilitätswarnungen: gesamtes Bild statt PV-Bereich, > 15 % auffällige
+  Fläche (Nicht-PV-Flächen im Bereich), < 3 px je Zellkante.
+- Export: PV-Bericht (JSON) und Anomalienliste (CSV).
+- `GET /api/v1/thermal/images/{id}/pv?x&y&w&h&detect_k&class2_k&class3_k&min_pixels&cell_size_m&irradiance&wind&cloud&tilt&azimuth&emissivity…`
+- Hinweis zu den vorhandenen Daten: Die geprüften M3T-Aufnahmen zeigen
+  Straße, Bahn und Felder, keine PV-Anlage. Eine fachliche Abnahme mit
+  echten PV-Aufnahmen (Einstrahlung ≥ 600 W/m², ≤ ca. 17 m Flughöhe für
+  5 px/Zelle mit M3T) steht aus.
+
 ## Offene Punkte / Vorschläge
 
-- Batch-Analyse ganzer Flüge (Hotspot-Liste, Schwellwert-Alarm) und
-  Persistenz der Ergebnisse im privaten Workspace.
-- Wärmebilder geo-referenziert auf der Operations-/Studio-Karte anzeigen
-  (Position und Gimbal sind bereits extrahiert).
-- Overlay Wärmebild/Sichtbild (Parallaxe zwischen den Kameras beachten).
-- PV-Inspektion: Modulerkennung und ΔT-Klassifizierung (z. B. IEC TS 62446-3).
+- Batch-PV-Analyse ganzer Flüge mit Anomalienkarte und Persistenz der
+  Ergebnisse im privaten Workspace.
+- Automatische Modulerkennung statt manuellem PV-Bereich.
+- Geo-Index regelmäßig per `systemd --user`-Timer aktualisieren.
+- Gerenderte Wärmebilder als georeferenzierte Kacheln auf der Karte.

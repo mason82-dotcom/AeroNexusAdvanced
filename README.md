@@ -211,7 +211,9 @@ Details: [Phase 21 – DJI-MinIO-Medien](docs/phase-21-dji-minio-media.md).
 Eigener Web-UI-Tab für radiometrische DJI-Wärmebilder (M3T/M4T R-JPEG) aus
 dem MinIO-Index. Temperaturen nur über das DJI Thermal SDK (`dji_irp`,
 auf dem Pi 5 via Box64): Paletten, Isotherme, Hot-/Coldspot, Punkt- und
-Bereichsmessung, Emissionsgrad & Co., PNG/CSV/JSON-Export. Installation:
+Bereichsmessung, Emissionsgrad & Co., PNG/CSV/JSON-Export, Karte mit
+Aufnahmepunkten und Footprints, Overlay mit dem Sichtbild sowie PV-Inspektion
+(ΔT-Klassen und Messbedingungen, Orientierung an IEC TS 62446-3). Installation:
 `deploy/pi/install-thermal-sdk.sh <dji_thermal_sdk_v1.8_*.zip>`.
 Details: [docs/thermography.md](docs/thermography.md).
 

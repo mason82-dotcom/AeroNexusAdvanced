@@ -2,7 +2,9 @@
 
 Static HTML/JS without credentials. Temperatures are fetched as a float32
 grid from the local API, which obtains them from the DJI Thermal SDK; the
-browser never contacts MinIO or DJI and never sees object keys.
+browser never contacts MinIO or DJI and never sees object keys. Views:
+thermal image, thermal/visual overlay, map of image positions and
+footprints; PV inspection panel (IEC TS 62446-3 orientation).
 """
 
 HTML = r"""<!doctype html>
@@ -13,22 +15,23 @@ HTML = r"""<!doctype html>
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
 <title>AeroNexusAdvanced · Thermografie</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
-:root{font:14px/1.45 system-ui,"Segoe UI",sans-serif;color-scheme:dark;--bg:#0b1323;--pane:#122139;--card:#152b47;--line:#334e69;--ink:#eaf4ff;--sub:#a9bfd8;--mint:#75e3bd;--amber:#e4bd78;--red:#ff9ba8;--hot:#ff5a4f;--cold:#5ab8ff}
+:root{font:14px/1.45 system-ui,"Segoe UI",sans-serif;color-scheme:dark;--bg:#0b1323;--pane:#122139;--card:#152b47;--line:#334e69;--ink:#eaf4ff;--sub:#a9bfd8;--mint:#75e3bd;--amber:#e4bd78;--red:#ff9ba8}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink)}
 a{color:#9dd5ff}
 button,select,input{font:inherit;color:#eef7ff;background:#213d5e;border:1px solid #426487;border-radius:8px;padding:7px 10px}
 button{cursor:pointer}button:hover{background:#2a517a}button:disabled{opacity:.5;cursor:not-allowed}
 button.active{border-color:var(--mint);background:#245a55}
-input{min-width:0}
+input{min-width:0}input[type=range]{padding:0;accent-color:var(--mint)}
 :focus-visible{outline:2px solid var(--mint);outline-offset:2px}
 header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px;background:#142440;border-bottom:1px solid var(--line)}
 .logo{font-weight:800;font-size:18px;white-space:nowrap}.logo small{display:block;font-size:10px;letter-spacing:.18em;color:#7abef0}
 .tabs{display:flex;align-items:center;flex-wrap:wrap;gap:13px}
 .tabs a{font-size:13px;text-decoration:none}.tabs .active{font-weight:700;color:var(--mint)}
 .header-state{margin-left:auto;font-size:12px}
-.layout{display:grid;grid-template-columns:minmax(250px,310px) minmax(320px,1fr) minmax(290px,350px);gap:12px;padding:12px;height:calc(100vh - 66px);min-height:640px}
+.layout{display:grid;grid-template-columns:minmax(250px,300px) minmax(320px,1fr) minmax(300px,370px);gap:12px;padding:12px;height:calc(100vh - 66px);min-height:680px}
 .panel{min-width:0;min-height:0;border:1px solid var(--line);border-radius:13px;background:var(--pane);padding:14px;display:flex;flex-direction:column;overflow:hidden}
 .panel h2{font-size:16px;margin:0 0 8px}.panel h3{font-size:13px;margin:14px 0 6px;color:#cfe3f7}
 .eyebrow{font-size:11px;letter-spacing:.12em;color:#87b6e1;text-transform:uppercase;font-weight:700}
@@ -41,16 +44,20 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .item b{display:block;font-size:13px;overflow-wrap:anywhere}.item small{color:#b5cae1;font-size:11px}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border:1px solid #486d8b;border-radius:999px}
 .badge.good{color:var(--mint);border-color:#327f6b}.badge.warn{color:var(--amber);border-color:#806844}.badge.bad{color:var(--red);border-color:#984b5d}
+.views{display:flex;gap:6px;margin:0 0 9px}
 .toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:9px}
 .toolbar label{font-size:12px;color:var(--sub);display:flex;gap:5px;align-items:center}
 .toolbar input[type=number]{width:78px}
 .viewer{position:relative;flex:1;min-height:260px;display:flex;align-items:center;justify-content:center;background:#08101c;border-radius:9px;overflow:hidden}
-.stack{position:relative;max-width:100%;max-height:100%;aspect-ratio:5/4}
+.stack{position:relative;max-width:100%;max-height:100%}
 .stack canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+#visual{image-rendering:auto}
 #overlay{cursor:crosshair;touch-action:none}
 #preview{max-width:100%;max-height:100%;display:none}
+#thermal-map{position:absolute;inset:0;display:none;background:#23374f}
 .empty{color:var(--sub);text-align:center;padding:30px}
-.readout{position:absolute;left:10px;bottom:10px;background:#0f1d31e6;border:1px solid #35536f;border-radius:8px;padding:5px 9px;font:12px ui-monospace,Consolas,monospace;pointer-events:none}
+.readout{position:absolute;left:10px;bottom:10px;background:#0f1d31e6;border:1px solid #35536f;border-radius:8px;padding:5px 9px;font:12px ui-monospace,Consolas,monospace;pointer-events:none;z-index:2}
+.map-state{position:absolute;z-index:500;left:10px;bottom:10px;max-width:min(520px,85%);background:#112137e8;border-radius:8px;padding:7px 9px;font-size:11px;color:#c8dbed}
 .colorbar{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px}
 .colorbar canvas{flex:1;height:14px;border-radius:4px;border:1px solid #3a5876}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px}
@@ -63,12 +70,18 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .params label{font-size:11px;color:var(--sub);display:grid;gap:3px}
 .params input,.params select{width:100%}
 table{width:100%;border-collapse:collapse;font-size:12px}
-td,th{padding:5px 4px;border-bottom:1px solid #2f4a64;text-align:left}
+td,th{padding:5px 4px;border-bottom:1px solid #2f4a64;text-align:left;vertical-align:top}
 th{color:var(--sub);font-weight:600}
+tr.pick{cursor:pointer}tr.pick:hover{background:#1b3553}
+.c1{color:#f3dc6b}.c2{color:#ffab5c}.c3{color:#ff6b6b;font-weight:700}
+.st-ok{color:var(--mint)}.st-warn{color:var(--amber)}.st-fail{color:var(--red)}.st-unknown{color:var(--sub)}
 .note{font-size:11px;color:var(--sub);line-height:1.5;margin:8px 0}
+.warnbox{font-size:12px;color:#ffd0a4;border-left:3px solid #d6a862;background:#2a2a2a55;padding:6px 8px;margin:6px 0}
 .error{color:var(--red)}
+details.section{border-top:1px solid #2f4a64;margin-top:12px;padding-top:6px}
+details.section summary{cursor:pointer;font-weight:700;font-size:13px;padding:4px 0}
 @media(max-width:1200px){.layout{grid-template-columns:270px minmax(0,1fr)}.side-right{grid-column:1/-1}}
-@media(max-width:760px){.layout{display:flex;flex-direction:column;height:auto}.panel{overflow:visible}.scroll{max-height:340px}.viewer{min-height:300px}.header-state{margin-left:0}}
+@media(max-width:760px){.layout{display:flex;flex-direction:column;height:auto}.panel{overflow:visible}.scroll{max-height:340px}.viewer{min-height:340px}.header-state{margin-left:0}}
 </style>
 </head>
 <body>
@@ -97,7 +110,12 @@ th{color:var(--sub);font-weight:600}
 
 <section class="panel" aria-labelledby="viewer-title">
 <div class="row" style="justify-content:space-between"><h2 id="viewer-title" style="overflow-wrap:anywhere">Kein Bild gewählt</h2><span id="viewer-badge"></span></div>
-<div class="toolbar" role="toolbar" aria-label="Darstellung und Messwerkzeuge">
+<div class="views" role="tablist" aria-label="Ansicht">
+<button type="button" role="tab" id="view-image" class="active" aria-selected="true">Wärmebild</button>
+<button type="button" role="tab" id="view-overlay" aria-selected="false">Overlay mit Sichtbild</button>
+<button type="button" role="tab" id="view-map" aria-selected="false">Karte</button>
+</div>
+<div class="toolbar" role="toolbar" aria-label="Darstellung und Messwerkzeuge" id="image-tools">
 <label>Palette <select id="palette">
 <option value="iron">Iron</option><option value="rainbow">Rainbow</option><option value="whitehot">White hot</option>
 <option value="blackhot">Black hot</option><option value="arctic">Arctic</option><option value="lava">Lava</option></select></label>
@@ -108,14 +126,25 @@ th{color:var(--sub);font-weight:600}
 <span class="grow"></span>
 <button id="tool-point" type="button" class="active" aria-pressed="true">Punkt</button>
 <button id="tool-box" type="button" aria-pressed="false">Bereich</button>
+<button id="tool-pv" type="button" aria-pressed="false" title="Rechteck um die PV-Module ziehen">PV-Bereich</button>
+</div>
+<div class="toolbar" id="overlay-tools" hidden>
+<label>Deckkraft Wärmebild <input id="ov-alpha" type="range" min="0" max="100" value="55"></label>
+<label>Skalierung <input id="ov-scale" type="range" min="70" max="130" value="100"> <span id="ov-scale-v">100 %</span></label>
+<label>Versatz X <input id="ov-dx" type="range" min="-150" max="150" value="0"></label>
+<label>Versatz Y <input id="ov-dy" type="range" min="-150" max="150" value="0"></label>
+<button id="ov-reset" type="button">Zurücksetzen</button>
 </div>
 <div class="viewer" id="viewer">
-<div class="empty" id="empty">Wärmebild links auswählen.<br>Temperaturen berechnet das DJI Thermal SDK auf dem Server.</div>
-<div class="stack" id="stack" hidden><canvas id="thermal"></canvas><canvas id="overlay" aria-label="Wärmebild, klicken zum Messen"></canvas></div>
+<div class="empty" id="empty">Wärmebild links oder auf der Karte auswählen.<br>Temperaturen berechnet das DJI Thermal SDK auf dem Server.</div>
+<div class="stack" id="stack" hidden><canvas id="visual"></canvas><canvas id="thermal"></canvas><canvas id="overlay" aria-label="Wärmebild, klicken zum Messen"></canvas></div>
 <img id="preview" alt="Wärmebild-Vorschau (ohne Temperaturdaten)">
+<div id="thermal-map" aria-label="Karte der Wärmebilder"></div>
+<div class="map-state" id="map-state" hidden>Lade Geo-Index…</div>
 <div class="readout" id="readout" hidden></div>
 </div>
-<div class="colorbar"><span id="cb-low">–</span><canvas id="colorbar" width="256" height="1"></canvas><span id="cb-high">–</span></div>
+<div class="colorbar" id="colorbar-row"><span id="cb-low">–</span><canvas id="colorbar" width="256" height="1"></canvas><span id="cb-high">–</span></div>
+<div class="note" id="overlay-note" hidden></div>
 <div class="row" style="margin-top:9px">
 <button id="export-png" type="button" disabled>PNG speichern</button>
 <button id="export-csv" type="button" disabled>Messungen CSV</button>
@@ -127,7 +156,7 @@ th{color:var(--sub);font-weight:600}
 </div>
 </section>
 
-<aside class="panel side-right scroll" aria-label="Messwerte und Metadaten">
+<aside class="panel side-right scroll" aria-label="Messwerte, PV-Inspektion und Metadaten">
 <div class="eyebrow">Analyse</div>
 <h2>Temperaturen</h2>
 <div class="stats" id="stats">
@@ -142,7 +171,29 @@ th{color:var(--sub);font-weight:600}
 <h3>Messungen</h3>
 <table><thead><tr><th>#</th><th>Art</th><th>Wert</th><th></th></tr></thead><tbody id="spots"></tbody></table>
 <div class="note">Punkt: klicken. Bereich: ziehen (Min/Max/Mittel). Werte aus dem SDK-Raster.</div>
-<h3>Messparameter</h3>
+
+<details class="section" id="pv-section" open>
+<summary>PV-Inspektion (IEC TS 62446-3)</summary>
+<div class="note">Mit „PV-Bereich“ ein Rechteck um die Module ziehen. Referenz ist der Median des Bereichs, Anomalien sind zusammenhängende Flächen oberhalb Referenz + Erkennungsschwelle. Klassen-Schwellen sind einstellbare Richtwerte; die verbindliche Einstufung trifft ein qualifizierter Thermograf.</div>
+<div class="params">
+<label>Einstrahlung W/m²<input id="pv-irradiance" type="number" min="0" max="1500" step="10" placeholder="Pflicht ≥ 600"></label>
+<label>Wind km/h<input id="pv-wind" type="number" min="0" max="200" step="1" placeholder="≤ 28"></label>
+<label>Bewölkung (Achtel)<input id="pv-cloud" type="number" min="0" max="8" step="1" placeholder="≤ 2"></label>
+<label>Modulneigung °<input id="pv-tilt" type="number" min="0" max="90" step="1" placeholder="0 = horizontal"></label>
+<label>Modulausrichtung °<input id="pv-azimuth" type="number" min="0" max="360" step="1" placeholder="180 = Süd"></label>
+<label>Zellkante m<input id="pv-cell" type="number" min="0.05" max="0.5" step="0.001" value="0.166"></label>
+<label>Erkennung ΔT K<input id="pv-detect" type="number" min="0.5" max="50" step="0.5" value="3"></label>
+<label>Min. Pixel<input id="pv-minpx" type="number" min="1" max="10000" step="1" value="4"></label>
+<label>Klasse 2 ab ΔT K<input id="pv-c2" type="number" min="1" max="100" step="0.5" value="10"></label>
+<label>Klasse 3 ab ΔT K<input id="pv-c3" type="number" min="1" max="150" step="0.5" value="20"></label>
+</div>
+<div class="row" style="margin-top:8px"><button id="pv-run" type="button" disabled>PV-Analyse</button><button id="pv-clear" type="button">Bereich löschen</button><button id="pv-export" type="button" disabled>PV-Bericht</button><button id="pv-csv" type="button" disabled>Anomalien CSV</button></div>
+<div class="sub" id="pv-region">Kein PV-Bereich gewählt (gesamtes Bild).</div>
+<div id="pv-result"></div>
+</details>
+
+<details class="section" open>
+<summary>Messparameter</summary>
 <div class="params">
 <label>Material (Richtwert)<select id="material">
 <option value="">aus Bild</option><option value="0.95">Allgemein 0,95</option><option value="0.94">Beton 0,94</option>
@@ -156,17 +207,24 @@ th{color:var(--sub);font-weight:600}
 <label>Umgebung °C (−40–80)<input id="p-ambient" type="number" min="-40" max="80" step="0.1" placeholder="aus Bild"></label>
 </div>
 <div class="row" style="margin-top:8px"><button id="recalc" type="button" disabled>Neu berechnen</button><button id="reset-params" type="button">Bildwerte</button></div>
-<div class="note">Leere Felder verwenden die in der Aufnahme gespeicherten Parameter. Materialwerte sind grobe Richtwerte; für belastbare Messungen Emissionsgrad und reflektierte Temperatur vor Ort bestimmen.</div>
-<h3>Aufnahme</h3>
+<div class="note">Leere Felder verwenden die in der Aufnahme gespeicherten Parameter. Materialwerte sind grobe Richtwerte.</div>
+</details>
+
+<details class="section" open>
+<summary>Aufnahme</summary>
 <div class="kv" id="meta"><span>–</span><b>–</b></div>
 <div class="note">Seriennummern, NTRIP-Zugangsdaten und unbekannte Herstellerfelder werden nicht angezeigt. Keine Schreibzugriffe auf MinIO oder DJI.</div>
+</details>
 </aside>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
 const PAGE=40;
 let offset=0,total=0,current=null,analysis=null,grid=null,W=0,H=0,spots=[],tool="point",drag=null;
+let view="image",pvRegion=null,pvReport=null,pvFocus=-1,visualImg=null,visualFor=null;
+let map=null,mapLoaded=false,markerLayer=null,footLayer=null,selectedFoot=null,mapItems=[];
 
 const PALETTES={
   iron:[[0,0,0,0],[.15,32,0,90],[.35,140,0,140],[.55,220,40,40],[.75,250,140,0],[.9,255,220,40],[1,255,255,240]],
@@ -176,6 +234,7 @@ const PALETTES={
   arctic:[[0,10,10,60],[.35,20,80,200],[.65,80,200,240],[.85,230,240,255],[1,255,190,60]],
   lava:[[0,20,10,40],[.3,90,20,90],[.6,200,40,40],[.85,255,150,30],[1,255,250,200]]
 };
+const CLASS_COLORS={1:"#f3dc6b",2:"#ffab5c",3:"#ff4d4d"};
 function lut(name){
   const stops=PALETTES[name]||PALETTES.iron,out=new Uint8ClampedArray(256*3);
   for(let i=0;i<256;i++){
@@ -192,6 +251,7 @@ function bytes(n){return typeof n==="number"?(n/1048576).toFixed(1).replace(".",
 function when(name){const m=/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(name||"");
   return m?`${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}:${m[6]}`:"";}
 function setState(el,text,cls){el.textContent=text;el.className=(el.id==="sdk-state"?"header-state ":"sub ")+(cls||"");}
+function el(tag,text,cls){const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;}
 
 async function api(path,binary){
   const res=await fetch(path,{cache:"no-store",credentials:"same-origin"});
@@ -222,10 +282,9 @@ async function loadList(){
     total=r.total||0;
     const list=$("list");list.replaceChildren();
     for(const item of r.media||[]){
-      const b=document.createElement("button");b.type="button";b.className="item"+(current&&current.id===item.id?" active":"");
-      const t=document.createElement("b");t.textContent=item.name;
-      const s=document.createElement("small");s.textContent=[when(item.name),bytes(item.size_bytes),item.visual_id?"mit Sichtbild":""].filter(Boolean).join(" · ");
-      b.append(t,s);b.addEventListener("click",()=>select(item,b));list.append(b);
+      const b=el("button",null,"item"+(current&&current.id===item.id?" active":""));b.type="button";b.dataset.id=item.id;
+      b.append(el("b",item.name),el("small",[when(item.name),bytes(item.size_bytes),item.visual_id?"mit Sichtbild":""].filter(Boolean).join(" · ")));
+      b.addEventListener("click",()=>select(item));list.append(b);
     }
     setState($("list-state"),total?`${total.toLocaleString("de-DE")} Wärmebilder${r.last_scanned_at?" · Index "+new Date(r.last_scanned_at).toLocaleString("de-DE"):""}`:"Keine Wärmebilder im Index (MinIO-Scan ausführen).");
     $("page").textContent=total?`${offset+1}–${Math.min(offset+PAGE,total)} / ${total}`:"–";
@@ -233,36 +292,36 @@ async function loadList(){
   }catch(e){setState($("list-state"),"Liste nicht verfügbar: "+e.message,"error");}
 }
 
-function params(){
+function measureQuery(){
   const out=new URLSearchParams();
   for(const k of ["emissivity","distance","humidity","reflection","ambient"]){
     const v=$("p-"+k).value.trim();if(v!=="")out.set(k,v);
   }
-  return out.toString();
+  return out;
 }
 
-async function select(item,button){
+async function select(item){
   current=item;
   document.querySelectorAll(".item.active").forEach(e=>e.classList.remove("active"));
-  if(button)button.classList.add("active");
+  const btn=document.querySelector(`.item[data-id="${item.id}"]`);if(btn)btn.classList.add("active");
   $("viewer-title").textContent=item.name;
-  const thermalUrl=`/api/v1/studio/dji-media/${item.id}/file`;
-  $("open-thermal").href=thermalUrl;$("open-thermal").hidden=false;
-  $("open-visual").hidden=!item.visual_id;
-  if(item.visual_id)$("open-visual").href=`/api/v1/studio/dji-media/${item.visual_id}/file`;
-  spots=[];renderSpots();
+  $("open-thermal").href=`/api/v1/studio/dji-media/${item.id}/file`;$("open-thermal").hidden=false;
+  spots=[];pvRegion=null;pvReport=null;pvFocus=-1;renderSpots();renderPv();
+  if(view==="map")setView("image");
   await analyse();
 }
 
 async function analyse(){
   if(!current)return;
-  const id=current.id,q=params();
+  const id=current.id,q=measureQuery().toString();
   $("viewer-badge").innerHTML='<span class="badge">SDK rechnet…</span>';
   $("measure-error").hidden=true;$("recalc").disabled=true;
   try{
     const a=await api(`/api/v1/thermal/images/${id}/analysis${q?"?"+q:""}`);
     if(!current||current.id!==id)return;
-    analysis=a;renderMeta(a);
+    analysis=a;current.visual_id=a.visual_id;renderMeta(a);
+    $("open-visual").hidden=!a.visual_id;if(a.visual_id)$("open-visual").href=`/api/v1/studio/dji-media/${a.visual_id}/file`;
+    if(map)highlightFootprint(a);
     if(a.measurement){
       const res=await api(`/api/v1/thermal/images/${id}/temperatures${q?"?"+q:""}`,true);
       const w=+res.headers.get("X-Thermal-Width"),h=+res.headers.get("X-Thermal-Height");
@@ -270,17 +329,18 @@ async function analyse(){
       if(!(w>0&&h>0&&buf.byteLength===w*h*4))throw new Error("Unerwartetes Temperaturraster");
       if(!current||current.id!==id)return;
       grid=new Float32Array(buf);W=w;H=h;
-      renderStats(a.measurement);showGrid();
+      renderStats(a.measurement);
+      if(view!=="map")showGrid();
       $("viewer-badge").innerHTML='<span class="badge good">Radiometrisch · DJI TSDK</span>';
     }else{
-      grid=null;renderStats(null);showPreview(`/api/v1/studio/dji-media/${id}/file`);
+      grid=null;renderStats(null);if(view!=="map")showPreview(`/api/v1/studio/dji-media/${id}/file`);
       $("measure-error").textContent=a.measurement_error||"Keine Temperaturdaten";$("measure-error").hidden=false;
       $("viewer-badge").innerHTML='<span class="badge warn">Nur Vorschau</span>';
     }
   }catch(e){
     $("measure-error").textContent="Analyse fehlgeschlagen: "+e.message;$("measure-error").hidden=false;
     $("viewer-badge").innerHTML='<span class="badge bad">Fehler</span>';
-  }finally{$("recalc").disabled=!current;exportState();}
+  }finally{$("recalc").disabled=!current;$("pv-run").disabled=!grid;exportState();}
 }
 
 function renderStats(m){
@@ -289,20 +349,56 @@ function renderStats(m){
 }
 
 function renderMeta(a){
+  const geo=a.geometry||{};
   const rows=[["Modell",a.model],["Kamera",a.image_source],["Aufnahme",a.captured_at],["Auflösung",a.width&&`${a.width}×${a.height}${a.raw_width&&a.raw_width!==a.width?` (Raster ${a.raw_width}×${a.raw_height})`:""}`],
     ["Radiometrisch",a.radiometric?"ja":"nein"],["Dateigröße",bytes(a.size_bytes)]];
   const p=a.position;
   if(p){rows.push(["Position",`${fmt(p.latitude,6)}, ${fmt(p.longitude,6)}`],["Höhe rel./abs.",`${fmt(p.relative_altitude_m)} m / ${fmt(p.absolute_altitude_m)} m`],["GNSS",p.gps_status]);}
   else rows.push(["Position","kein GNSS-Fix"]);
   const g=a.gimbal||{};rows.push(["Gimbal Pitch/Yaw",`${fmt(g.pitch_deg)}° / ${fmt(g.yaw_deg)}°`]);
+  if(geo.ground_sample_cm)rows.push(["Bodenauflösung",`${fmt(geo.ground_sample_cm,1)} cm/px (Schätzung)`]);
+  if(geo.thermal_hfov_deg)rows.push(["Sichtfeld IR",`${fmt(geo.thermal_hfov_deg)}° × ${fmt(geo.thermal_vfov_deg)}°`]);
   if(a.laser_range)rows.push(["Laser-Distanz",fmt(a.laser_range.distance_m,2)+" m"]);
   const m=a.measurement;
   if(m){const o=Object.entries(m.parameter_overrides||{});rows.push(["Parameter",o.length?o.map(([k,v])=>k+"="+v).join(", "):"aus Bild"]);}
   if(a.sdk&&a.sdk.available)rows.push(["SDK",`dji_irp ${a.sdk.tool||""} (${a.sdk.runner})`]);
-  const el=$("meta");el.replaceChildren();
-  for(const [k,v] of rows){const s=document.createElement("span");s.textContent=k;const b=document.createElement("b");b.textContent=v==null||v===""?"–":String(v);el.append(s,b);}
-  if(p){const s=document.createElement("span");s.textContent="Karte";const b=document.createElement("b");const l=document.createElement("a");
-    l.href=`https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=18/${p.latitude}/${p.longitude}`;l.target="_blank";l.rel="noopener noreferrer";l.textContent="OpenStreetMap ↗";b.append(l);el.append(s,b);}
+  const box=$("meta");box.replaceChildren();
+  for(const [k,v] of rows)box.append(el("span",k),el("b",v==null||v===""?"–":String(v)));
+}
+
+/* ---------------------------------------------------------------- views --- */
+function setView(v){
+  view=v;
+  for(const [id,name] of [["view-image","image"],["view-overlay","overlay"],["view-map","map"]]){
+    $(id).classList.toggle("active",v===name);$(id).setAttribute("aria-selected",String(v===name));
+  }
+  $("image-tools").hidden=v==="map";$("overlay-tools").hidden=v!=="overlay";$("colorbar-row").hidden=v==="map";
+  $("thermal-map").style.display=v==="map"?"block":"none";$("map-state").hidden=v!=="map";
+  $("overlay-note").hidden=v!=="overlay";
+  if(v==="map"){
+    $("stack").hidden=true;$("preview").style.display="none";$("empty").hidden=true;$("readout").hidden=true;
+    initMap();return;
+  }
+  if(grid)showGrid();else if(current)showPreview(`/api/v1/studio/dji-media/${current.id}/file`);else{$("empty").hidden=false;}
+}
+
+function showPreview(url){
+  if(view==="map")return;
+  $("stack").hidden=true;$("empty").hidden=true;$("readout").hidden=true;
+  const img=$("preview");img.src=url;img.style.display="block";
+}
+
+function showGrid(){
+  $("preview").style.display="none";$("preview").removeAttribute("src");$("empty").hidden=true;
+  for(const c of [$("thermal"),$("overlay"),$("visual")]){c.width=W;c.height=H;}
+  $("stack").hidden=false;fitStack();draw();
+  if(view==="overlay")drawVisual();else{$("visual").getContext("2d").clearRect(0,0,W,H);$("thermal").style.opacity=1;}
+}
+function fitStack(){
+  const v=$("viewer"),s=$("stack");if(!W)return;
+  const scale=Math.min(v.clientWidth/W,v.clientHeight/H);
+  s.style.width=Math.floor(W*scale)+"px";s.style.height=Math.floor(H*scale)+"px";
+  if(map&&view==="map")map.invalidateSize();
 }
 
 function range(){
@@ -312,22 +408,6 @@ function range(){
   if(mode==="manual"){const lo=parseFloat($("range-low").value),hi=parseFloat($("range-high").value);
     if(Number.isFinite(lo)&&Number.isFinite(hi)&&hi>lo)return [lo,hi];}
   return [m.min_c,m.max_c];
-}
-
-function showPreview(url){
-  $("stack").hidden=true;$("empty").hidden=true;$("readout").hidden=true;
-  const img=$("preview");img.src=url;img.style.display="block";
-}
-
-function showGrid(){
-  $("preview").style.display="none";$("preview").removeAttribute("src");$("empty").hidden=true;
-  const c=$("thermal"),o=$("overlay");c.width=o.width=W;c.height=H;
-  $("stack").style.aspectRatio=`${W}/${H}`;$("stack").hidden=false;fitStack();draw();
-}
-function fitStack(){
-  const v=$("viewer"),s=$("stack");if(!W)return;
-  const scale=Math.min(v.clientWidth/W,v.clientHeight/H);
-  s.style.width=Math.floor(W*scale)+"px";s.style.height=Math.floor(H*scale)+"px";
 }
 
 function draw(){
@@ -348,11 +428,45 @@ function draw(){
   drawOverlay();
 }
 
+/* -------------------------------------------------------------- overlay --- */
+function fovPair(dfov,w,h){const t=Math.tan(dfov*Math.PI/360)/Math.hypot(w,h);return [Math.atan(t*w)*2,Math.atan(t*h)*2];}
+async function drawVisual(){
+  const note=$("overlay-note");
+  $("thermal").style.opacity=$("ov-alpha").value/100;
+  if(!analysis||!analysis.visual_id){note.textContent="Zu diesem Wärmebild ist kein Sichtbild im Index.";$("thermal").style.opacity=1;return;}
+  const vid=analysis.visual_id;
+  if(visualFor!==vid){
+    note.textContent="Lade Sichtbild (Originaldatei, mehrere MB)…";
+    const img=new Image();img.decoding="async";
+    img.src=`/api/v1/studio/dji-media/${vid}/file`;
+    try{await img.decode();}catch(e){note.textContent="Sichtbild konnte nicht geladen werden.";return;}
+    if(!analysis||analysis.visual_id!==vid||view!=="overlay")return;
+    visualImg=img;visualFor=vid;
+  }
+  const optics=analysis.geometry&&analysis.geometry.optics,vw=visualImg.naturalWidth,vh=visualImg.naturalHeight;
+  let rw=1,rh=1;
+  if(optics){
+    const [tH,tV]=fovPair(optics.thermal_dfov_deg,W,H),[vH,vV]=fovPair(optics.visual_dfov_deg,vw,vh);
+    rw=Math.tan(tH/2)/Math.tan(vH/2);rh=Math.tan(tV/2)/Math.tan(vV/2);
+  }
+  const scale=$("ov-scale").value/100;$("ov-scale-v").textContent=$("ov-scale").value+" %";
+  const sw=vw*rw/scale,sh=vh*rh/scale;
+  const sx=(vw-sw)/2+(+$("ov-dx").value)/1000*vw,sy=(vh-sh)/2+(+$("ov-dy").value)/1000*vh;
+  const ctx=$("visual").getContext("2d");ctx.clearRect(0,0,W,H);ctx.drawImage(visualImg,sx,sy,sw,sh,0,0,W,H);
+  note.textContent=optics?`Ausschnitt aus Sichtfeld-Verhältnis ${optics.camera} (IR ${optics.thermal_dfov_deg}° / Weitwinkel ${optics.visual_dfov_deg}° diagonal). Parallaxe zwischen den Kameras mit Versatz ausgleichen.`:"Keine Optikdaten für dieses Modell – Skalierung und Versatz manuell anpassen.";
+}
+
+/* ------------------------------------------------------------ overlay draw --- */
 function marker(ctx,x,y,color,label){
   const r=Math.max(4,W/90);
   ctx.strokeStyle="#000";ctx.lineWidth=Math.max(2,W/320)+2;ctx.beginPath();ctx.moveTo(x-r,y);ctx.lineTo(x+r,y);ctx.moveTo(x,y-r);ctx.lineTo(x,y+r);ctx.stroke();
   ctx.strokeStyle=color;ctx.lineWidth=Math.max(1.5,W/320);ctx.beginPath();ctx.moveTo(x-r,y);ctx.lineTo(x+r,y);ctx.moveTo(x,y-r);ctx.lineTo(x,y+r);ctx.stroke();
   if(label){ctx.font=`bold ${Math.max(11,W/45)}px system-ui`;ctx.lineWidth=3;ctx.strokeStyle="#000";ctx.strokeText(label,x+r+2,y-r);ctx.fillStyle=color;ctx.fillText(label,x+r+2,y-r);}
+}
+function box(ctx,b,color,dash,label){
+  ctx.lineWidth=Math.max(1.5,W/320);ctx.strokeStyle="#000";ctx.setLineDash([]);ctx.strokeRect(b.x,b.y,b.w,b.h);
+  ctx.setLineDash(dash||[]);ctx.strokeStyle=color;ctx.strokeRect(b.x,b.y,b.w,b.h);ctx.setLineDash([]);
+  if(label){ctx.font=`bold ${Math.max(11,W/45)}px system-ui`;ctx.lineWidth=3;ctx.strokeStyle="#000";ctx.strokeText(label,b.x+3,b.y+Math.max(12,W/40));ctx.fillStyle=color;ctx.fillText(label,b.x+3,b.y+Math.max(12,W/40));}
 }
 function drawOverlay(){
   const ctx=$("overlay").getContext("2d");ctx.clearRect(0,0,W,H);
@@ -361,12 +475,16 @@ function drawOverlay(){
     marker(ctx,m.hotspot.x+.5,m.hotspot.y+.5,"#ff5a4f","▲ "+fmt(m.max_c));
     marker(ctx,m.coldspot.x+.5,m.coldspot.y+.5,"#5ab8ff","▼ "+fmt(m.min_c));
   }
+  if(pvRegion)box(ctx,pvRegion,"#ffd84a",[10,5],"PV");
+  if(pvReport)pvReport.anomalies.forEach((a,i)=>{
+    const pad=i===pvFocus?3:1;
+    box(ctx,{x:a.x-pad,y:a.y-pad,w:a.w+2*pad,h:a.h+2*pad},CLASS_COLORS[a.class],i===pvFocus?[]:[4,3],"A"+(i+1));
+  });
   spots.forEach((s,i)=>{
     if(s.kind==="point")marker(ctx,s.x+.5,s.y+.5,"#ffffff",`${i+1}`);
-    else{ctx.lineWidth=Math.max(1.5,W/320);ctx.strokeStyle="#000";ctx.strokeRect(s.x,s.y,s.w,s.h);ctx.setLineDash([6,4]);ctx.strokeStyle="#fff";ctx.strokeRect(s.x,s.y,s.w,s.h);ctx.setLineDash([]);
-      ctx.font=`bold ${Math.max(11,W/45)}px system-ui`;ctx.fillStyle="#fff";ctx.fillText(`${i+1}`,s.x+3,s.y+Math.max(12,W/40));}
+    else box(ctx,s,"#ffffff",[6,4],`${i+1}`);
   });
-  if(drag&&drag.w!==undefined){ctx.strokeStyle="#75e3bd";ctx.lineWidth=Math.max(1.5,W/320);ctx.strokeRect(drag.x,drag.y,drag.w,drag.h);}
+  if(drag&&drag.w!==undefined){ctx.strokeStyle=tool==="pv"?"#ffd84a":"#75e3bd";ctx.lineWidth=Math.max(1.5,W/320);ctx.strokeRect(drag.x,drag.y,drag.w,drag.h);}
 }
 
 function cell(e){
@@ -375,17 +493,17 @@ function cell(e){
   return [Math.min(W-1,Math.max(0,x)),Math.min(H-1,Math.max(0,y))];
 }
 function area(x,y,w,h){
-  let mn=Infinity,mx=-Infinity,sum=0,n=0,hx=x,hy=y;
-  for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++){const t=grid[j*W+i];sum+=t;n++;if(t<mn)mn=t;if(t>mx){mx=t;hx=i;hy=j;}}
-  return {min:mn,max:mx,mean:sum/n,hot_x:hx,hot_y:hy};
+  let mn=Infinity,mx=-Infinity,sum=0,n=0;
+  for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++){const t=grid[j*W+i];sum+=t;n++;if(t<mn)mn=t;if(t>mx)mx=t;}
+  return {min:mn,max:mx,mean:sum/n};
 }
 function renderSpots(){
   const body=$("spots");body.replaceChildren();
   spots.forEach((s,i)=>{
-    const tr=document.createElement("tr");
+    const tr=el("tr");
     const val=s.kind==="point"?deg(s.t):`max ${deg(s.max)} · min ${deg(s.min)} · Ø ${deg(s.mean)}`;
-    for(const v of [String(i+1),s.kind==="point"?`Punkt (${s.x}, ${s.y})`:`Bereich ${s.w}×${s.h}`,val]){const td=document.createElement("td");td.textContent=v;tr.append(td);}
-    const td=document.createElement("td"),b=document.createElement("button");b.type="button";b.textContent="✕";b.title="Messung entfernen";b.style.padding="2px 7px";
+    for(const v of [String(i+1),s.kind==="point"?`Punkt (${s.x}, ${s.y})`:`Bereich ${s.w}×${s.h}`,val])tr.append(el("td",v));
+    const td=el("td"),b=el("button","✕");b.type="button";b.title="Messung entfernen";b.style.padding="2px 7px";
     b.addEventListener("click",()=>{spots.splice(i,1);renderSpots();drawOverlay();});td.append(b);tr.append(td);body.append(tr);
   });
   exportState();
@@ -395,26 +513,130 @@ ov.addEventListener("pointerdown",e=>{if(!grid)return;const [x,y]=cell(e);ov.set
 ov.addEventListener("pointermove",e=>{
   if(!grid)return;const [x,y]=cell(e);
   const ro=$("readout");ro.hidden=false;ro.textContent=`x ${x} · y ${y} · ${deg(grid[y*W+x])}`;
-  if(drag&&tool==="box"){drag.x=Math.min(drag.x0,x);drag.y=Math.min(drag.y0,y);drag.w=Math.abs(x-drag.x0)+1;drag.h=Math.abs(y-drag.y0)+1;drawOverlay();}
+  if(drag&&tool!=="point"){drag.x=Math.min(drag.x0,x);drag.y=Math.min(drag.y0,y);drag.w=Math.abs(x-drag.x0)+1;drag.h=Math.abs(y-drag.y0)+1;drawOverlay();}
 });
 ov.addEventListener("pointerleave",()=>{$("readout").hidden=true;});
 ov.addEventListener("pointerup",e=>{
   if(!grid||!drag)return;const [x,y]=cell(e);
   if(tool==="box"&&drag.w>1&&drag.h>1)spots.push({kind:"box",x:drag.x,y:drag.y,w:drag.w,h:drag.h,...area(drag.x,drag.y,drag.w,drag.h)});
+  else if(tool==="pv"&&drag.w>2&&drag.h>2){pvRegion={x:drag.x,y:drag.y,w:drag.w,h:drag.h};pvReport=null;renderPv();}
   else if(tool==="point")spots.push({kind:"point",x,y,t:grid[y*W+x]});
   drag=null;if(spots.length>50)spots.shift();renderSpots();drawOverlay();
 });
-function setTool(t){tool=t;for(const [id,v] of [["tool-point","point"],["tool-box","box"]]){$(id).classList.toggle("active",t===v);$(id).setAttribute("aria-pressed",String(t===v));}}
+function setTool(t){tool=t;for(const [id,v] of [["tool-point","point"],["tool-box","box"],["tool-pv","pv"]]){$(id).classList.toggle("active",t===v);$(id).setAttribute("aria-pressed",String(t===v));}}
 $("tool-point").addEventListener("click",()=>setTool("point"));
 $("tool-box").addEventListener("click",()=>setTool("box"));
+$("tool-pv").addEventListener("click",()=>setTool("pv"));
 
+/* ------------------------------------------------------------------ PV --- */
+function pvQuery(){
+  const q=measureQuery();
+  const fields={irradiance:"pv-irradiance",wind:"pv-wind",cloud:"pv-cloud",tilt:"pv-tilt",azimuth:"pv-azimuth",
+    cell_size_m:"pv-cell",detect_k:"pv-detect",min_pixels:"pv-minpx",class2_k:"pv-c2",class3_k:"pv-c3"};
+  for(const [k,id] of Object.entries(fields)){const v=$(id).value.trim();if(v!=="")q.set(k,v);}
+  if(pvRegion)for(const k of ["x","y","w","h"])q.set(k,pvRegion[k]);
+  return q.toString();
+}
+async function runPv(){
+  if(!current||!grid)return;
+  const id=current.id;$("pv-run").disabled=true;$("pv-result").replaceChildren(el("div","PV-Analyse läuft…","sub"));
+  try{
+    const r=await api(`/api/v1/thermal/images/${id}/pv?${pvQuery()}`);
+    if(!current||current.id!==id)return;
+    pvReport=r;pvFocus=-1;renderPv();drawOverlay();
+  }catch(e){$("pv-result").replaceChildren(el("div","PV-Analyse fehlgeschlagen: "+e.message,"error"));}
+  finally{$("pv-run").disabled=!grid;}
+}
+function renderPv(){
+  $("pv-region").textContent=pvRegion?`PV-Bereich x ${pvRegion.x}, y ${pvRegion.y}, ${pvRegion.w}×${pvRegion.h} px`:"Kein PV-Bereich gewählt (gesamtes Bild).";
+  $("pv-export").disabled=!pvReport;$("pv-csv").disabled=!pvReport||!pvReport.anomalies.length;
+  const out=$("pv-result");out.replaceChildren();if(!pvReport)return;
+  const r=pvReport,c=r.class_counts||{};
+  const head=el("div",null,"stats");head.style.marginTop="8px";
+  for(const [label,val,cls] of [["Referenz (Median)",deg(r.reference_c),""],["Anomalien",String(r.anomaly_count),""],["Schlechteste Klasse",r.worst_class?"Klasse "+r.worst_class:"keine",r.worst_class?"c"+r.worst_class:""]]){
+    const s=el("div",null,"stat");s.append(el("span",label),el("b",val,cls));head.append(s);
+  }
+  out.append(head,el("div",`Klasse 1: ${c[1]||0} · Klasse 2: ${c[2]||0} · Klasse 3: ${c[3]||0} · Streuung P5–P95 ${fmt(r.spread_p5_p95_k)} K`+(r.cell_size_px?` · ${fmt(r.cell_size_px)} px/Zelle`:""),"sub"));
+  for(const w of r.warnings||[])out.append(el("div",w,"warnbox"));
+  out.append(el("h3","Messbedingungen"));
+  const ct=el("table"),cb=el("tbody");ct.append(cb);
+  const icon={ok:"✔",warn:"⚠",fail:"✖",unknown:"?"};
+  for(const k of r.checks||[]){
+    const tr=el("tr");tr.title=k.note||"";
+    tr.append(el("td",icon[k.status]||"?","st-"+k.status),el("td",k.label),el("td",k.value==null?"–":String(k.value).replace(".",",")),el("td",k.limit,"sub"));
+    cb.append(tr);
+  }
+  out.append(ct);
+  if(r.anomalies.length){
+    out.append(el("h3","Anomalien"));
+    const t=el("table"),th=el("thead"),tb=el("tbody"),hr=el("tr");
+    for(const h of ["#","Klasse","ΔT","Tmax","Fläche","Muster"])hr.append(el("th",h));th.append(hr);t.append(th,tb);
+    r.anomalies.forEach((a,i)=>{
+      const tr=el("tr",null,"pick");
+      tr.append(el("td","A"+(i+1)),el("td",String(a.class),"c"+a.class),el("td",fmt(a.delta_k)+" K"),el("td",deg(a.max_c)),
+        el("td",a.area_m2!=null?fmt(a.area_m2,2)+" m²":a.pixels+" px"),el("td",a.pattern_hint));
+      tr.addEventListener("click",()=>{pvFocus=i;drawOverlay();});tb.append(tr);
+    });
+    out.append(t);
+    if(r.anomaly_count>r.anomalies.length)out.append(el("div",`Nur die ${r.anomalies.length} wichtigsten von ${r.anomaly_count} angezeigt.`,"sub"));
+  }
+  out.append(el("div",r.basis,"note"));
+}
+$("pv-run").addEventListener("click",runPv);
+$("pv-clear").addEventListener("click",()=>{pvRegion=null;pvReport=null;renderPv();drawOverlay();});
+
+/* ---------------------------------------------------------------- map --- */
+function initMap(){
+  if(typeof L==="undefined"){$("map-state").textContent="Kartenbibliothek (Leaflet) konnte nicht geladen werden.";return;}
+  if(!map){
+    map=L.map("thermal-map",{zoomControl:true,preferCanvas:true}).setView([51.1,10.4],6);
+    const sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:21,maxNativeZoom:19,attribution:"Esri World Imagery"});
+    const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:21,maxNativeZoom:19,attribution:"© OpenStreetMap"});
+    sat.addTo(map);L.control.layers({"Satellit":sat,"Straßenkarte":osm}).addTo(map);
+    markerLayer=L.layerGroup().addTo(map);footLayer=L.layerGroup();
+    map.on("zoomend",()=>{if(map.getZoom()>=17)footLayer.addTo(map);else map.removeLayer(footLayer);});
+  }
+  setTimeout(()=>map.invalidateSize(),50);
+  if(!mapLoaded)loadMap();
+}
+async function loadMap(){
+  try{
+    const r=await api("/api/v1/thermal/map");mapLoaded=true;mapItems=r.items||[];
+    markerLayer.clearLayers();footLayer.clearLayers();
+    for(const it of mapItems){
+      const label=`${it.name}<br>${it.model||""} · ${fmt(it.relative_altitude_m)} m · Pitch ${fmt(it.gimbal_pitch_deg)}°`+(it.ground_sample_cm?` · ${fmt(it.ground_sample_cm,1)} cm/px`:"");
+      const mk=L.circleMarker([it.latitude,it.longitude],{radius:4,color:"#ff7a45",weight:1,fillOpacity:.8});
+      mk.bindTooltip(label);mk.on("click",()=>select({id:it.id,name:it.name}));markerLayer.addLayer(mk);
+      if(it.footprint){const fp=L.polygon(it.footprint,{color:"#ffb36b",weight:1,fillOpacity:.04,interactive:false});footLayer.addLayer(fp);}
+    }
+    const stamp=r.scanned_at?new Date(r.scanned_at).toLocaleString("de-DE"):"nie";
+    $("map-state").textContent=mapItems.length?`${mapItems.length.toLocaleString("de-DE")} Wärmebilder mit Position · ${r.without_position} ohne GNSS-Fix · Footprints ab Zoom 17 (ebenes Gelände, Nadir) · Geo-Index ${stamp}`:
+      "Geo-Index leer. Auf dem Pi ausführen: .venv/bin/python -m aeronexus.thermal_geo";
+    if(mapItems.length){
+      const pts=mapItems.map(i=>[i.latitude,i.longitude]);
+      map.fitBounds(L.latLngBounds(pts),{padding:[20,20],maxZoom:18});
+    }
+    if(analysis)highlightFootprint(analysis);
+  }catch(e){$("map-state").textContent="Geo-Index nicht verfügbar: "+e.message;}
+}
+function highlightFootprint(a){
+  if(!map)return;
+  if(selectedFoot){map.removeLayer(selectedFoot);selectedFoot=null;}
+  const fp=a.geometry&&a.geometry.footprint,p=a.position;
+  if(fp)selectedFoot=L.polygon(fp,{color:"#75e3bd",weight:3,fillOpacity:.15}).addTo(map);
+  else if(p)selectedFoot=L.circleMarker([p.latitude,p.longitude],{radius:9,color:"#75e3bd",weight:3}).addTo(map);
+  if(selectedFoot&&view==="map")map.panTo(fp?selectedFoot.getBounds().getCenter():[p.latitude,p.longitude]);
+}
+
+/* -------------------------------------------------------------- exports --- */
 function save(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
 function base(){return (current&&current.name||"thermal").replace(/\.[^.]+$/,"");}
 function exportState(){const ok=!!grid;$("export-png").disabled=!ok;$("export-grid").disabled=!ok;$("export-csv").disabled=!ok||!spots.length;$("export-json").disabled=!analysis;}
 function csvNum(v){return typeof v==="number"?v.toFixed(2):"";}
 $("export-png").addEventListener("click",()=>{
   const c=document.createElement("canvas");c.width=W;c.height=H;const ctx=c.getContext("2d");
-  ctx.drawImage($("thermal"),0,0);ctx.drawImage($("overlay"),0,0);c.toBlob(b=>b&&save(b,base()+"_analyse.png"),"image/png");
+  if(view==="overlay"){ctx.drawImage($("visual"),0,0);ctx.globalAlpha=+$("thermal").style.opacity||1;}
+  ctx.drawImage($("thermal"),0,0);ctx.globalAlpha=1;ctx.drawImage($("overlay"),0,0);c.toBlob(b=>b&&save(b,base()+"_analyse.png"),"image/png");
 });
 $("export-csv").addEventListener("click",()=>{
   const lines=["nr;art;x;y;breite;hoehe;temp_c;min_c;max_c;mittel_c"];
@@ -426,20 +648,35 @@ $("export-grid").addEventListener("click",()=>{
   save(new Blob([rows.join("\n")+"\n"],{type:"text/csv"}),base()+"_temperaturen.csv");
 });
 $("export-json").addEventListener("click",()=>{
-  const report={generated_at:new Date().toISOString(),image:analysis,measurements:spots};
+  const report={generated_at:new Date().toISOString(),image:analysis,measurements:spots,pv_inspection:pvReport};
   save(new Blob([JSON.stringify(report,null,2)],{type:"application/json"}),base()+"_bericht.json");
 });
+$("pv-export").addEventListener("click",()=>{
+  const report={generated_at:new Date().toISOString(),image:{id:analysis.id,name:analysis.name,model:analysis.model,captured_at:analysis.captured_at,position:analysis.position,gimbal:analysis.gimbal},pv_inspection:pvReport};
+  save(new Blob([JSON.stringify(report,null,2)],{type:"application/json"}),base()+"_pv_bericht.json");
+});
+$("pv-csv").addEventListener("click",()=>{
+  const lines=["nr;klasse;delta_k;tmax_c;tmittel_c;x;y;breite;hoehe;pixel;flaeche_m2;muster;referenz_c"];
+  pvReport.anomalies.forEach((a,i)=>lines.push(["A"+(i+1),a.class,csvNum(a.delta_k),csvNum(a.max_c),csvNum(a.mean_c),a.x,a.y,a.w,a.h,a.pixels,a.area_m2==null?"":a.area_m2,a.pattern_hint,csvNum(pvReport.reference_c)].join(";")));
+  save(new Blob([lines.join("\n")+"\n"],{type:"text/csv"}),base()+"_pv_anomalien.csv");
+});
 
+/* --------------------------------------------------------------- wiring --- */
 $("material").addEventListener("change",()=>{$("p-emissivity").value=$("material").value;});
-$("recalc").addEventListener("click",()=>{spots=[];renderSpots();analyse();});
-$("reset-params").addEventListener("click",()=>{for(const k of ["emissivity","distance","humidity","reflection","ambient"])$("p-"+k).value="";$("material").value="";if(current){spots=[];renderSpots();analyse();}});
+$("recalc").addEventListener("click",()=>{spots=[];pvReport=null;renderSpots();renderPv();analyse();});
+$("reset-params").addEventListener("click",()=>{for(const k of ["emissivity","distance","humidity","reflection","ambient"])$("p-"+k).value="";$("material").value="";if(current){spots=[];pvReport=null;renderSpots();renderPv();analyse();}});
 for(const id of ["palette","range-low","range-high","iso-on","iso-value"])$(id).addEventListener("input",draw);
+for(const id of ["ov-alpha","ov-scale","ov-dx","ov-dy"])$(id).addEventListener("input",()=>{if(view==="overlay"&&grid)drawVisual();});
+$("ov-reset").addEventListener("click",()=>{$("ov-alpha").value=55;$("ov-scale").value=100;$("ov-dx").value=0;$("ov-dy").value=0;if(view==="overlay"&&grid)drawVisual();});
 $("extremes").addEventListener("change",drawOverlay);
 $("range-mode").addEventListener("change",()=>{
   const manual=$("range-mode").value==="manual";$("manual-range").hidden=!manual;
   if(manual&&analysis&&analysis.measurement&&$("range-low").value===""){$("range-low").value=analysis.measurement.min_c.toFixed(1);$("range-high").value=analysis.measurement.max_c.toFixed(1);}
   draw();
 });
+$("view-image").addEventListener("click",()=>setView("image"));
+$("view-overlay").addEventListener("click",()=>setView("overlay"));
+$("view-map").addEventListener("click",()=>setView("map"));
 $("search-go").addEventListener("click",()=>{offset=0;loadList();});
 $("search").addEventListener("keydown",e=>{if(e.key==="Enter"){offset=0;loadList();}});
 $("prev").addEventListener("click",()=>{offset=Math.max(0,offset-PAGE);loadList();});

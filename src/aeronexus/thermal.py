@@ -53,12 +53,19 @@ def visual_keys(object_key: str) -> list[str]:
 
 # --------------------------------------------------------------- R-JPEG ----
 
-def jpeg_segments(data: bytes) -> dict:
-    """Walk JPEG header segments up to SOS, bounded and without decoding pixels."""
+def jpeg_segments(data: bytes, *, partial: bool = False) -> dict:
+    """Walk JPEG header segments up to SOS, bounded and without decoding pixels.
+
+    ``partial``: ``data`` is only the beginning of the file (range read for
+    the geo index); stop quietly at the cut instead of failing.
+    """
     if not isinstance(data, (bytes, bytearray)) or data[:2] != b"\xff\xd8":
         raise ThermalError("Not a JPEG image")
-    pos, xmp, app3, size, dji = 2, None, 0, None, False
+    pos, xmp, app3, size, dji, truncated = 2, None, 0, None, False, False
     for _ in range(4096):
+        if partial and pos + 4 > len(data):
+            truncated = True
+            break
         if pos + 4 > len(data) or data[pos] != 0xFF:
             raise ThermalError("Malformed JPEG header")
         marker = data[pos + 1]
@@ -68,6 +75,9 @@ def jpeg_segments(data: bytes) -> dict:
         if marker in (0xD9, 0xDA):
             break
         length = struct.unpack(">H", data[pos + 2:pos + 4])[0]
+        if partial and length >= 2 and pos + 2 + length > len(data):
+            truncated = True
+            break
         if length < 2 or pos + 2 + length > len(data):
             raise ThermalError("Malformed JPEG segment")
         body = data[pos + 4:pos + 2 + length]
@@ -83,7 +93,8 @@ def jpeg_segments(data: bytes) -> dict:
         pos += 2 + length
     else:
         raise ThermalError("Too many JPEG segments")
-    return {"xmp": xmp, "raw_bytes": app3, "size": size, "dji_ir_header": dji}
+    return {"xmp": xmp, "raw_bytes": app3, "size": size, "dji_ir_header": dji,
+            "truncated": truncated}
 
 
 _ATTR_RE = re.compile(r'([A-Za-z][\w-]*):([A-Za-z]\w*)="([^"]{0,200})"')
@@ -116,9 +127,10 @@ def _text(value, limit=40):
     return clean or None
 
 
-def thermal_metadata(data: bytes) -> dict:
-    """Whitelisted, typed metadata of a DJI R-JPEG."""
-    seg = jpeg_segments(data)
+def thermal_metadata(data: bytes, *, partial: bool = False) -> dict:
+    """Whitelisted, typed metadata of a DJI R-JPEG (``radiometric`` is None
+    when only the file header was read)."""
+    seg = jpeg_segments(data, partial=partial)
     x = _xmp_fields(seg["xmp"])
     d = lambda name: x.get("drone-dji:" + name)  # noqa: E731
     lat = _num(d("GpsLatitude"), -90, 90)
@@ -140,7 +152,7 @@ def thermal_metadata(data: bytes) -> dict:
             if w and seg["raw_bytes"] == w * h * 2:
                 raw_size = (w, h)
                 break
-    radiometric = raw_size is not None
+    radiometric = None if seg["truncated"] else raw_size is not None
     return {
         "make": _text(x.get("tiff:Make")),
         "model": _text(x.get("tiff:Model") or d("DroneModel")),
@@ -325,7 +337,8 @@ class ThermalService:
 
     def analysis(self, item_id: str, params: MeasureParams | None = None) -> dict:
         meta = self.metadata(item_id)
-        result = {**meta, "sdk": self.sdk_status(), "measurement": None}
+        from .thermal_geo import geometry
+        result = {**meta, "geometry": geometry(meta), "sdk": self.sdk_status(), "measurement": None}
         if not meta["radiometric"]:
             result["measurement_error"] = "Keine radiometrischen DJI-Wärmebilddaten"
             return result
@@ -342,3 +355,23 @@ class ThermalService:
                                  "parameter_overrides": m.overrides, **m.stats}
         return result
 
+    def pv_inspection(self, item_id: str, params: MeasureParams | None, region, thresholds,
+                      conditions) -> dict:
+        """PV abnormality report for one image (see pv_inspection)."""
+        from .pv_inspection import condition_checks, inspect
+        from .thermal_geo import geometry, ground_sample_m
+        meta = self.metadata(item_id)
+        m = self.measure(item_id, params)
+        gsd = ground_sample_m(meta)
+        return {
+            "id": meta["id"], "name": meta["name"], "model": meta["model"],
+            "captured_at": meta["captured_at"], "geometry": geometry(meta),
+            "parameter_overrides": m.overrides,
+            "checks": condition_checks(meta, conditions, ground_sample_m=gsd,
+                                       thresholds=thresholds,
+                                       emissivity=m.overrides.get("emissivity")),
+            "conditions": {k: v for k, v in vars(conditions).items() if v is not None},
+            **inspect(m.width, m.height, m.grid, region, thresholds, ground_sample_m=gsd),
+            "basis": "Orientierung an IEC TS 62446-3:2017; Schwellwerte konfigurierbare "
+                     "Richtwerte, Einstufung durch qualifizierte Thermografen.",
+        }
