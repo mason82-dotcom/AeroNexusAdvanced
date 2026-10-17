@@ -240,7 +240,9 @@ def index_entries(entries, bucket: str, db_path: Path = DEFAULT_DATABASE,
         if db is not None:
             db.close()
     return {**dict(counts), "dry_run": dry_run, "scanned_at": when,
-            "seen": counts["seen"], "media": counts["media"]}
+            "seen": counts["seen"], "media": counts["media"],
+            "new": counts["new"], "updated": counts["updated"],
+            "unchanged": counts["unchanged"], "ignored": counts["ignored"]}
 
 
 def _read_db(path: Path):
