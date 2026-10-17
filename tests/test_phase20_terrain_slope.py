@@ -35,7 +35,7 @@ const api=new Function("$","window",
   "terrainSlopeColor,terrainUpdateSlopeInfo,terrainDrawCanvas,"+
   "terrainResetView,terrainControlChanged,terrainSyncControls,"+
   "get view(){return terrainView;},setGrid(g){terrainGrid=g;}};"
-)($,{requestAnimationFrame(fn){fn();}});
+)($,{requestAnimationFrame(){/* explicit renderer call below */}});
 const flat={heights_m:[[100,100],[100,100]],x_step_m:2,y_step_m:10};
 assert.equal(api.terrainSlopeAt(flat,0.5,0.5),0);
 assert.equal(api.terrainSlopeAt(flat,-0.1,0.5),null);
@@ -57,7 +57,7 @@ assert.notEqual(api.terrainSlopeColor(10),api.terrainSlopeColor(20));
 assert.notEqual(api.terrainSlopeColor(20),api.terrainSlopeColor(45));
 const original=JSON.stringify(x);
 api.terrainUpdateSlopeInfo(x);
-assert.match($("terrain-slope-info").textContent,/45\\.0°/);
+assert.match($("terrain-slope-info").textContent,/45\.0°/);
 assert.match($("terrain-slope-info").textContent,/keine Flugfreigabe/);
 api.setGrid(x);
 api.terrainSyncControls();
