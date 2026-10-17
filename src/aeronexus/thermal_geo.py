@@ -138,9 +138,11 @@ def view_cone(position: dict | None, gimbal: dict | None, hfov_deg: float, *,
 
 
 def footprint(meta: dict) -> list[list[float]] | None:
-    """Thermal image footprint (see ground_footprint)."""
+    """Thermal image footprint (see ground_footprint), with the same tilted-ray
+    projection as the multispectral map so both maps agree for −75…−105°."""
     view = _thermal_fov(meta)
-    return None if view is None else ground_footprint(meta.get("position"), meta.get("gimbal"), *view)
+    return None if view is None else ground_footprint(meta.get("position"), meta.get("gimbal"),
+                                                      *view, account_for_pitch=True)
 
 
 def geometry(meta: dict) -> dict:
@@ -180,6 +182,8 @@ class ThermalGeoIndex:
             conn.execute("""CREATE TABLE IF NOT EXISTS thermal_geo (
                 id TEXT PRIMARY KEY, etag TEXT, filename TEXT NOT NULL,
                 captured_at TEXT, model TEXT, meta TEXT NOT NULL)""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS thermal_stats (
+                id TEXT PRIMARY KEY, etag TEXT, stats TEXT NOT NULL, computed_at TEXT NOT NULL)""")
             conn.execute("""CREATE TABLE IF NOT EXISTS thermal_geo_scan (
                 id INTEGER PRIMARY KEY CHECK (id = 1), completed_at TEXT NOT NULL,
                 indexed INTEGER NOT NULL, read INTEGER NOT NULL, failed INTEGER NOT NULL)""")
@@ -191,7 +195,9 @@ class ThermalGeoIndex:
         read = failed = 0
         try:
             known = {row["id"]: row["etag"] for row in db.execute("SELECT id, etag FROM thermal_geo")}
-            records = [r for r in self.media.thermal_records() if r["bucket"] == bucket]
+            from .photo_catalog import PhotoCatalog
+            extra = PhotoCatalog(self.media).thermal_ids()
+            records = [r for r in self.media.thermal_records(extra) if r["bucket"] == bucket]
             with db:
                 current = {r["id"] for r in records}
                 for stale in set(known) - current:

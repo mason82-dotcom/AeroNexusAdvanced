@@ -34,7 +34,8 @@ import struct
 import sys
 import threading
 
-from .minio_media_index import DjiMediaError, DjiMediaIndex
+from .minio_media_index import DjiMediaChanged, DjiMediaError, DjiMediaIndex
+from .processing_slot import ProcessingSlot
 from .thermal import ThermalError, _num, _text, _xmp_fields, jpeg_segments
 
 
@@ -44,6 +45,10 @@ class MultispectralError(ValueError):
 
 class MultispectralNotFound(MultispectralError):
     pass
+
+
+class MultispectralBusy(MultispectralError):
+    """Another band is being processed; retry later (bounded RAM on the Pi)."""
 
 
 BANDS = ("Green", "Red", "RedEdge", "NIR")
@@ -257,17 +262,21 @@ def relative_reflectance(dn, info: dict, cal: dict):
     return signal
 
 
+RECTIFY_BLOCK_ROWS = 128  # output rows per block: bounds temporary memory on the Pi
+
+
 def rectify(image, cal: dict, *, scale: int = 2):
     """Steps 3 and 4: undistort and warp into the designed image plane,
-    sampled bilinearly every ``scale`` pixels (NaN outside the sensor)."""
+    sampled bilinearly every ``scale`` pixels (NaN outside the sensor).
+
+    Processed in blocks of output rows so the float64 coordinate grids stay
+    small (full resolution in one pass needed > 1 GB of temporaries)."""
     np = _np()
     h, w = image.shape
     oh, ow = h // scale, w // scale
     cx0 = cal.get("center_x") if cal.get("center_x") is not None else w / 2
     cy0 = cal.get("center_y") if cal.get("center_y") is not None else h / 2
-    v, u = np.mgrid[0:oh, 0:ow].astype(np.float64)
-    u = (u + 0.5) * scale - 0.5
-    v = (v + 0.5) * scale - 0.5
+    inv = None
     H = cal.get("h_matrix")
     if H:
         try:
@@ -277,33 +286,41 @@ def rectify(image, cal: dict, *, scale: int = 2):
             inv = np.linalg.inv(matrix)
         except (ValueError, np.linalg.LinAlgError) as exc:
             raise MultispectralError("Band calibration HMatrix invalid or singular") from exc
-        den = inv[2, 0] * u + inv[2, 1] * v + inv[2, 2]
-        den = np.where(np.abs(den) > 1e-12, den, np.nan)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            u, v = ((inv[0, 0] * u + inv[0, 1] * v + inv[0, 2]) / den,
-                    (inv[1, 0] * u + inv[1, 1] * v + inv[1, 2]) / den)
     dw = cal.get("dewarp")
-    if dw:
-        if len(dw) != 9 or not np.isfinite(dw).all() or dw[0] <= 0 or dw[1] <= 0:
-            raise MultispectralError("Band calibration DewarpData invalid")
-        fx, fy, cx, cy, k1, k2, p1, p2, k3 = dw
-        ccx, ccy = cx0 + cx, cy0 + cy
-        x, y = (u - ccx) / fx, (v - ccy) / fy
-        r2 = x * x + y * y
-        radial = 1 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2
-        xd = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
-        yd = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
-        u, v = fx * xd + ccx, fy * yd + ccy
-    valid = np.isfinite(u) & np.isfinite(v) & (u >= 0) & (v >= 0) & (u < w - 1) & (v < h - 1)
-    u, v = np.where(valid, u, 0), np.where(valid, v, 0)
-    x0, y0 = np.floor(u).astype(np.int64), np.floor(v).astype(np.int64)
-    x0c, y0c = np.clip(x0, 0, w - 2), np.clip(y0, 0, h - 2)
-    fx_, fy_ = (u - x0c).astype(np.float32), (v - y0c).astype(np.float32)
-    a, b = image[y0c, x0c], image[y0c, x0c + 1]
-    c, d = image[y0c + 1, x0c], image[y0c + 1, x0c + 1]
-    out = (a * (1 - fx_) + b * fx_) * (1 - fy_) + (c * (1 - fx_) + d * fx_) * fy_
-    out[~valid] = np.nan
-    return out.astype(np.float32)
+    if dw and (len(dw) != 9 or not np.isfinite(dw).all() or dw[0] <= 0 or dw[1] <= 0):
+        raise MultispectralError("Band calibration DewarpData invalid")
+    out = np.empty((oh, ow), dtype=np.float32)
+    cols = (np.arange(ow, dtype=np.float64) + 0.5) * scale - 0.5
+    for r0 in range(0, oh, RECTIFY_BLOCK_ROWS):
+        r1 = min(oh, r0 + RECTIFY_BLOCK_ROWS)
+        rows = (np.arange(r0, r1, dtype=np.float64) + 0.5) * scale - 0.5
+        u, v = np.meshgrid(cols, rows)
+        if inv is not None:
+            den = inv[2, 0] * u + inv[2, 1] * v + inv[2, 2]
+            den = np.where(np.abs(den) > 1e-12, den, np.nan)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                u, v = ((inv[0, 0] * u + inv[0, 1] * v + inv[0, 2]) / den,
+                        (inv[1, 0] * u + inv[1, 1] * v + inv[1, 2]) / den)
+        if dw:
+            fx, fy, cx, cy, k1, k2, p1, p2, k3 = dw
+            ccx, ccy = cx0 + cx, cy0 + cy
+            x, y = (u - ccx) / fx, (v - ccy) / fy
+            r2 = x * x + y * y
+            radial = 1 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2
+            xd = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
+            yd = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
+            u, v = fx * xd + ccx, fy * yd + ccy
+        valid = np.isfinite(u) & np.isfinite(v) & (u >= 0) & (v >= 0) & (u < w - 1) & (v < h - 1)
+        u, v = np.where(valid, u, 0), np.where(valid, v, 0)
+        x0c = np.clip(np.floor(u).astype(np.int64), 0, w - 2)
+        y0c = np.clip(np.floor(v).astype(np.int64), 0, h - 2)
+        fx_, fy_ = (u - x0c).astype(np.float32), (v - y0c).astype(np.float32)
+        a, b = image[y0c, x0c], image[y0c, x0c + 1]
+        c, d = image[y0c + 1, x0c], image[y0c + 1, x0c + 1]
+        block = (a * (1 - fx_) + b * fx_) * (1 - fy_) + (c * (1 - fx_) + d * fx_) * fy_
+        block[~valid] = np.nan
+        out[r0:r1] = block
+    return out
 
 
 def compute_layer(layer: str, bands: dict):
@@ -493,6 +510,27 @@ class MultispectralCatalog:
         finally:
             db.close()
 
+    def assert_current(self, capture: dict) -> None:
+        """Reject a changed catalogue snapshot or a media index ahead of it.
+
+        A media-sync scan can complete before the following header scan. Comparing
+        catalogue snapshots alone would miss that interval and allow new rasters
+        to be labelled with stale capture metadata.
+        """
+        bands = capture["bands"]
+        records = self.media.get_many([band["id"] for band in bands.values()])
+        sources = []
+        for name, band in bands.items():
+            record = records.get(band["id"])
+            if record is None:
+                raise DjiMediaChanged("Band no longer indexed")
+            sources.append(f'{name}:{record["id"]}:{record["etag"]}#v{META_VERSION}')
+        source_key = PROCESSING_VERSION + "|" + "|".join(sorted(sources))
+        if source_key != capture["source_key"]:
+            raise DjiMediaChanged("Multispectral catalogue requires refresh")
+        if self.capture(capture["capture_uuid"])["source_key"] != capture["source_key"]:
+            raise DjiMediaChanged("Multispectral capture changed during processing")
+
     def summaries(self) -> dict[str, tuple[str, dict]]:
         db = self._connect(write=False)
         if db is None:
@@ -555,6 +593,7 @@ class MultispectralCatalog:
 
 class MultispectralService:
     CACHE_BANDS = 8
+    COMPUTE_WAIT_SECONDS = 60
 
     def __init__(self, media_index: DjiMediaIndex, *, settings_factory=None, client_factory=None):
         from .minio_media_index import MinioMediaSettings, minio_client
@@ -563,6 +602,8 @@ class MultispectralService:
         self._settings_factory = settings_factory or MinioMediaSettings.from_env
         self._client_factory = client_factory or minio_client
         self._lock = threading.Lock()
+        # Shared with other service instances, the media-sync process and TSDK.
+        self._compute = ProcessingSlot(self.media.root)
         self._bands: OrderedDict = OrderedDict()
         self.summary_failures: list[str] = []
 
@@ -571,27 +612,43 @@ class MultispectralService:
         if record is None:
             raise MultispectralNotFound("Band not indexed")
         key = (record["id"], record["etag"], scale)
+        cached = self._cached(key)
+        if cached is not None:
+            return cached
+        if not self._compute.acquire(timeout=self.COMPUTE_WAIT_SECONDS):
+            raise MultispectralBusy("Multispectral processing busy; retry shortly")
+        try:
+            cached = self._cached(key)  # filled by the request we waited for
+            if cached is not None:
+                return cached
+            from .minio_media_index import read_indexed_object
+            try:
+                settings = self._settings_factory()
+                data = read_indexed_object(record, settings, self._client_factory(settings),
+                                           max_bytes=MAX_BAND_BYTES)
+            except DjiMediaError:
+                raise
+            except Exception as exc:
+                raise DjiMediaError("MinIO object unavailable") from exc
+            dn, info = read_band(data)
+            cal = (band_metadata(info["xmp"]).get("calibration") or {})
+            grid = rectify(relative_reflectance(dn, info, cal), cal, scale=scale)
+            # Publish the cache entry before releasing the processing slot so
+            # the next waiter cannot start a duplicate decode.
+            with self._lock:
+                self._bands[key] = grid
+                while len(self._bands) > self.CACHE_BANDS:
+                    self._bands.popitem(last=False)
+            return grid
+        finally:
+            self._compute.release()
+
+    def _cached(self, key):
         with self._lock:
             if key in self._bands:
                 self._bands.move_to_end(key)
                 return self._bands[key]
-        from .minio_media_index import read_indexed_object
-        try:
-            settings = self._settings_factory()
-            data = read_indexed_object(record, settings, self._client_factory(settings),
-                                       max_bytes=MAX_BAND_BYTES)
-        except DjiMediaError:
-            raise
-        except Exception as exc:
-            raise DjiMediaError("MinIO object unavailable") from exc
-        dn, info = read_band(data)
-        cal = (band_metadata(info["xmp"]).get("calibration") or {})
-        grid = rectify(relative_reflectance(dn, info, cal), cal, scale=scale)
-        with self._lock:
-            self._bands[key] = grid
-            while len(self._bands) > self.CACHE_BANDS:
-                self._bands.popitem(last=False)
-        return grid
+        return None
 
     def layer(self, capture_uuid: str, layer: str, *, scale: int = 2):
         if layer not in LAYERS:
@@ -599,18 +656,21 @@ class MultispectralService:
         if scale not in (1, 2, 4):
             raise MultispectralError("scale must be 1, 2 or 4")
         capture = self.catalog.capture(capture_uuid)
+        self.catalog.assert_current(capture)
         if layer not in capture["layers"]:
             raise MultispectralError("Bands for this layer are missing in this capture")
         needed = ((({v: k for k, v in BAND_KEYS.items()}[layer[5:]],) if layer.startswith("band_")
                    else INDICES[layer][1]))
         bands = {name: self._band(capture["bands"][name]["id"], scale) for name in needed}
         grid = compute_layer(layer, bands)
+        self.catalog.assert_current(capture)
         return capture, grid
 
     def analysis(self, capture_uuid: str, layer: str, *, scale: int = 2) -> dict:
         capture, grid = self.layer(capture_uuid, layer, scale=scale)
         label, _, formula = INDICES.get(layer, (None, None, None))
         stats = layer_stats(layer, grid)
+        self.catalog.assert_current(capture)
         if layer == "ndvi":  # remembered for the map overview (local cache only)
             try:
                 self.catalog.store_summary(capture_uuid, capture["source_key"], layer, stats)
@@ -627,6 +687,40 @@ class MultispectralService:
                         "normierte Indizes nach Gl. 6 davon unabhängig",
         }
 
+
+    def stack_geotiff(self, capture_uuid: str, *, product: str = "reflectance", scale: int = 1,
+                      refine: bool = True, georef: bool = True) -> tuple[bytes, dict]:
+        """4-band GeoTIFF (NIR, G, R, RE) of one capture, see m3m_stack."""
+        from .m3m_stack import BAND_ORDER, stack_bands, stack_to_geotiff
+        from .minio_media_index import read_indexed_object
+        capture = self.catalog.capture(capture_uuid)
+        self.catalog.assert_current(capture)
+        missing = [b for b in BAND_ORDER if b not in capture["bands"]]
+        if missing:
+            raise MultispectralError("Bands missing: " + ", ".join(missing))
+        if not self._compute.acquire(timeout=self.COMPUTE_WAIT_SECONDS):
+            raise MultispectralBusy("Multispectral processing busy; retry shortly")
+        try:
+            files = {}
+            for name in BAND_ORDER:
+                record = self.media.get(capture["bands"][name]["id"])
+                if record is None:
+                    raise MultispectralNotFound("Band not indexed")
+                try:
+                    settings = self._settings_factory()
+                    files[name] = read_indexed_object(record, settings, self._client_factory(settings),
+                                                      max_bytes=MAX_BAND_BYTES)
+                except DjiMediaError:
+                    raise
+                except Exception as exc:
+                    raise DjiMediaError("MinIO object unavailable") from exc
+            result = stack_bands(files, product=product, scale=scale, refine=refine)
+            data = stack_to_geotiff(result, georef=georef)
+            self.catalog.assert_current(capture)
+        finally:
+            self._compute.release()
+        info = {k: result[k] for k in ("product", "scale", "crop", "shifts", "capture_uuid")}
+        return data, info
 
     def map_items(self) -> dict:
         """Capture positions, footprints/view cones and cached NDVI summaries."""

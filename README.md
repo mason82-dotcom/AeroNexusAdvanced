@@ -56,6 +56,12 @@ The copied `edge/.env` is private, distinct from the current FlightHub
 Compose validation, rollout and rollback. **No FlightHub 2 On-Premises
 installation** is included or implied.
 
+## GeoTIFF-/COG-Ergebnisraster
+
+`/results` ergänzt einen lokalen Ergebniskatalog mit Band-/RGB-Kachelviewer,
+NoData-Transparenz, reprojizierten XYZ-Kacheln und Kontrasteinstellungen.
+Optionales Extra `[raster]`; [Einrichtung und Grenzen](docs/raster-results.md).
+
 ## Development
 
 Requires Python 3.11+.
@@ -206,6 +212,12 @@ Phase-20-Indizes unter `var/` bleiben unangetastet; für deren Umstieg ist
 ein expliziter Scan mit dem neuen Lesezugang erforderlich.
 Details: [Phase 21 – DJI-MinIO-Medien](docs/phase-21-dji-minio-media.md).
 
+**Fotokatalog auf `/media`:** Alle DJI-JPEGs sind nach Drohne (M3E, M3T, M4T,
+M3M), Kamera und Flug geordnet. Grundlage sind die Bild-Metadaten, nicht der
+Dateiname. Die Seite zeigt eine Karte mit Aufnahmepunkten, Footprints und GSD;
+unplausible GNSS-Positionen sind markiert.
+Details: [docs/photo-catalog.md](docs/photo-catalog.md).
+
 ## CSV-Wegpunkte im Mission Studio
 
 Im Missionseditor lassen sich CSV-Dateien mit `latitude`, `longitude` und
@@ -215,7 +227,7 @@ Rückgängig/Wiederherstellen; Missionswerte bleiben erhalten, Speichern bleibt
 ein eigener Schritt. UTF-8, maximal 512 KiB und 500 ausführbare Wegpunkte.
 Anleitung und Dateivertrag: [CSV-Import](docs/mission-csv-import.md).
 
-## Thermografie (`/thermal`)
+## Thermal (`/thermal`)
 
 Eigener Web-UI-Tab für radiometrische DJI-Wärmebilder (M3T/M4T R-JPEG) aus
 dem MinIO-Index. Temperaturen nur über das DJI Thermal SDK (`dji_irp`,
@@ -224,7 +236,15 @@ Bereichsmessung, Emissionsgrad & Co., PNG/CSV/JSON-Export, Karte mit
 Aufnahmepunkten und Footprints, Overlay mit dem Sichtbild sowie PV-Inspektion
 (ΔT-Klassen und Messbedingungen, Orientierung an IEC TS 62446-3). Installation:
 `deploy/pi/install-thermal-sdk.sh <dji_thermal_sdk_v1.8_*.zip>`.
-Details: [docs/thermography.md](docs/thermography.md).
+Details: [docs/thermal.md](docs/thermal.md).
+
+## Automatischer Medien-Sync (Pilot 2 Uploads)
+
+Dienst `aeronexusadvanced-media-sync`: vollständiger Scan beim Start, danach
+nach jedem Pilot-2-Upload (Bucket-Abfrage alle 2 min oder MinIO-Ereignisse)
+Aktualisierung von Medienindex, Fotokatalog, Thermal-Geo-Index, Multispektral-Katalog,
+NDVI-Übersichten und Thermal-Messungen – nur lesend. Status auf `/media`.
+Details: [docs/media-auto-sync.md](docs/media-auto-sync.md).
 
 ## Multispektral DJI Mavic 3M (`/multispectral`)
 
@@ -232,7 +252,10 @@ Eigener Web-UI-Tab für M3M-Bänder (Grün, Rot, RedEdge, NIR) aus dem
 MinIO-Index, über die CaptureUUID zu Aufnahmen gruppiert. Verarbeitung nach
 DJIs *Mavic 3M Image Processing Guide* (Schwarzwert, Gain, Belichtung,
 Vignettierung, Entzerrung, HMatrix-Ausrichtung, Sonnenlichtsensor); NDVI,
-GNDVI, NDRE, LCI, CIR-Falschfarben, Messwerkzeuge und Export. Katalog:
+GNDVI, NDRE, LCI, CIR-Falschfarben, Messwerkzeuge und Export; 4-Band-GeoTIFF
+für QGIS (NIR, G, R, RE; nach mirrormapper/m3m-image-stacking, plus
+Feinausrichtung und Nadir-Georeferenz), auch für lokale Ordner:
+`python -m aeronexus.m3m_stack ORDNER -o AUSGABE`. Katalog:
 `.venv/bin/python -m aeronexus.multispectral`; Abhängigkeit
 `pip install -e '.[multispectral]'`. Details: [docs/multispectral.md](docs/multispectral.md).
 
@@ -276,6 +299,17 @@ certificate verification.
 docker build -t aeronexusadvanced:dev .
 docker run --rm -p 127.0.0.1:8000:8000 aeronexusadvanced:dev
 ```
+
+## Optional Metashape orthomosaic workflow
+
+The Multispectral page can package 3–100 selected M3M captures for an external
+Agisoft Metashape Professional worker. The Pi exports read-only copies; it does
+not install Metashape or start reconstruction. RGB and independent MS raw-band
+mosaics are supported. Raw-band outputs are not calibrated reflectance/NDVI
+products and tiled GeoTIFFs are not automatically certified COGs.
+
+See [Metashape integration](docs/metashape-integration.md) for the separately
+installed GeoSense processor, license requirements, export limits and worker use.
 
 ## Security limitations
 

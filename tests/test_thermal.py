@@ -1,4 +1,4 @@
-"""Thermography: R-JPEG parsing, DJI Thermal SDK adapter (fake dji_irp), service and API."""
+"""Thermal: R-JPEG parsing, DJI Thermal SDK adapter (fake dji_irp), service and API."""
 from array import array
 from datetime import datetime, timezone
 import importlib
@@ -138,6 +138,7 @@ print("Test done with return code 0")
 
 @pytest.fixture
 def sdk_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("AERONEXUS_WORKSPACE_DIR", str(tmp_path / "ws"))
     home = tmp_path / "tsdk"
     (home / "bin").mkdir(parents=True)
     tool = home / "bin" / "dji_irp"
@@ -365,7 +366,7 @@ def test_thermal_page_is_static_and_locked_down(client):
     assert "connect-src 'self'" in csp and "frame-ancestors 'none'" in csp
     html = render_thermal_page()
     assert "Authorization" not in html and "Bearer " not in html
-    assert 'aria-current="page">Thermografie' in html
+    assert 'aria-current="page">Thermal' in html
     assert "/api/v1/thermal/images" in html and not re.search(r"\d{14}_\d{4}_T", html)
 
 

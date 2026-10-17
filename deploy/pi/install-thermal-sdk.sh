@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install the DJI Thermal SDK (TSDK, tested v1.8 20250829) for the AeroNexusAdvanced
-# thermography module, without root and outside the repository.
+# thermal module (/thermal), without root and outside the repository.
 #
 #   deploy/pi/install-thermal-sdk.sh ~/Downloads/dji_thermal_sdk_v1.8_<date>.zip
 #

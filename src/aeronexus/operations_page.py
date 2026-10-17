@@ -126,9 +126,9 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <a href="/studio">Mission Studio ↗</a>
 <a href="/status">Live-Status ↗</a>
 <a href="/media">DJI Medien ↗</a>
-<a href="/thermal">Thermografie ↗</a>
+<a href="/thermal">Thermal ↗</a>
 <a href="/multispectral">Multispektral ↗</a>
-</nav>
+<a href="/results">Ergebnisraster</a></nav>
 <span class="header-state" id="connection" role="status" aria-live="polite">Lade lokalen FlightHub-Status…</span>
 </header>
 <div class="layout">

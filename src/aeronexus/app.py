@@ -8,13 +8,17 @@ from io import BytesIO
 from urllib.parse import unquote
 from contextlib import asynccontextmanager
 import os
+import re
 import sqlite3
 import sys
 import time
+import threading
+from typing import Annotated, Literal
 from enum import Enum
 from secrets import compare_digest
 
 from fastapi import FastAPI, Header, HTTPException, Query, Response, Request, WebSocket
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import datetime
@@ -36,10 +40,18 @@ from .minio_media_index import (DjiMediaChanged, DjiMediaIndex, DjiMediaError, M
 from .geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
 from .thermal import ThermalChanged, ThermalError, ThermalNotFound, ThermalService
 from .thermal_page import render_thermal_page
-from .multispectral import (LAYERS, MultispectralError, MultispectralNotFound,
+from .multispectral import (LAYERS, MultispectralBusy, MultispectralError, MultispectralNotFound,
                             MultispectralService)
 from .multispectral_page import render_multispectral_page
-from .thermal_geo import ThermalGeoIndex
+from .thermal_flights import ThermalFlights, ThermalJobRunning
+from .media_sync import read_status as read_media_sync_status
+from .photo_catalog import PhotoCatalog
+from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, MetashapePackageNotFound,
+                               list_packages, package_path, prepare_package, remove_package)
+from .raster_results import (RasterResults, RasterError, RasterUnavailable,
+                             RasterNotFound, RasterChanged, RasterBusy, _libraries)
+from .results_page import render_results_page
+from .multispectral_report import build_report, report_csv
 from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
 from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
@@ -95,6 +107,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AeroNexusAdvanced", version="0.1.0", lifespan=lifespan)
 app.state.cloud_api2_bridge = None
+try:  # Starlette >= 0.46 can skip media and event streams; older versions are left uncompressed
+    from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES as _GZIP_SKIP
+except ImportError:
+    _GZIP_SKIP = None
+if _GZIP_SKIP is not None:
+    # JSON maps and pages compress about tenfold; originals and downloads stay byte-identical.
+    app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=5,
+                       exclude_content_types=_GZIP_SKIP + (
+                           "image/*", "application/octet-stream",
+                           "application/vnd.google-earth.kmz", "model/stl"))
 app.state.task_media_cache = {}
 app.state.studio_event_clients = 0
 app.state.status_runtime = StatusRuntime(
@@ -212,6 +234,15 @@ def dji_media_summary(request: Request, response: Response,
         raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
 
 
+@app.get("/api/v1/media/sync")
+def media_sync_status(request: Request, response: Response,
+                      authorization: str | None = Header(default=None)) -> dict:
+    """State of the automatic catalogue sync after Pilot 2 uploads (read-only)."""
+    workspace = _studio_workspace(request, authorization)
+    _no_cache(response)
+    return read_media_sync_status(workspace.root)
+
+
 @app.get("/api/v1/dji/media")
 def dji_media_list(request: Request, response: Response,
                    authorization: str | None = Header(default=None),
@@ -229,6 +260,85 @@ def dji_media_list(request: Request, response: Response,
     except (OSError, sqlite3.Error, WorkspaceError, MediaIndexError) as exc:
         raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
 
+
+
+_PHOTO_FILTER = re.compile(r"[A-Za-z0-9_]{1,32}\Z")
+_PHOTO_ID = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _photo_catalog(request: Request, authorization: str | None) -> PhotoCatalog:
+    workspace = _studio_workspace(request, authorization)
+    return PhotoCatalog(DjiMediaIndex(workspace.root))
+
+
+def _photo_filters(model: str | None, camera: str | None) -> tuple[str | None, str | None]:
+    for value in (model, camera):
+        if value is not None and not _PHOTO_FILTER.fullmatch(value):
+            raise HTTPException(status_code=422, detail="Invalid model or camera filter")
+    return model or None, camera or None
+
+
+@app.get("/api/v1/photos/summary")
+def photo_summary(request: Request, response: Response,
+                  authorization: str | None = Header(default=None)) -> dict:
+    """Aircraft models and cameras of all indexed DJI JPEGs (from their own metadata)."""
+    catalog = _photo_catalog(request, authorization)
+    _no_cache(response)
+    try:
+        return catalog.summary()
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
+
+
+@app.get("/api/v1/photos/flights")
+def photo_flights(request: Request, response: Response,
+                  model: str | None = Query(default=None, max_length=32),
+                  camera: str | None = Query(default=None, max_length=32),
+                  authorization: str | None = Header(default=None)) -> dict:
+    catalog = _photo_catalog(request, authorization)
+    model, camera = _photo_filters(model, camera)
+    _no_cache(response)
+    try:
+        return {"flights": catalog.flights(model=model, camera=camera)}
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
+
+
+@app.get("/api/v1/photos")
+def photo_list(request: Request, response: Response,
+               model: str | None = Query(default=None, max_length=32),
+               camera: str | None = Query(default=None, max_length=32),
+               flight: str | None = Query(default=None, max_length=64),
+               limit: int = Query(default=50, ge=1, le=200),
+               offset: int = Query(default=0, ge=0, le=1_000_000),
+               authorization: str | None = Header(default=None)) -> dict:
+    catalog = _photo_catalog(request, authorization)
+    model, camera = _photo_filters(model, camera)
+    if flight is not None and not _PHOTO_ID.fullmatch(flight):
+        raise HTTPException(status_code=422, detail="Invalid flight id")
+    _no_cache(response)
+    try:
+        return catalog.list(model=model, camera=camera, flight=flight, limit=limit, offset=offset)
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
+
+
+@app.get("/api/v1/photos/map")
+def photo_map(request: Request, response: Response,
+              model: str | None = Query(default=None, max_length=32),
+              camera: str | None = Query(default=None, max_length=32),
+              flight: str | None = Query(default=None, max_length=64),
+              authorization: str | None = Header(default=None)) -> dict:
+    """Capture positions and flat-terrain footprints derived from EXIF focal length."""
+    catalog = _photo_catalog(request, authorization)
+    model, camera = _photo_filters(model, camera)
+    if flight is not None and not _PHOTO_ID.fullmatch(flight):
+        raise HTTPException(status_code=422, detail="Invalid flight id")
+    _no_cache(response)
+    try:
+        return catalog.map_items(model=model, camera=camera, flight=flight)
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
 
 @app.get("/api/v1/flighthub/catalog")
 async def flighthub_catalog(request: Request, response: Response,
@@ -358,7 +468,7 @@ def operations_page(request: Request, response: Response) -> str:
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' data: blob: https://tile.openstreetmap.org "
+        "img-src 'self' data: blob: https://cdn.jsdelivr.net https://tile.openstreetmap.org "
         "https://server.arcgisonline.com; "
         "connect-src 'self' https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
@@ -374,9 +484,10 @@ def dji_media_page(request: Request, response: Response) -> str:
     _no_cache(response)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; script-src 'unsafe-inline'; "
-        "style-src 'unsafe-inline'; connect-src 'self'; "
-        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+        "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
     return render_dji_media_page()
 
@@ -417,7 +528,7 @@ def studio_page(request: Request, response: Response) -> str:
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' blob: data: https://tile.openstreetmap.org "
+        "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org "
         "https://server.arcgisonline.com; "
         f"connect-src 'self' {_studio_socket_origin()}https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "media-src 'self' blob:; frame-ancestors 'none'; "
@@ -792,7 +903,7 @@ def studio_terrain_stl(grid:TerrainGrid,request:Request,
                              "Cache-Control":"no-store","X-Content-Type-Options":"nosniff"})
 
 
-# Thermography: DJI R-JPEGs from the read-only MinIO index, temperatures only
+# Thermal: DJI R-JPEGs from the read-only MinIO index, temperatures only
 # from the DJI Thermal SDK (separate process). Originals are never modified.
 def _thermal_service(request: Request, authorization: str | None) -> ThermalService:
     workspace = _studio_workspace(request, authorization)
@@ -838,7 +949,7 @@ def thermal_page(request: Request, response: Response) -> str:
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' blob: data: https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "connect-src 'self'; "
         "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
@@ -851,7 +962,7 @@ def thermal_status(request: Request, response: Response,
     service = _thermal_service(request, authorization)
     _no_cache(response)
     try:
-        listing = service.index.list_thermal(limit=1)
+        listing = service.index.list_thermal(limit=1, extra_ids=service.extra_thermal_ids())
     except (DjiMediaError, OSError, sqlite3.Error):
         listing = {"total": None, "last_scanned_at": None}
     return {"sdk": service.sdk_status(), "thermal_images": listing["total"],
@@ -872,16 +983,87 @@ def thermal_images(request: Request, response: Response,
         raise _thermal_http_error(exc) from exc
 
 
+def _thermal_flights(request: Request, authorization: str | None) -> ThermalFlights:
+    service = _thermal_service(request, authorization)
+    flights = getattr(service, "flights", None)
+    if flights is None:
+        flights = service.flights = ThermalFlights(service)
+    return flights
+
+
+_GEO_ERRORS = (DjiMediaError, OSError, sqlite3.Error, ValueError)
+
+
 @app.get("/api/v1/thermal/map")
 def thermal_map(request: Request, response: Response,
                 authorization: str | None = Header(default=None)) -> dict:
-    """Positions and near-nadir footprints from the private thermal geo index."""
-    service = _thermal_service(request, authorization)
+    """Positions, near-nadir footprints, flight ids and cached per-image stats."""
+    flights = _thermal_flights(request, authorization)
     _no_cache(response)
     try:
-        return ThermalGeoIndex(service.index).map_items()
-    except (DjiMediaError, OSError, sqlite3.Error, ValueError) as exc:
+        return flights.map_items()
+    except _GEO_ERRORS as exc:
         raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
+@app.get("/api/v1/thermal/flights")
+def thermal_flights(request: Request, response: Response,
+                    authorization: str | None = Header(default=None)) -> dict:
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    try:
+        return flights.flights()
+    except _GEO_ERRORS as exc:
+        raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
+@app.get("/api/v1/thermal/flights/{flight_id}")
+def thermal_flight(flight_id: str, request: Request, response: Response,
+                   limit: int = Query(default=200, ge=1, le=1000),
+                   authorization: str | None = Header(default=None)) -> dict:
+    """Hotspot ranking of one flight (images sorted by maximum temperature)."""
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    try:
+        return flights.flight_detail(flight_id, limit=limit)
+    except ThermalNotFound as exc:
+        raise HTTPException(status_code=404, detail="Unknown flight") from exc
+    except _GEO_ERRORS as exc:
+        raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
+@app.post("/api/v1/thermal/flights/{flight_id}/analyze", status_code=202)
+def thermal_flight_analyze(flight_id: str, request: Request, response: Response,
+                           authorization: str | None = Header(default=None)) -> dict:
+    """Start the background SDK measurement of all not yet measured images.
+
+    Writes only the private local summary cache; nothing is written to MinIO/DJI."""
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    try:
+        return flights.start(flight_id)
+    except ThermalNotFound as exc:
+        raise HTTPException(status_code=404, detail="Unknown flight") from exc
+    except ThermalJobRunning as exc:
+        raise HTTPException(status_code=409, detail="A flight analysis is already running") from exc
+    except _GEO_ERRORS as exc:
+        raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
+@app.get("/api/v1/thermal/jobs/current")
+def thermal_job(request: Request, response: Response,
+                authorization: str | None = Header(default=None)) -> dict:
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    return flights.job()
+
+
+@app.post("/api/v1/thermal/jobs/current/cancel")
+def thermal_job_cancel(request: Request, response: Response,
+                       authorization: str | None = Header(default=None)) -> dict:
+    flights = _thermal_flights(request, authorization)
+    _no_cache(response)
+    return flights.cancel()
 
 
 @app.get("/api/v1/thermal/images/{media_id}/analysis")
@@ -971,12 +1153,147 @@ def _ms_http_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=404, detail="Multispectral capture or band not indexed")
     if isinstance(exc, DjiMediaChanged):
         return HTTPException(status_code=409, detail="DJI media changed; reindex required")
+    if isinstance(exc, MultispectralBusy):
+        return HTTPException(status_code=503, detail="Multispectral processing busy",
+                             headers={"Retry-After": "10"})
     if isinstance(exc, MultispectralError):
         return HTTPException(status_code=422, detail=str(exc))
     return HTTPException(status_code=503, detail="DJI media unavailable")
 
 
 _MS_ERRORS = (MultispectralError, DjiMediaError, OSError, sqlite3.Error)
+_MS_REPORT_SLOT = threading.BoundedSemaphore(1)
+
+
+class MultispectralReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    capture_uuids: list[Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]] = Field(min_length=1, max_length=20)
+    layers: list[Literal["ndvi", "ndre", "gndvi", "lci"]] = Field(
+        default_factory=lambda: ["ndvi", "ndre", "gndvi", "lci"], min_length=1, max_length=4)
+    scale: Literal[1, 2, 4] = 4
+    ndvi_threshold: float | None = Field(default=None, ge=-1, le=1, allow_inf_nan=False)
+
+
+@app.post("/api/v1/multispectral/reports")
+def multispectral_report(body: MultispectralReportRequest, request: Request, response: Response,
+                         format: Literal["json", "csv"] = "json",
+                         authorization: str | None = Header(default=None)):
+    service = _ms_service(request, authorization)
+    _no_cache(response)
+    if not _MS_REPORT_SLOT.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="Ein Serienbericht wird bereits berechnet. Erneut versuchen.",
+                            headers={"Retry-After": "5"})
+    try:
+        report = build_report(service, body.capture_uuids, body.layers, scale=body.scale,
+                              threshold=body.ndvi_threshold)
+        if format == "csv":
+            result = Response(report_csv(report), media_type="text/csv; charset=utf-8",
+                              headers={"Content-Disposition": 'attachment; filename="m3m_serienbericht.csv"'})
+            _no_cache(result)
+            return result
+        return report
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+    finally:
+        _MS_REPORT_SLOT.release()
+
+
+def _raster_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, RasterNotFound):
+        return HTTPException(404, str(exc))
+    if isinstance(exc, RasterChanged):
+        return HTTPException(409, str(exc))
+    if isinstance(exc, (RasterBusy, RasterUnavailable)):
+        return HTTPException(503, str(exc))
+    if isinstance(exc, RasterError):
+        return HTTPException(422, str(exc))
+    return HTTPException(503, "Ergebnisraster nicht verfügbar; Datei und Katalog prüfen.")
+
+
+@app.get("/results", response_class=HTMLResponse, include_in_schema=False)
+def results_page(request: Request, response: Response) -> str:
+    if lan_mode_enabled():
+        require_lan(request)
+    _no_cache(response)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
+        "frame-ancestors 'none'; form-action 'none'"
+    )
+    return render_results_page()
+
+
+@app.get("/api/v1/results")
+def raster_results_list(request: Request, response: Response,
+                        q: str = Query(default="", max_length=120),
+                        limit: int = Query(default=50, ge=1, le=100),
+                        offset: int = Query(default=0, ge=0),
+                        authorization: str | None = Header(default=None)) -> dict:
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        service = RasterResults()
+        result = service.list(query=q, limit=limit, offset=offset)
+        try:
+            _libraries()
+            result["raster_available"] = True
+        except RasterUnavailable:
+            result["raster_available"] = False
+        return result
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
+
+
+@app.post("/api/v1/results/scan")
+def raster_results_scan(request: Request, response: Response,
+                        authorization: str | None = Header(default=None)) -> dict:
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        return RasterResults().scan()
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
+
+
+@app.get("/api/v1/results/{result_id}")
+def raster_result(result_id: str, request: Request, response: Response,
+                  authorization: str | None = Header(default=None)) -> dict:
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        return RasterResults().get(result_id)[0]
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
+
+
+@app.get("/api/v1/results/{result_id}/statistics")
+def raster_statistics(result_id: str, request: Request, response: Response,
+                      band: int = Query(default=1, ge=1, le=16), v: str | None = None,
+                      authorization: str | None = Header(default=None)) -> dict:
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        return RasterResults().statistics(result_id, band, v)
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
+
+
+@app.get("/api/v1/results/{result_id}/tiles/{z}/{x}/{y}.png")
+def raster_tile(result_id: str, z: int, x: int, y: int, request: Request,
+                band: int = Query(default=1, ge=1, le=16), mode: str = "scalar",
+                palette: str = "viridis", low: float = 0., high: float = 1.,
+                v: str | None = None,
+                authorization: str | None = Header(default=None)) -> Response:
+    _require_viewer_access(request, authorization)
+    try:
+        png = RasterResults().tile(result_id, z, x, y, band=band, mode=mode,
+                                   palette=palette, low=low, high=high, version=v)
+        return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store",
+                        "X-Content-Type-Options": "nosniff"})
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
 
 
 @app.get("/multispectral", response_class=HTMLResponse, include_in_schema=False)
@@ -988,7 +1305,7 @@ def multispectral_page(request: Request, response: Response) -> str:
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' blob: data: https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
     return render_multispectral_page()
@@ -1033,6 +1350,30 @@ def multispectral_layer(capture_uuid: str, layer: str, request: Request, respons
         raise _ms_http_error(exc) from exc
 
 
+@app.get("/api/v1/multispectral/captures/{capture_uuid}/stack.tif")
+def multispectral_stack(capture_uuid: str, request: Request,
+                        product: str = Query(default="reflectance", pattern="^(reflectance|dn)$"),
+                        scale: int = Query(default=1, ge=1, le=4),
+                        refine: bool = Query(default=True), georef: bool = Query(default=True),
+                        authorization: str | None = Header(default=None)) -> Response:
+    """4-band GeoTIFF for QGIS (band order NIR, Green, Red, RedEdge)."""
+    service = _ms_service(request, authorization)
+    if scale not in (1, 2, 4):
+        raise HTTPException(status_code=422, detail="scale must be 1, 2 or 4")
+    try:
+        data, info = service.stack_geotiff(capture_uuid, product=product, scale=scale,
+                                           refine=refine, georef=georef)
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+    name = f"m3m_{info['capture_uuid'][:8]}_{product}_aligned.tif"
+    shifts = ";".join(f"{b}:{s['dy_px']},{s['dx_px']}{'' if s['applied'] else '(n/a)'}"
+                      for b, s in info["shifts"].items())
+    return Response(content=data, media_type="image/tiff", headers={
+        "Content-Disposition": f'attachment; filename="{name}"',
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer", "X-M3M-Residual-Shifts": shifts or "not computed"})
+
+
 @app.get("/api/v1/multispectral/captures/{capture_uuid}/layers/{layer}/grid")
 def multispectral_grid(capture_uuid: str, layer: str, request: Request,
                        scale: int = Query(default=2, ge=1, le=4),
@@ -1051,6 +1392,68 @@ def multispectral_grid(capture_uuid: str, layer: str, request: Request,
                              "X-Grid-Width": str(grid.shape[1]), "X-Grid-Height": str(grid.shape[0])})
 
 
+class MetashapePackageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    capture_uuids: list[str] = Field(min_length=3, max_length=100)
+    mode: str = Field(default="rgb", pattern="^(rgb|multispectral)$")
+
+
+@app.get("/api/v1/multispectral/metashape/packages")
+def metashape_packages(request: Request, response: Response,
+                       authorization: str | None = Header(default=None)) -> dict:
+    service = _ms_service(request, authorization)
+    _no_cache(response)
+    try:
+        return {"packages": list_packages(service), "execution": "external_worker"}
+    except (OSError, WorkspaceError) as exc:
+        raise HTTPException(503, "Private export workspace unavailable") from exc
+
+
+@app.post("/api/v1/multispectral/metashape/packages", status_code=201)
+def metashape_prepare_package(body: MetashapePackageRequest, request: Request, response: Response,
+                              authorization: str | None = Header(default=None)) -> dict:
+    service = _ms_service(request, authorization)
+    _no_cache(response)
+    try:
+        return prepare_package(service, body.capture_uuids, body.mode)
+    except MetashapeExportBusy as exc:
+        raise HTTPException(503, str(exc), headers={"Retry-After": "10"}) from exc
+    except MetashapeExportError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+    except WorkspaceError as exc:
+        raise HTTPException(503, "Private export workspace unavailable") from exc
+
+
+@app.get("/api/v1/multispectral/metashape/packages/{job_id}/file")
+def metashape_download_package(job_id: str, request: Request,
+                               authorization: str | None = Header(default=None)):
+    service = _ms_service(request, authorization)
+    try:
+        path = package_path(service, job_id)
+    except MetashapePackageNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (OSError, WorkspaceError) as exc:
+        raise HTTPException(503, "Private export workspace unavailable") from exc
+    return FileResponse(path, media_type="application/zip", filename=f"aeronexus-metashape-{job_id}.zip",
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                                 "Referrer-Policy": "no-referrer"})
+
+
+@app.delete("/api/v1/multispectral/metashape/packages/{job_id}", status_code=204)
+def metashape_delete_package(job_id: str, request: Request,
+                             authorization: str | None = Header(default=None)) -> None:
+    service = _ms_service(request, authorization)
+    try:
+        remove_package(service, job_id)
+    except MetashapePackageNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (OSError, WorkspaceError) as exc:
+        raise HTTPException(503, "Private export workspace unavailable") from exc
+
+
 @app.post("/api/v1/flight/command", status_code=403)
 def blocked_flight_command() -> None:
     raise HTTPException(status_code=403, detail="Flight commands disabled by default")
+

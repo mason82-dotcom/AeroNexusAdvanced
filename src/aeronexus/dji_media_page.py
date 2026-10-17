@@ -11,6 +11,7 @@ HTML = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <title>AeroNexusAdvanced · DJI Medienindex</title>
 <style>
 :root{font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark;
@@ -47,6 +48,15 @@ td:first-child{max-width:430px;overflow-wrap:anywhere}
 .ok{color:#83e5ba}.warn{color:#f1ca82}.error{color:#ffb0bb}
 .pager{display:flex;gap:12px;align-items:center;justify-content:end;padding-top:15px}
 footer{color:#94adc7;font-size:12px;padding:10px 0}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.chip{border-radius:18px;padding:6px 12px}.chip[aria-pressed="true"]{background:#2d6a96;border-color:#87d6ff}
+.photo-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:14px;align-items:start}
+@media (max-width:900px){.photo-grid{grid-template-columns:minmax(0,1fr)}}
+#photo-map{height:460px;border-radius:10px;border:1px solid #3c5470;background:#0e2035}
+#photo-table table{min-width:560px}#photo-table td,#photo-table th{padding:8px}
+#photo-table td:nth-child(n+3){white-space:nowrap}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#bbcee4;margin-top:6px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 </style>
 </head>
 <body>
@@ -56,19 +66,40 @@ footer{color:#94adc7;font-size:12px;padding:10px 0}
 <h1>DJI-MinIO-Medienindex</h1></div>
 <nav aria-label="Bereiche"><a href="/operations">Operations Center</a>
 <a href="/status">Live-Status</a><a href="/studio">Mission Studio</a>
-<a href="/thermal">Thermografie</a><a href="/multispectral">Multispektral</a></nav>
+<a href="/thermal">Thermal</a><a href="/multispectral">Multispektral</a><a href="/results">Ergebnisraster</a></nav>
 </header>
 <p>Schreibgeschützter Index der DJI-Pilot-2-Uploads. Originale verbleiben in MinIO.
-Aufnahmezeit, GPS-EXIF, Wärmebild- und Multispektraleigenschaften werden hier noch
-nicht aus Datei-Inhalten ausgewertet. „Upload“ bezeichnet den Zeitstempel des Objektspeichers.</p>
+Der Fotokatalog liest Drohnenmodell, Kamera, Aufnahmezeit, Position und Gimbal aus den
+Bild-Metadaten (nur Kopfbereich, keine Seriennummern). „Upload“ bezeichnet den Zeitstempel des Objektspeichers.</p>
 <section class="card">
 <div class="metrics">
 <div class="metric"><span>Indexzustand</span><b id="index-state">Lade…</b></div>
 <div class="metric"><span>Medienobjekte</span><b id="index-total">–</b></div>
 <div class="metric"><span>Gesamtvolumen</span><b id="index-bytes">–</b></div>
 <div class="metric"><span>Letzter Scan</span><b id="index-scanned" style="font-size:15px">–</b></div>
+<div class="metric"><span>Auto-Sync (Pilot 2 Uploads)</span><b id="sync-state" style="font-size:15px">–</b></div>
 </div>
 <div class="sub" id="kind-counts" aria-live="polite">Metadaten werden geladen…</div>
+</section>
+<section class="card" id="photo-catalog">
+<div class="eyebrow">Fotokatalog · aus Bild-Metadaten</div>
+<h2>DJI-Fotos nach Drohne, Kamera und Flug</h2>
+<div class="chips" id="photo-models" role="group" aria-label="Drohnenmodell"></div>
+<div class="controls">
+<label>Kamera<select id="photo-camera"><option value="">Alle Kameras</option></select></label>
+<label>Flug<select id="photo-flight"><option value="">Alle Flüge</option></select></label>
+<label><span><input id="photo-footprints" type="checkbox" checked style="min-width:0"> Footprints</span></label>
+</div>
+<div id="photo-state" class="sub" role="status" aria-live="polite">Fotokatalog wird geladen…</div>
+<div class="photo-grid">
+<div><div id="photo-map" aria-label="Karte der Aufnahmepunkte"></div>
+<div class="legend" id="photo-legend"></div></div>
+<div><div class="scroller" id="photo-table"><table>
+<thead><tr><th>Aufnahme</th><th>Kamera</th><th>Höhe</th><th>Pitch</th><th>Brennw. (KB)</th><th></th></tr></thead>
+<tbody id="photo-rows"></tbody></table></div>
+<div class="pager"><button id="photo-prev" type="button">Zurück</button><span id="photo-page">–</span>
+<button id="photo-next" type="button">Weiter</button></div></div>
+</div>
 </section>
 <section class="card">
 <div class="eyebrow">MinIO · nur lesen</div>
@@ -100,9 +131,10 @@ nicht aus Datei-Inhalten ausgewertet. „Upload“ bezeichnet den Zeitstempel de
 <button id="next" type="button">Weiter</button>
 </div>
 </section>
-<footer>Der Index enthält nur Metadaten. Diese Ansicht lädt keine Medienbytes,
-veröffentlicht keine Objektschlüssel und führt keine Schreiboperationen aus.</footer>
+<footer>Der Index enthält nur Metadaten. Originale werden nur über „Ansehen“ geladen;
+diese Ansicht veröffentlicht keine Objektschlüssel und führt keine Schreiboperationen aus.</footer>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
@@ -150,6 +182,14 @@ async function refresh(){
     $("index-total").textContent=String(summary.total??0);
     $("index-bytes").textContent=fmtBytes(summary.total_bytes);
     $("index-scanned").textContent=fmtTime(summary.scanned_at);
+    getJSON("/api/v1/media/sync").then(sync=>{
+      const labels={idle:"Bereit",running:"Aktualisiert…",upload_in_progress:"Upload läuft…",
+        starting:"Startet…",not_running:"Nicht aktiv",unreadable:"Unbekannt"};
+      const mode=sync.mode==="events"?"Ereignisse":sync.mode==="poll"?"Abfrage alle 2 min":"";
+      const last=sync.last_run&&sync.last_run.finished_at?" · zuletzt "+fmtTime(sync.last_run.finished_at):"";
+      $("sync-state").textContent=(labels[sync.state]||sync.state)+(mode?" · "+mode:"")+last;
+      $("sync-state").className=sync.state==="not_running"?"warn":(sync.last_run&&sync.last_run.ok===false?"error":"ok");
+    }).catch(()=>{$("sync-state").textContent="–";});
     $("kind-counts").textContent=Object.entries(summary.kinds||{}).map(
       ([kind,count])=>labelKind(kind)+": "+count).join(" · ")||"Keine Mediendateien indiziert";
     total=Number(data.total)||0;
@@ -183,6 +223,151 @@ $("search").addEventListener("keydown",event=>{
 });
 $("previous").addEventListener("click",()=>{offset=Math.max(0,offset-limit);refresh();});
 $("next").addEventListener("click",()=>{if(offset+limit<total){offset+=limit;refresh();}});
+// ---------------------------------------------------------------- photo catalogue
+const CAMERA_COLORS={WideCamera:"#4fc3f7",ZoomCamera:"#ffb74d",InfraredCamera:"#ef5350",
+  MS_CAMERA:"#9ccc65",VisibleCamera:"#ce93d8"};
+const photoLimit=25;
+let photo={model:"",camera:"",flight:"",offset:0,total:0,summary:null,names:{}},
+  photoMap=null,photoLayer=null,photoGen=0;
+const camColor=c=>CAMERA_COLORS[c]||"#cfd8dc";
+const camName=c=>photo.names[c]||c||"Unbekannt";
+const fmtNum=(v,d,unit)=>typeof v==="number"&&Number.isFinite(v)?v.toFixed(d)+(unit||""):"–";
+function photoQuery(extra){
+  const p=new URLSearchParams(extra||{});
+  if(photo.model)p.set("model",photo.model);
+  if(photo.camera)p.set("camera",photo.camera);
+  if(photo.flight)p.set("flight",photo.flight);
+  return p.toString();
+}
+function option(select,value,text){
+  const o=document.createElement("option");o.value=value;o.textContent=text;select.appendChild(o);
+}
+function renderModels(){
+  const box=$("photo-models");box.replaceChildren();
+  for(const m of photo.summary.models){
+    const b=document.createElement("button");b.type="button";b.className="chip";
+    b.textContent=m.model+" · "+m.name+" ("+m.total+")";
+    b.setAttribute("aria-pressed",String(m.model===photo.model));
+    b.addEventListener("click",()=>selectModel(m.model));box.appendChild(b);
+  }
+  const model=photo.summary.models.find(m=>m.model===photo.model);
+  const cam=$("photo-camera");cam.replaceChildren();option(cam,"","Alle Kameras");
+  for(const [c,n] of Object.entries(model?model.cameras:{}))option(cam,c,camName(c)+" ("+n+")");
+  cam.value=photo.camera;
+  $("photo-legend").replaceChildren(...Object.keys(model?model.cameras:{}).map(c=>{
+    const s=document.createElement("span"),d=document.createElement("i");
+    d.className="dot";d.style.background=camColor(c);s.append(d,camName(c));return s;}));
+}
+async function loadFlights(gen){
+  const data=await getJSON("/api/v1/photos/flights?"+new URLSearchParams(
+    Object.fromEntries([["model",photo.model],["camera",photo.camera]].filter(e=>e[1]))).toString());
+  if(gen!==photoGen)return;
+  const sel=$("photo-flight");sel.replaceChildren();option(sel,"","Alle Flüge ("+data.flights.length+")");
+  for(const f of data.flights){
+    const start=new Date(Date.parse(f.start)),end=new Date(Date.parse(f.end));
+    const when=Number.isFinite(start.getTime())?start.toLocaleString("de-DE",{dateStyle:"short",timeStyle:"short"})+
+      "–"+end.toLocaleTimeString("de-DE",{timeStyle:"short"}):"ohne Zeit";
+    option(sel,f.id,when+" · "+f.images+(f.images===1?" Bild":" Bilder")+(f.median_altitude_m!=null?" · "+fmtNum(f.median_altitude_m,0," m"):""));
+  }
+  if(!data.flights.some(f=>f.id===photo.flight))photo.flight="";
+  sel.value=photo.flight;
+}
+function initPhotoMap(){
+  if(photoMap||typeof L==="undefined")return;
+  photoMap=L.map("photo-map",{preferCanvas:true}).setView([51.1,10.4],6);
+  const sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:22,maxNativeZoom:19,attribution:"Esri World Imagery"});
+  const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:19,attribution:"© OpenStreetMap"});
+  sat.addTo(photoMap);L.control.layers({"Satellit":sat,"Straßenkarte":osm}).addTo(photoMap);
+  photoLayer=L.layerGroup().addTo(photoMap);
+}
+function popup(it){
+  const box=document.createElement("div"),title=document.createElement("b"),info=document.createElement("div");
+  title.textContent=it.name;
+  info.textContent=[it.captured_at?fmtTime(it.captured_at):null,camName(it.camera),
+    "Höhe "+fmtNum(it.relative_altitude_m,1," m"),"Pitch "+fmtNum(it.gimbal_pitch_deg,0,"°"),
+    it.ground_sample_cm?"GSD "+fmtNum(it.ground_sample_cm,2," cm/px"):null,
+    it.position_outlier?"Position unplausibel (> 20 km vom Flug)":null].filter(Boolean).join(" · ");
+  const link=document.createElement("a");link.href="/api/v1/studio/dji-media/"+encodeURIComponent(it.id)+"/file";
+  link.target="_blank";link.rel="noopener noreferrer";link.textContent="Original ansehen";
+  box.append(title,info,link);return box;
+}
+async function loadPhotoMap(gen){
+  initPhotoMap();
+  if(!photoMap)return null;
+  const data=await getJSON("/api/v1/photos/map?"+photoQuery());
+  if(gen!==photoGen)return null;
+  photoLayer.clearLayers();
+  const feet=$("photo-footprints").checked;
+  for(const it of data.items){
+    const color=camColor(it.camera);
+    if(feet&&it.footprint&&!it.position_outlier)photoLayer.addLayer(L.polygon(it.footprint,{color,weight:1,fillOpacity:.06,interactive:false}));
+    photoLayer.addLayer(L.circleMarker([it.latitude,it.longitude],it.position_outlier?
+      {radius:6,color:"#ffb0bb",weight:2,dashArray:"3 3",fillColor:color,fillOpacity:.4}:
+      {radius:5,color:"#0b1323",weight:1,fillColor:color,fillOpacity:.95}).bindPopup(()=>popup(it)));
+  }
+  setTimeout(()=>photoMap.invalidateSize(),50);
+  const plausible=data.items.filter(i=>!i.position_outlier);
+  const fit=plausible.length?plausible:data.items;
+  if(fit.length)photoMap.fitBounds(L.latLngBounds(fit.map(i=>[i.latitude,i.longitude])),{padding:[30,30],maxZoom:19});
+  return data;
+}
+async function loadPhotoRows(gen){
+  const data=await getJSON("/api/v1/photos?"+photoQuery({limit:String(photoLimit),offset:String(photo.offset)}));
+  if(gen!==photoGen)return;
+  photo.total=Number(data.total)||0;
+  const rows=$("photo-rows");rows.replaceChildren();
+  for(const it of data.items||[]){
+    const row=document.createElement("tr");
+    const first=td(row,it.name);const sub=document.createElement("div");sub.className="sub";
+    sub.textContent=(it.captured_at?fmtTime(it.captured_at):"Zeit unbekannt")+(it.has_position?"":" · ohne GNSS");
+    first.appendChild(sub);
+    td(row,camName(it.camera));td(row,fmtNum(it.relative_altitude_m,1," m"));
+    td(row,fmtNum(it.gimbal_pitch_deg,0,"°"));td(row,it.focal_length_35mm?it.focal_length_35mm+" mm":"–");
+    const cell=document.createElement("td"),link=document.createElement("a");
+    link.href="/api/v1/studio/dji-media/"+encodeURIComponent(it.id)+"/file";link.target="_blank";
+    link.rel="noopener noreferrer";link.textContent="Ansehen";cell.appendChild(link);row.appendChild(cell);
+    rows.appendChild(row);
+  }
+  $("photo-page").textContent=photo.total?(photo.offset+1)+"–"+Math.min(photo.offset+photoLimit,photo.total)+" / "+photo.total:"0 / 0";
+  $("photo-prev").disabled=photo.offset===0;$("photo-next").disabled=photo.offset+photoLimit>=photo.total;
+}
+async function refreshPhotos(withFlights){
+  const gen=++photoGen;
+  try{
+    if(withFlights)await loadFlights(gen);
+    if(gen!==photoGen)return;
+    const [map]=await Promise.all([loadPhotoMap(gen),loadPhotoRows(gen)]);
+    if(gen!==photoGen)return;
+    $("photo-state").className="sub";
+    $("photo-state").textContent=photo.total+" Fotos"+(map?" · "+map.items.length+" mit Position, "+
+      map.items.filter(i=>i.footprint).length+" mit Footprint (Nadir ±15°, ebenes Gelände)"+
+      (map.position_outliers?", "+map.position_outliers+" mit unplausibler Position (gestrichelt)":""):"")+
+      (photo.summary.scanned_at?" · Katalog vom "+fmtTime(photo.summary.scanned_at):"")+
+      (photoMap?"":" · Kartenbibliothek (Leaflet) nicht geladen");
+  }catch(error){
+    if(gen!==photoGen)return;
+    $("photo-state").textContent="Fotokatalog nicht erreichbar: "+error.message;$("photo-state").className="error";
+  }
+}
+function selectModel(model){
+  photo.model=model;photo.camera="";photo.flight="";photo.offset=0;renderModels();refreshPhotos(true);
+}
+async function initPhotos(){
+  try{
+    photo.summary=await getJSON("/api/v1/photos/summary");photo.names=photo.summary.camera_names||{};
+    if(!photo.summary.models.length){$("photo-state").textContent="Fotokatalog noch leer – er wird vom Medien-Sync gefüllt.";return;}
+    const m3e=photo.summary.models.find(m=>m.model==="M3E");
+    selectModel((m3e||photo.summary.models[0]).model);
+  }catch(error){
+    $("photo-state").textContent="Fotokatalog nicht erreichbar: "+error.message;$("photo-state").className="error";
+  }
+}
+$("photo-camera").addEventListener("change",e=>{photo.camera=e.target.value;photo.flight="";photo.offset=0;refreshPhotos(true);});
+$("photo-flight").addEventListener("change",e=>{photo.flight=e.target.value;photo.offset=0;refreshPhotos(false);});
+$("photo-footprints").addEventListener("change",()=>refreshPhotos(false));
+$("photo-prev").addEventListener("click",()=>{photo.offset=Math.max(0,photo.offset-photoLimit);loadPhotoRows(photoGen).catch(()=>{});});
+$("photo-next").addEventListener("click",()=>{if(photo.offset+photoLimit<photo.total){photo.offset+=photoLimit;loadPhotoRows(photoGen).catch(()=>{});}});
+initPhotos();
 refresh();
 window.setInterval(refresh,60000);
 </script>

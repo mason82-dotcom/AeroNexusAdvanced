@@ -1,4 +1,4 @@
-# Thermografie-Modul (`/thermal`)
+# Thermal-Modul (`/thermal`)
 
 Stand: 17.10.2026 · Branch `feature/thermography-tsdk-20261017`
 
@@ -126,10 +126,49 @@ Das Skript arbeitet ohne root und außerhalb des Repositorys:
   echten PV-Aufnahmen (Einstrahlung ≥ 600 W/m², ≤ ca. 17 m Flughöhe für
   5 px/Zelle mit M3T) steht aus.
 
+## Flugauswertung (Reiter „Flüge“)
+
+- Wärmebilder werden anhand der Aufnahmezeit aus dem Geo-Index zu Flügen
+  gruppiert; ein neuer Flug beginnt nach mehr als 15 Minuten Pause.
+- „Auswerten“ startet einen Hintergrundjob, der alle noch nicht gemessenen
+  Bilder des Flugs mit dem DJI Thermal SDK vermisst (Bildparameter, ein Bild
+  gleichzeitig). Fortschritt, Fehler und Abbruch werden im Reiter angezeigt;
+  es läuft immer nur ein Job. Nicht radiometrische Bilder werden übersprungen.
+- Ergebnisse (Min, Max, Mittel, Median, P95, Hotspot-Pixel) liegen im privaten
+  Geo-Index (`thermal_stats`) und werden bei geänderter ETag verworfen. Auch
+  interaktive Messungen mit Bildparametern füllen den Cache; Messungen mit
+  geänderten Parametern überschreiben ihn nicht.
+- Hotspot-Rangliste je Flug (nach Maximaltemperatur, mit ΔT = Max − Median);
+  ein Klick öffnet das Bild.
+- Kommandozeile auf dem Pi: `.venv/bin/python -m aeronexus.thermal_flights`
+  (Liste), `--flight <id>` oder `--all` (blockierend, Fortschritt auf stderr).
+- API: `GET /api/v1/thermal/flights`, `GET /api/v1/thermal/flights/{id}`,
+  `POST /api/v1/thermal/flights/{id}/analyze` (202, 409 bei laufendem Job),
+  `GET /api/v1/thermal/jobs/current`, `POST /api/v1/thermal/jobs/current/cancel`.
+- Live (17.10.2026): 6 Flüge erkannt (u. a. 22.10.2024 mit 1.351 und
+  19.10.2024 mit 707 M3T-Bildern).
+
+## Karte: Färbung und Wärmebild-Overlay
+
+- Färbung der Aufnahmepunkte und Footprints nach Max-Temperatur oder ΔT
+  (Iron-Palette, P2–P98 des gewählten Flugs, Legende); grau = noch nicht
+  gemessen. Filter „Flug“.
+- „Wärmebild auf Karte“: Das gemessene Bild wird in der gewählten Palette und
+  Spanne lagerichtig in seinen Footprint gelegt (Nadir-Aufnahmen; ebenes
+  Gelände angenommen). Ein Klick auf einen Kartenpunkt bleibt in der Karte.
+
+## Änderungen 17.10.2026
+
+- Modul in der Oberfläche von „Thermografie“ in **„Thermal“** umbenannt
+  (Tab, Navigation aller Seiten, Doku `docs/thermal.md`).
+- Bildliste: Sichtbild-Zuordnung mit Sammelabfragen statt einer
+  Volltabellensuche pro Bild – 50 Einträge in 0,06 s statt 0,54 s; neuer
+  Dateinamen-Index im Medienindex (entsteht beim nächsten Medienscan).
+
 ## Offene Punkte / Vorschläge
 
-- Batch-PV-Analyse ganzer Flüge mit Anomalienkarte und Persistenz der
-  Ergebnisse im privaten Workspace.
+- PV-Inspektion für ganze Flüge (PV-Bereich je Bild oder automatische
+  Modulerkennung) auf Basis der Flugauswertung.
 - Automatische Modulerkennung statt manuellem PV-Bereich.
 - Geo-Index regelmäßig per `systemd --user`-Timer aktualisieren.
 - Gerenderte Wärmebilder als georeferenzierte Kacheln auf der Karte.

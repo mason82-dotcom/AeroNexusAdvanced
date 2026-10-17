@@ -1,4 +1,4 @@
-"""Thermography: DJI R-JPEG metadata, temperature grids and statistics.
+"""Thermal: DJI R-JPEG metadata, temperature grids and statistics.
 
 Thermal images are taken from the read-only MinIO media index
 (``*_T.JPG``, DJI infrared camera). Temperatures come exclusively from the
@@ -15,6 +15,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 import math
 import re
+import sqlite3
 import struct
 import threading
 
@@ -62,7 +63,7 @@ def jpeg_segments(data: bytes, *, partial: bool = False) -> dict:
     """
     if not isinstance(data, (bytes, bytearray)) or data[:2] != b"\xff\xd8":
         raise ThermalError("Not a JPEG image")
-    pos, xmp, app3, size, dji, truncated = 2, None, 0, None, False, False
+    pos, xmp, app3, size, dji, truncated, exif = 2, None, 0, None, False, False, None
     for _ in range(4096):
         if partial and pos + 4 > len(data):
             truncated = True
@@ -84,6 +85,8 @@ def jpeg_segments(data: bytes, *, partial: bool = False) -> dict:
         body = data[pos + 4:pos + 2 + length]
         if marker == 0xE1 and body.startswith(_XMP_HEADER) and xmp is None:
             xmp = body[len(_XMP_HEADER):].decode("utf-8", "replace")
+        elif marker == 0xE1 and body.startswith(b"Exif\0\0") and exif is None:
+            exif = bytes(body[6:])
         elif marker == 0xE3:
             app3 += len(body)
         elif marker == 0xE4 and b"iirp" in body[:16]:
@@ -95,7 +98,50 @@ def jpeg_segments(data: bytes, *, partial: bool = False) -> dict:
     else:
         raise ThermalError("Too many JPEG segments")
     return {"xmp": xmp, "raw_bytes": app3, "size": size, "dji_ir_header": dji,
-            "truncated": truncated}
+            "truncated": truncated, "exif": exif}
+
+
+_EXIF_TAGS = {0x9003: "date_time_original", 0xA405: "focal_length_35mm",
+              0xA002: "pixel_width", 0xA003: "pixel_height", 0x920A: "focal_length_mm"}
+
+
+def exif_fields(exif: bytes | None) -> dict:
+    """A few EXIF values (IFD0 -> Exif IFD), bounded; never raises on bad data."""
+    out: dict = {}
+    if not exif or len(exif) < 8 or exif[:4] not in (b"II*\0", b"MM\0*"):
+        return out
+    bo = "<" if exif[:2] == b"II" else ">"
+
+    def ifd(offset: int) -> dict:
+        entries = {}
+        if not 8 <= offset <= len(exif) - 2:
+            return entries
+        count = struct.unpack(bo + "H", exif[offset:offset + 2])[0]
+        for i in range(min(count, 256)):
+            pos = offset + 2 + 12 * i
+            if pos + 12 > len(exif):
+                break
+            tag, typ, n = struct.unpack(bo + "HHI", exif[pos:pos + 8])
+            raw = exif[pos + 8:pos + 12]
+            if typ == 3 and n == 1:
+                entries[tag] = struct.unpack(bo + "H", raw[:2])[0]
+            elif typ == 4 and n == 1:
+                entries[tag] = struct.unpack(bo + "I", raw)[0]
+            elif typ == 5 and n == 1:
+                ptr = struct.unpack(bo + "I", raw)[0]
+                if ptr + 8 <= len(exif):
+                    num, den = struct.unpack(bo + "II", exif[ptr:ptr + 8])
+                    entries[tag] = num / den if den else None
+            elif typ == 2 and n <= 64:
+                ptr = struct.unpack(bo + "I", raw)[0] if n > 4 else pos + 8
+                entries[tag] = exif[ptr:ptr + n].split(b"\0", 1)[0].decode("ascii", "replace")
+        return entries
+    root = ifd(struct.unpack(bo + "I", exif[4:8])[0])
+    sub = ifd(root.get(0x8769, 0)) if isinstance(root.get(0x8769), int) else {}
+    for tag, name in _EXIF_TAGS.items():
+        if tag in sub and sub[tag] not in (None, 0, ""):
+            out[name] = sub[tag]
+    return out
 
 
 _ATTR_RE = re.compile(r'([A-Za-z][\w-]*):([A-Za-z]\w*)="([^"]{0,200})"')
@@ -241,6 +287,7 @@ class ThermalService:
         self._lock = threading.Lock()
         self._files: OrderedDict = OrderedDict()
         self._measurements: OrderedDict = OrderedDict()
+        self.stats_sink = None  # callable(id, etag, stats); set by ThermalFlights
 
     def sdk(self) -> ThermalSdk:
         if self._sdk is None:
@@ -253,33 +300,59 @@ class ThermalService:
         except ThermalSdkError as exc:
             return {"available": False, "reason": str(exc)}
 
+    def extra_thermal_ids(self) -> set[str]:
+        """Infrared images recognised by metadata (photo catalogue), e.g. FlightHub
+        uploads ``org_*.jpg`` that do not carry the ``_T`` file-name suffix."""
+        from .photo_catalog import PhotoCatalog
+        try:
+            return PhotoCatalog(self.index).thermal_ids()
+        except (DjiMediaError, OSError, sqlite3.Error):
+            return set()
+
     def record(self, item_id: str) -> dict:
         record = self.index.get(item_id)
-        if record is None or not is_thermal_name(record["filename"]):
+        if record is None or not (is_thermal_name(record["filename"])
+                                  or item_id in self.extra_thermal_ids()):
             raise ThermalNotFound("Thermal image not indexed")
         return record
 
-    def visual_id(self, record: dict) -> str | None:
-        """Same folder first; SD-card imports put each file in its own folder,
-        so fall back to a filename that is unique in the index."""
-        keys = visual_keys(record["object_key"])
-        for key in keys:
-            candidate = media_id(record["bucket"], key)
-            if self.index.get(candidate) is not None:
-                return candidate
-        for key in keys:
-            matches = self.index.ids_by_filename(key.rsplit("/", 1)[-1], limit=2)
-            if len(matches) == 1:
-                return matches[0]
-        return None
+    def visual_ids(self, records: list[dict]) -> dict[str, str | None]:
+        """Visible image per thermal record, resolved with batched queries.
 
-    def list(self, *, query="", limit=50, offset=0) -> dict:
-        result = self.index.list_thermal(query=query, limit=limit, offset=offset)
-        for item in result["media"]:
-            item["visual_id"] = self.visual_id(self.index.get(item["id"]))
+        Same folder first; SD-card imports put each file in its own folder,
+        so fall back to a filename that is unique in the index."""
+        candidates = {r["id"]: visual_keys(r["object_key"]) for r in records}
+        same_folder = {media_id(r["bucket"], k): r["id"]
+                       for r in records for k in candidates[r["id"]]}
+        found = self.index.get_many(list(same_folder))
+        result: dict[str, str | None] = {}
+        for r in records:
+            result[r["id"]] = next((media_id(r["bucket"], k) for k in candidates[r["id"]]
+                                    if media_id(r["bucket"], k) in found), None)
+        missing = [r for r in records if result[r["id"]] is None]
+        by_name = self.index.ids_by_filenames(
+            [k.rsplit("/", 1)[-1] for r in missing for k in candidates[r["id"]]])
+        for r in missing:
+            for key in candidates[r["id"]]:
+                ids = by_name.get(key.rsplit("/", 1)[-1], [])
+                if len(ids) == 1:
+                    result[r["id"]] = ids[0]
+                    break
         return result
 
-    def _bytes(self, record: dict) -> bytes:
+    def visual_id(self, record: dict) -> str | None:
+        return self.visual_ids([record])[record["id"]]
+
+    def list(self, *, query="", limit=50, offset=0) -> dict:
+        result = self.index.list_thermal(query=query, limit=limit, offset=offset,
+                                         extra_ids=self.extra_thermal_ids())
+        records = self.index.get_many([item["id"] for item in result["media"]])
+        pairs = self.visual_ids([records[i["id"]] for i in result["media"] if i["id"] in records])
+        for item in result["media"]:
+            item["visual_id"] = pairs.get(item["id"])
+        return result
+
+    def _bytes(self, record: dict, *, cache: bool = True) -> bytes:
         key = (record["id"], record["etag"], record["size_bytes"])
         with self._lock:
             if key in self._files:
@@ -292,6 +365,8 @@ class ThermalService:
             raise
         except Exception as exc:  # MinIO SDK errors may echo object keys
             raise DjiMediaError("MinIO object unavailable") from exc
+        if not cache:  # batch runs must not evict the interactive working set
+            return data
         with self._lock:
             self._files[key] = data
             while len(self._files) > self.FILE_CACHE_ENTRIES:
@@ -305,7 +380,8 @@ class ThermalService:
                 "size_bytes": record["size_bytes"], "uploaded_at": record["modified_at"],
                 "visual_id": self.visual_id(record), **meta}
 
-    def measure(self, item_id: str, params: MeasureParams | None = None) -> Measurement:
+    def measure(self, item_id: str, params: MeasureParams | None = None, *,
+                cache: bool = True) -> Measurement:
         record = self.record(item_id)
         params = params or MeasureParams()
         key = (record["id"], record["etag"], tuple(sorted(params.overrides().items())))
@@ -313,12 +389,19 @@ class ThermalService:
             if key in self._measurements:
                 self._measurements.move_to_end(key)
                 return self._measurements[key]
-        data = self._bytes(record)
+        data = self._bytes(record, cache=cache)
         if not thermal_metadata(data)["radiometric"]:
             raise ThermalError("Image has no radiometric DJI thermal data")
         width, height, grid = self.sdk().measure(data, params)
         result = Measurement(width, height, grid, temperature_stats(width, height, grid),
                              params.overrides())
+        if not params.overrides() and self.stats_sink is not None:
+            try:  # persisted per-image summary for flight analysis and the map
+                self.stats_sink(record["id"], record["etag"], result.stats)
+            except Exception:  # never fail a measurement because of the summary cache
+                pass
+        if not cache:
+            return result
         with self._lock:
             self._measurements[key] = result
             while len(self._measurements) > self.CACHE_ENTRIES:

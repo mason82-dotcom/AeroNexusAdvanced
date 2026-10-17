@@ -1,38 +1,118 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026 – Konsolidierungsbranch, noch nicht auf `main`.
+**Stand:** 17. Oktober 2026 – Basis `main` @ `eee5203` (PR #34),
+plus CSV-Wegpunktimport (PR #24).
 **Repository:** `mason82-dotcom/AeroNexusAdvanced`
 
-## Aktueller Entwicklungsstand
+## Aktueller Stand auf `main`
 
-- CSV-Wegpunktimport im Branch `feature/studio-csv-import-20261017`:
-  authentifizierte Vorschau ohne Speicherung, explizite Trenn-/Dezimalzeichen,
-  Zeilenfehler, Karten-/Tabellenprüfung und reversible Übernahme in den aktuellen
-  Missionsentwurf. Missionswerte und gespeicherte ID bleiben erhalten;
-  Speichern erfolgt separat. Nach Abgleich mit `main` einschließlich PR #23:
-  vollständige lokale Suite **761 bestanden**,
-  eine bekannte Starlette/httpx-Warnung. Browser-/Pi-Abnahme steht aus:
-  Chromium-Download in der Arbeitsumgebung nicht verfügbar. Veröffentlichung
-  auf GitHub am 17.10.2026 ausdrücklich durch den Nutzer bestätigt; kein Merge
-  und kein Pi-Deployment im Rahmen dieser Veröffentlichung.
-  Details und Abnahme: [CSV-Import](mission-csv-import.md).
+| Bereich | Stand | PR |
+|---|---|---|
+| DJI-Medienkatalog (MinIO, read-only) und Laufzeitdiagnose | gemergt, auf dem Pi live | #19 (via #20) |
+| Thermal `/thermal`: DJI Thermal SDK (Box64 auf dem Pi), Messwerkzeuge, Export | gemergt, im Browser bestätigt | #20 |
+| Thermal: Karte, Overlay mit Sichtbild, PV-Inspektion (IEC TS 62446-3 als Orientierung) | gemergt, im Browser bestätigt | #21 |
+| Thermal: Umbenennung, Flugauswertung (Hintergrundjob, Hotspot-Rangliste), Karten-Färbung, Wärmebild-Overlay | gemergt | #27 |
+| Multispektral `/multispectral` (DJI Mavic 3M): NDVI, GNDVI, NDRE, LCI, CIR | gemergt, im Browser bestätigt | #22 |
+| Multispektral-Karte: Aufnahmepunkte, Footprints/Sichtkegel, NDVI-Übersicht | gemergt | #23 |
+| Multispektral-Qualität: Sonnenlichtsensor-Sperre, Sättigungsmaske, geneigte Projektion | gemergt | #25 |
+| Multispektral-Rechenbegrenzung, gemeinsame Thermal-Footprints, lokale GDAL-Ausnahmen | gemergt | #26 |
+| Automatischer Medien-Sync nach Pilot-2-Uploads | gemergt | #28 |
+| M3M-4-Band-GeoTIFF-Export für QGIS | gemergt | #29 |
+| Metashape-Arbeitsauftrag für externen Worker | gemergt; echte Rekonstruktion separat abnehmen | #31 |
+| Multispektral-Serienbericht mit NDVI-Maske und Histogrammen | gemergt; Live-Pi-Abnahme offen | #32 |
+| GeoTIFF-/COG-Ergebniskatalog und Kachelviewer `/results` | gemergt; Live-Pi-Abnahme offen | #33 |
+| Medien-Sync-Korrekturen, M3M-Quellenkonsistenz, GeoTIFF nur bei exaktem Nadir | gemergt, auf dem Pi aktiv | #30 |
+| Fotokatalog `/media` (M3E/M3T/M4T/M3M nach Metadaten), HTTP-Kompression, CSP-/Mobil-Korrekturen | gemergt, auf dem Pi live geprüft | #34 |
+| CSV-Wegpunkte im Mission Studio: Vorschau, Zeilenfehler, Rückgängig ([CSV-Import](mission-csv-import.md)) | PR offen; Browser-/Pi-Abnahme offen | #24 |
 
-- Phase 21 aus PR #18 mit dem Phase-20-Medienkatalog von `main`
-  zusammengeführt: `/media` und Mission Studio verwenden denselben privaten
-  SQLite-Index und denselben dedizierten MinIO-Lesezugang. Der Root-basierte
-  Scanpfad ist entfernt. Der frühere Index unter `var/` bleibt unangetastet.
-- Cloud-API-2-Antworten werden während des Streamings auf 1 MB begrenzt;
-  Cacheausgaben bewerten Alter/Frische/Online neu und geben `reported_online`
-  getrennt aus. Der optionale Adapter bleibt standardmäßig deaktiviert.
-- Beschädigte SQLite-Kataloge liefern kontrolliertes HTTP 503 ohne interne
-  Details. Der letzte vollständige Index bleibt bei Scanfehlern erhalten.
-- Provider-Statusrouten spiegeln die beim Serverstart konfigurierten Quellen.
-  `configured` bestätigt Konfiguration, keine erfolgreiche DJI-Verbindung.
-- CI prüft Python 3.12 und 3.13 einschließlich der optionalen MQTT-/MinIO-Extras.
-- Lokale vollständige Tests unter Python 3.12: **663 bestanden, 1 bekannte
-  Starlette/httpx-Warnung**. CI auf dem neuen Branch separat prüfen.
+- Basisprüfung bei `7a9edf4`: **857 bestanden, 1 übersprungen**, 1 bekannte
+  Starlette/httpx-Warnung; GitHub Actions für diesen Commit erfolgreich.
+- Kombinierter Korrekturstand von PR #30 auf dieser Basis, lokal (Python 3.12):
+  **892 bestanden, 1 übersprungen**,
+  dieselbe Warnung. Übersprungen: Prüfung mit echtem `osgeo.gdal`, hier nicht
+  installiert. CI prüft Python 3.12 und 3.13 mit den Extras
+  `test,mqtt,minio,multispectral,raster`; echte Rasterio-GeoTIFF-/COG-Fixtures
+  und Node-Tests laufen mit. `pip check` und `git diff --check` ohne Befund.
+- Der Merge-Konflikt in `multispectral.py` ist in diesem Branch gelöst;
+  Serienbericht, Metashape-Export und Ergebnisviewer bleiben enthalten.
+  Dieser Stand ist erst nach Merge Teil von `main`.
+- Zuletzt dokumentierter Pi-Dienst `aeronexusadvanced` (systemd `--user`, HTTPS
+  `https://192.168.178.63:8000`), TLS-Zertifikat gültig bis 16.10.2027.
+- **Konfiguration seit 17.10.2026 03:42:** `AERONEXUS_CLOUD_MQTT_ENABLED=1`,
+  `AERONEXUS_FH_POLL_ENABLED=0` – FlightHub-Abfrage aus, DJI-Cloud-API-MQTT-Feed
+  an (damals ohne empfangene Nachrichten). Dies ist eine historische
+  Konfigurationsangabe, keine erneute Live-Prüfung.
+- Kataloge aktualisiert der Dienst `aeronexusadvanced-media-sync`
+  automatisch nach Pilot-2-Uploads (siehe [media-auto-sync.md](media-auto-sync.md)).
+- Diese Codekorrekturen wurden nicht auf dem Pi installiert; produktive
+  Dienste, Konfiguration und Medien wurden dabei nicht verändert.
 
-## Multispektral-Modul M3M (Branch `feature/multispectral-m3m-20261017`)
+### Analyse 17.10.2026 – umgesetzte Befunde
+
+- Medien-Sync: defekte/beendete Listener und MinIO-`S3Error` wechseln auf
+  Polling mit erneutem Abgleich; kein separater Probe-Listener mehr.
+- Teilfehler aus Thermal-Geo, Multispektral, NDVI und Thermal-Messungen setzen
+  den Gesamtdurchgang auf `ok=false` (`--once`: Exitcode 1); Wiederholung nach
+  120 s ohne neuen Upload. Uploads während des Startscans werden erkannt.
+- Rechenbegrenzung: gemeinsame POSIX-`flock`-Sperre für Multispektral-
+  Bandverarbeitung, M3M-Stacking und Thermal SDK über Instanzen und Prozesse
+  hinweg. Gleicher Benutzer/Workspace erforderlich; Kernel gibt die Sperre
+  bei Prozessabbruch frei. Cache-Einträge werden vor Freigabe veröffentlicht.
+- GeoTIFF-Export: affine Georeferenz nur bei exakt −90° Pitch (numerische
+  Toleranz 0,000001°). Geneigte Aufnahmen bleiben ohne CRS-/Transformations-
+  Tags exportierbar; Karten-Footprints bleiben unverändert verfügbar.
+- Quellenkonsistenz: Einzelbildstatistik, Rasterabruf und 4-Band-Export
+  gleichen Medienindex und aktuellen Multispektralkatalog vor/nach der
+  Berechnung ab. Bei Änderungen HTTP 409 statt neuer Pixel mit alten
+  Aufnahmemetadaten. Auch Änderungen während Statistik/Encoding sowie
+  bereits gefüllte Band-Caches sind durch Regressionstests abgedeckt.
+  Vor einer NDVI-Summary-Speicherung wird erneut geprüft. Der Serienbericht
+  verwendet dieselbe erweiterte Katalogprüfung.
+- Thermal-Footprints verwenden dieselbe Projektion geneigter Kameras wie die
+  Multispektral-Karte (vorher Rechteck auch bei −75…−105° Pitch).
+- GeoTIFF-Vorschau: GDAL-Ausnahmen nur lokal aktiviert (`gdal.ExceptionMgr`),
+  beschädigte Dateien → sauberer 422; die GDAL-FutureWarning im Dienstlog entfällt.
+- Doku: dieser Abschnitt; der Checkpoint vom 17.10.2026 ist als historisch markiert.
+
+### Analyse 17.10.2026 (2) – Fotokatalog und Korrekturen
+
+- Fotokatalog (`photo_catalog`): 6076 JPEGs klassifiziert – M3T 4286, M4T 1567,
+  M3E 203 (Mapping-Flug 04.10.2026: 168 Bilder, 60 m, RTK, GSD 1,64 cm/px),
+  M3M 20. Schritt im Medien-Sync vor `thermal_geo`; neuer Bereich auf `/media`
+  mit Karte, Flugliste und Tabelle. Details: [photo-catalog.md](photo-catalog.md).
+- Unplausible GNSS-Positionen (>20 km vom Flugmedian, z. B. ein M3E-Bodenbild
+  mit 35,25° N / 6,16° E trotz „RTK“) werden markiert statt verworfen.
+- HTTP-Kompression (GZip, ab 2 KiB; Bilder, Downloads und Ereignisströme
+  ausgenommen): `/api/v1/thermal/map` 1,2 MB → 252 KB.
+- `/thermal`: Farbskala-Canvas verbreiterte die Seite auf ~3100 px
+  (Seitenverhältnis 256:1 als Mindestbreite) – behoben.
+- Leaflet-Ebenensymbol wurde auf allen Kartenseiten von der CSP blockiert – behoben.
+- Medien-Sync läuft im Ereignis-Modus (MinIO-Listen-Recht vorhanden).
+- Betrieb bestätigt (17.10.2026): FlightHub-2-EU-Abfrage ist bewusst
+  deaktiviert; Live-Quelle ist der DJI-Cloud-API-MQTT-Feed.
+- Gemergte Branches von #30–#34 entfernt.
+
+### Offen
+
+- CSV-Import (#24): Browser- und Pi-Abnahme, danach Merge entscheiden.
+- Cloud API 2 (#5): Merge entscheiden (Konflikte mit `main` gelöst).
+- Fest verdrahtetes Heimnetz `192.168.178.0/24` konfigurierbar machen.
+- Fachliche Abnahmen: PV-Inspektion mit echten PV-Aufnahmen, Multispektral-
+  und Thermal-Footprints mit einem echten Nadir-Flug.
+- Korrekturen auf dem Pi installieren und nachtesten: Auto-Sync inklusive
+  Fehlerfall/Erholung, parallele Web-/Hintergrundanforderungen und QGIS-Import.
+- Die Rasterio-Verarbeitung von `/results` verwendet weiterhin eigene
+  Rechenplätze. Gemeinsame RAM-/Laufzeitmessung mit Sync und Bildverarbeitung
+  auf dem Pi sowie echte Ergebnisdateien im Viewer prüfen.
+- Projektive Entzerrung geneigter M3M-Stacks und Gimbal-Roll sind noch offen.
+
+## Historischer Verlauf
+
+Die folgenden Phasenabschnitte enthalten frühere Testergebnisse und
+Live-Abnahmen. Sie sind keine Aussage über den aktuellen Dienstzustand oder
+die Installation des oben beschriebenen Korrekturstands.
+
+## Multispektral-Modul M3M (PR #22)
 
 - Neuer Tab `/multispectral` (Links in allen Oberflächen). Bänder per
   CaptureUUID gruppiert; DJI-M3M-Rechenweg inkl. Entzerrung und
@@ -42,7 +122,7 @@
   (`read_indexed_object`) für Thermal und Multispektral.
 - Tests: **724 bestanden**. Details: [multispectral.md](multispectral.md).
 
-## Thermografie: Karte, Overlay, PV-Inspektion (Branch `feature/thermal-map-overlay-pv-20261017`)
+## Thermal: Karte, Overlay, PV-Inspektion (PR #21)
 
 - Karte: Geo-Index (`python -m aeronexus.thermal_geo`, Range-Reads) live
   aufgebaut – 2.058 M3T-Bilder mit Position und Footprint, 14 ohne GNSS.
@@ -52,7 +132,7 @@
   Abnahme mit echten PV-Aufnahmen steht aus.
 - Tests: **711 bestanden**.
 
-## Thermografie-Modul (Branch `feature/thermography-tsdk-20261017`)
+## Thermal-Modul (PR #20)
 
 - Neuer Tab `/thermal` (Links in Operations, Studio, Live-Status, Medien).
   Temperaturen ausschließlich über das DJI Thermal SDK v1.8; auf dem Pi 5
@@ -64,7 +144,7 @@
   `lan_access.require_lan` und in der Studio-CSP (jetzt `AERONEXUS_LAN_HOST`
   / `AERONEXUS_PORT`, nur gültige Adresse im Heimnetz), ungenutzte Imports.
 - Tests: **701 bestanden**, 1 bekannte Starlette/httpx-Warnung.
-- Details und Vorschläge: [thermography.md](thermography.md).
+- Details und Vorschläge: [thermal.md](thermal.md).
 
 ## Bestätigter Pi-Stand und Grenzen
 
