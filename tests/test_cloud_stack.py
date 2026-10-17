@@ -57,6 +57,59 @@ def test_probes_are_loopback_unauthenticated_and_cached():
     assert len(calls) == 4  # second call served from the 10 s cache
 
 
+
+@pytest.mark.parametrize("port,status", [
+    (6789, 404), (6789, 500), (8085, 302), (8085, 404),
+    (9000, 204), (9000, 404), (9997, 401), (9997, 404),
+])
+def test_http_probe_rejects_missing_or_invalid_endpoints(port, status):
+    def handle(request: httpx.Request):
+        if request.url.port == port:
+            return httpx.Response(status)
+        if request.url.port == 6789:
+            return httpx.Response(401)
+        if request.url.port == 9997:
+            return httpx.Response(200, json={"items": []})
+        return httpx.Response(200)
+    services = asyncio.run(CloudStackHealth(
+        "127.0.0.1", transport=httpx.MockTransport(handle), tcp=tcp_up
+    ).services())
+    name = {6789: "api", 8085: "control", 9000: "minio", 9997: "mediamtx"}[port]
+    assert services[name]["state"] == "error"
+    assert services[name]["http"] == status
+    if name != "mediamtx":
+        assert overall(services, fleet_view([], {"state": "subscribed"})) == "degraded"
+
+
+@pytest.mark.parametrize("status", [200, 401, 403])
+def test_api_health_accepts_only_expected_success_or_auth_challenge(status):
+    def handle(request: httpx.Request):
+        if request.url.port == 6789:
+            return httpx.Response(status)
+        if request.url.port == 9997:
+            return httpx.Response(200, json={"items": []})
+        return httpx.Response(200)
+    services = asyncio.run(CloudStackHealth(
+        "127.0.0.1", transport=httpx.MockTransport(handle), tcp=tcp_up
+    ).services())
+    assert services["api"]["state"] == "up"
+
+
+@pytest.mark.parametrize("payload", [{}, {"items": None}, {"items": "bad"}, [], {"items": {}}])
+def test_mediamtx_requires_a_valid_paths_listing(payload):
+    def handle(request: httpx.Request):
+        if request.url.port == 6789:
+            return httpx.Response(401)
+        if request.url.port == 9997:
+            return httpx.Response(200, json=payload)
+        return httpx.Response(200)
+    services = asyncio.run(CloudStackHealth(
+        "127.0.0.1", transport=httpx.MockTransport(handle), tcp=tcp_up
+    ).services())
+    assert services["mediamtx"]["state"] == "error"
+
+
+
 def test_down_services_and_overall():
     handle, _ = backend(down={9000, 9997})
     health = CloudStackHealth("127.0.0.1", transport=httpx.MockTransport(handle), tcp=tcp_down)
