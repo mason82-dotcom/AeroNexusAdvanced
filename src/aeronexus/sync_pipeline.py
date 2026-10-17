@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from .device_sync import parse_devices, register_devices
 from .inventory import Inventory
 from .providers import ProviderKind
-from .telemetry_sync import parse_snapshot, register_snapshots, TelemetrySyncError
+from .telemetry_sync import parse_snapshot, register_snapshots
 
 class SyncPipelineError(ValueError):
     pass

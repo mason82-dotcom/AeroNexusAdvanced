@@ -90,9 +90,20 @@ def test_lan_workspace_auto_loads_without_any_browser_token():
     assert 'headerToken' not in page
     assert 'Authorization' not in page
     assert 'loadWorkspace();' in page
-    assert 'await Promise.allSettled([loadMedia(),loadFleet(),loadGeoObjects()]);' in page
+    assert 'await Promise.allSettled([loadMedia(),loadDjiMedia(),loadFleet(),loadGeoObjects()]);' in page
     assert 'async function api(path,options={})' in page
     assert 'textContent' in page
+
+
+def test_readonly_minio_gallery_is_separate_from_local_editable_media():
+    page = render_studio()
+    assert 'id="dji-media-gallery"' in page
+    assert 'id="dji-media-search"' in page
+    assert 'async function loadDjiMedia(reset=true)' in page
+    assert '/api/v1/studio/dji-media/' in page
+    assert 'downloadDjiMedia(m)' in page
+    assert 'Datei auf dem Pi dauerhaft löschen?' in page
+    assert 'media_id}/file' not in page
 
 
 def test_wpml_reimport_exposed_for_saved_aeronexus_routes():

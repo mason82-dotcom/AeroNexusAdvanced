@@ -189,6 +189,32 @@ Als zusätzliche technische Referenz wurde das
 geprüft. Sein Kommandozeilenprogramm/MCP-Server wird **nicht**
 automatisch installiert oder mit DJI-Schreibberechtigungen gestartet.
 
+## DJI-MinIO-Medienkatalog (Phase 21)
+
+DJI-Medien aus dem lokalen MinIO-Bucket `dji-cloud` lassen sich ohne
+Kopieren, Löschen oder DJI-Steuerbefehle **schreibgeschützt indizieren**.
+Der transaktionale Metadatenkatalog erscheint separat in der
+Mission-Studio-Medienbibliothek; JPEG/PNG/WebP sind bis 32 MiB als
+Vorschau abrufbar, große DNG/Videoobjekte bleiben als Download verfügbar.
+
+Einlesen auf dem Pi: `python -m aeronexus.minio_media_index` (manuell,
+optional mit `--dry-run`). Erfordert einen eigenen MinIO-Lesezugang
+und das optionale Paket-Extra `minio`.
+Die bisherige Seite `/media` liest denselben Katalog; ihre Metadaten-API
+bleibt kompatibel. Der alte Root-basierte Scanpfad ist entfernt. Bestehende
+Phase-20-Indizes unter `var/` bleiben unangetastet; für deren Umstieg ist
+ein expliziter Scan mit dem neuen Lesezugang erforderlich.
+Details: [Phase 21 – DJI-MinIO-Medien](docs/phase-21-dji-minio-media.md).
+
+## Thermografie (`/thermal`)
+
+Eigener Web-UI-Tab für radiometrische DJI-Wärmebilder (M3T/M4T R-JPEG) aus
+dem MinIO-Index. Temperaturen nur über das DJI Thermal SDK (`dji_irp`,
+auf dem Pi 5 via Box64): Paletten, Isotherme, Hot-/Coldspot, Punkt- und
+Bereichsmessung, Emissionsgrad & Co., PNG/CSV/JSON-Export. Installation:
+`deploy/pi/install-thermal-sdk.sh <dji_thermal_sdk_v1.8_*.zip>`.
+Details: [docs/thermography.md](docs/thermography.md).
+
 ## DEM-Hangneigung im 3D-Geländeviewer (Phase 20)
 
 Im Mission Studio lässt sich das importierte, auf maximal 48×48 Stützpunkte

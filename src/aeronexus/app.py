@@ -5,10 +5,11 @@ unless an independent dashboard bearer token is configured.
 """
 import asyncio
 from io import BytesIO
-from pathlib import Path
 from urllib.parse import unquote
 from contextlib import asynccontextmanager
 import os
+import sqlite3
+import sys
 import time
 from enum import Enum
 from secrets import compare_digest
@@ -29,10 +30,16 @@ from .status_page import render_page
 from .studio_page import render_studio
 from .operations_page import render_operations
 from .studio_workspace import Workspace, WorkspaceError, MAX_MEDIA_BYTES, MEDIA_TYPES
+from .minio_media_index import (DjiMediaIndex, DjiMediaError, MinioMediaSettings,
+                                minio_client, BROWSER_PREVIEW_MIMES,
+                                MAX_BROWSER_PREVIEW_BYTES)
 from .geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
+from .thermal import ThermalChanged, ThermalError, ThermalNotFound, ThermalService
+from .thermal_page import render_thermal_page
+from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
 from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
 from .studio_events import serve_studio_events
-from .lan_access import lan_mode_enabled, require_lan
+from .lan_access import lan_host, lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
 from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
@@ -45,6 +52,11 @@ async def lifespan(app: FastAPI):
     poll_settings = FlightHubPollSettings.from_env()
     api2_settings = CloudApi2Settings.from_env()
     app.state.cloud_api2_bridge = CloudApi2Bridge(api2_settings) if api2_settings else None
+    app.state.provider_configured = {
+        Provider.public_v2: poll_settings is not None and poll_settings.config.kind == ProviderKind.PUBLIC_V2,
+        Provider.onprem_v2: poll_settings is not None and poll_settings.config.kind == ProviderKind.ONPREM_V2,
+        Provider.cloud_api: settings is not None or api2_settings is not None,
+    }
     feed = None
     poll_task = None
     app.state.flighthub = None
@@ -148,12 +160,13 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/providers", response_model=list[ProviderStatus])
 def providers() -> list[ProviderStatus]:
-    return [ProviderStatus(provider=provider) for provider in Provider]
+    return [provider_status(provider) for provider in Provider]
 
 
 @app.get("/api/v1/providers/{provider}/status", response_model=ProviderStatus)
 def provider_status(provider: Provider) -> ProviderStatus:
-    return ProviderStatus(provider=provider)
+    configured = getattr(app.state, "provider_configured", {}).get(provider, False)
+    return ProviderStatus(provider=provider, configured=configured)
 
 
 @app.get("/api/v1/status/summary")
@@ -189,7 +202,7 @@ def dji_media_summary(request: Request, response: Response,
     _require_viewer_access(request, authorization)
     try:
         return index_summary()
-    except (OSError, MediaIndexError) as exc:
+    except (OSError, sqlite3.Error, WorkspaceError, MediaIndexError) as exc:
         raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
 
 
@@ -207,7 +220,7 @@ def dji_media_list(request: Request, response: Response,
         raise HTTPException(status_code=422, detail="Unsupported media category")
     try:
         return browse_media(kind=kind, query=q, limit=limit, offset=offset)
-    except (OSError, MediaIndexError) as exc:
+    except (OSError, sqlite3.Error, WorkspaceError, MediaIndexError) as exc:
         raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
 
 
@@ -379,6 +392,15 @@ async def cloud_api2_devices(request: Request, response: Response,
     return await bridge.read()
 
 
+def _studio_socket_origin() -> str:
+    """WSS origin for the optional studio events socket, from configuration."""
+    host = lan_host()
+    port = os.environ.get("AERONEXUS_PORT", "8000").strip()
+    if host is None or not port.isdigit() or not 1 <= int(port) <= 65535:
+        return ""
+    return f"wss://{host}:{int(port)} "
+
+
 @app.get("/studio", response_class=HTMLResponse, include_in_schema=False)
 def studio_page(request: Request, response: Response) -> str:
     """Static studio shell without tokens or embedded private data."""
@@ -391,7 +413,7 @@ def studio_page(request: Request, response: Response) -> str:
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "img-src 'self' blob: data: https://tile.openstreetmap.org "
         "https://server.arcgisonline.com; "
-        "connect-src 'self' wss://192.168.178.63:8000 https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        f"connect-src 'self' {_studio_socket_origin()}https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "media-src 'self' blob:; frame-ancestors 'none'; "
         "base-uri 'none'; form-action 'none'"
     )
@@ -490,6 +512,76 @@ def studio_media_list(request: Request, response: Response,
                       authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
     return {"media": _studio_workspace(request, authorization).list_media()}
+
+
+# The DJI MinIO catalogue is separate from the editable local media library.
+# The re-indexing operation runs explicitly on the Pi; HTTP is read-only.
+@app.get("/api/v1/studio/dji-media")
+def studio_dji_media_list(request: Request, response: Response,
+                          q: str = Query(default="", max_length=120),
+                          limit: int = Query(default=100, ge=1, le=200),
+                          offset: int = Query(default=0, ge=0, le=1_000_000),
+                          authorization: str | None = Header(default=None)) -> dict:
+    workspace = _studio_workspace(request, authorization)
+    _no_cache(response)
+    try:
+        return DjiMediaIndex(workspace.root).list(query=q, limit=limit, offset=offset)
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
+
+
+@app.get("/api/v1/studio/dji-media/{media_id}/file")
+def studio_dji_media_file(media_id: str, request: Request,
+                          authorization: str | None = Header(default=None),
+                          download: bool = Query(default=False)):
+    """Read MinIO by indexed opaque id only, never by caller-supplied key.
+
+    Only explicit file requests contact MinIO. Unknown/raw media can be
+    downloaded, but only small browser-safe images can be previewed inline.
+    """
+    workspace = _studio_workspace(request, authorization)
+    try:
+        record = DjiMediaIndex(workspace.root).get(media_id)
+    except (OSError, sqlite3.Error, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
+    if record is None:
+        raise HTTPException(status_code=404, detail="DJI media not indexed")
+    if (not download and (record["mime"] not in BROWSER_PREVIEW_MIMES
+                          or record["size_bytes"] > MAX_BROWSER_PREVIEW_BYTES)):
+        raise HTTPException(status_code=415, detail="Preview unavailable; use download")
+    try:
+        settings = MinioMediaSettings.from_env()
+        if settings.bucket != record["bucket"]:
+            raise HTTPException(status_code=503, detail="DJI media bucket changed")
+        client = minio_client(settings)
+        head = client.stat_object(record["bucket"], record["object_key"])
+        if head.size != record["size_bytes"] or head.etag != record["etag"]:
+            raise HTTPException(status_code=409, detail="DJI media changed; reindex required")
+        stream = client.get_object(record["bucket"], record["object_key"])
+    except HTTPException:
+        raise
+    except (DjiMediaError, OSError) as exc:
+        raise HTTPException(status_code=503, detail="MinIO media reader unavailable") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="MinIO object unavailable") from exc
+
+    def chunks():
+        try:
+            yield from stream.stream(64 * 1024)
+        finally:
+            stream.close()
+            stream.release_conn()
+
+    # No object keys, S3 URLs, credentials or DJI identifiers in headers.
+    disposition = "attachment" if download else "inline"
+    return StreamingResponse(chunks(), media_type=record["mime"],
+                             headers={
+                                 "Cache-Control": "no-store",
+                                 "X-Content-Type-Options": "nosniff",
+                                 "Referrer-Policy": "no-referrer",
+                                 "Content-Length": str(record["size_bytes"]),
+                                 "Content-Disposition": disposition,
+                             })
 
 
 @app.post("/api/v1/studio/media", status_code=201)
@@ -672,6 +764,123 @@ def studio_terrain_stl(grid:TerrainGrid,request:Request,
     return Response(content=terrain_stl(grid),media_type="model/stl",
                     headers={"Content-Disposition":'attachment; filename="aeronexus-terrain.stl"',
                              "Cache-Control":"no-store","X-Content-Type-Options":"nosniff"})
+
+
+# Thermography: DJI R-JPEGs from the read-only MinIO index, temperatures only
+# from the DJI Thermal SDK (separate process). Originals are never modified.
+def _thermal_service(request: Request, authorization: str | None) -> ThermalService:
+    workspace = _studio_workspace(request, authorization)
+    service = getattr(app.state, "thermal_service", None)
+    if service is None or service.index.root != workspace.root:
+        service = app.state.thermal_service = ThermalService(DjiMediaIndex(workspace.root))
+    return service
+
+
+def _thermal_params(distance, humidity, emissivity, reflection, ambient) -> MeasureParams:
+    try:
+        return MeasureParams(distance=distance, humidity=humidity, emissivity=emissivity,
+                             reflection=reflection, ambient=ambient)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _thermal_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ThermalNotFound):
+        return HTTPException(status_code=404, detail="Thermal image not indexed")
+    if isinstance(exc, ThermalChanged):
+        return HTTPException(status_code=409, detail="DJI media changed; reindex required")
+    if isinstance(exc, ThermalSdkBusy):
+        return HTTPException(status_code=503, detail="DJI Thermal SDK is busy",
+                             headers={"Retry-After": "5"})
+    if isinstance(exc, ThermalSdkUnavailable):
+        return HTTPException(status_code=503, detail="DJI Thermal SDK not available")
+    if isinstance(exc, (ThermalError, ThermalSdkError)):
+        return HTTPException(status_code=422, detail=str(exc))
+    return HTTPException(status_code=503, detail="DJI media unavailable")
+
+
+_THERMAL_ERRORS = (ThermalError, ThermalSdkError, DjiMediaError, OSError, sqlite3.Error)
+_Param = lambda: Query(default=None)  # noqa: E731
+
+
+@app.get("/thermal", response_class=HTMLResponse, include_in_schema=False)
+def thermal_page(request: Request, response: Response) -> str:
+    if lan_mode_enabled():
+        require_lan(request)
+    _no_cache(response)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "img-src 'self' blob: data:; connect-src 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    )
+    return render_thermal_page()
+
+
+@app.get("/api/v1/thermal/status")
+def thermal_status(request: Request, response: Response,
+                   authorization: str | None = Header(default=None)) -> dict:
+    service = _thermal_service(request, authorization)
+    _no_cache(response)
+    try:
+        listing = service.index.list_thermal(limit=1)
+    except (DjiMediaError, OSError, sqlite3.Error):
+        listing = {"total": None, "last_scanned_at": None}
+    return {"sdk": service.sdk_status(), "thermal_images": listing["total"],
+            "last_scanned_at": listing["last_scanned_at"]}
+
+
+@app.get("/api/v1/thermal/images")
+def thermal_images(request: Request, response: Response,
+                   q: str = Query(default="", max_length=120),
+                   limit: int = Query(default=50, ge=1, le=100),
+                   offset: int = Query(default=0, ge=0, le=1_000_000),
+                   authorization: str | None = Header(default=None)) -> dict:
+    service = _thermal_service(request, authorization)
+    _no_cache(response)
+    try:
+        return service.list(query=q, limit=limit, offset=offset)
+    except _THERMAL_ERRORS as exc:
+        raise _thermal_http_error(exc) from exc
+
+
+@app.get("/api/v1/thermal/images/{media_id}/analysis")
+def thermal_analysis(media_id: str, request: Request, response: Response,
+                     distance: float | None = _Param(), humidity: float | None = _Param(),
+                     emissivity: float | None = _Param(), reflection: float | None = _Param(),
+                     ambient: float | None = _Param(),
+                     authorization: str | None = Header(default=None)) -> dict:
+    service = _thermal_service(request, authorization)
+    params = _thermal_params(distance, humidity, emissivity, reflection, ambient)
+    _no_cache(response)
+    try:
+        return service.analysis(media_id, params)
+    except _THERMAL_ERRORS as exc:
+        raise _thermal_http_error(exc) from exc
+
+
+@app.get("/api/v1/thermal/images/{media_id}/temperatures")
+def thermal_temperatures(media_id: str, request: Request,
+                         distance: float | None = _Param(), humidity: float | None = _Param(),
+                         emissivity: float | None = _Param(), reflection: float | None = _Param(),
+                         ambient: float | None = _Param(),
+                         authorization: str | None = Header(default=None)) -> Response:
+    """Row-major float32 little-endian deg C grid (X-Thermal-Width x X-Thermal-Height)."""
+    service = _thermal_service(request, authorization)
+    params = _thermal_params(distance, humidity, emissivity, reflection, ambient)
+    try:
+        measurement = service.measure(media_id, params)
+    except _THERMAL_ERRORS as exc:
+        raise _thermal_http_error(exc) from exc
+    grid = measurement.grid
+    if sys.byteorder != "little":
+        grid = type(grid)(grid)
+        grid.byteswap()
+    return Response(content=grid.tobytes(), media_type="application/octet-stream", headers={
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "X-Thermal-Width": str(measurement.width), "X-Thermal-Height": str(measurement.height),
+    })
 
 
 @app.post("/api/v1/flight/command", status_code=403)

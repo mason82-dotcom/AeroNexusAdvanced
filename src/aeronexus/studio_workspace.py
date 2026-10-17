@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import re
 import tempfile
-from typing import Any
 from uuid import UUID, uuid4
 
 from .wpml_export import WaypointMission
