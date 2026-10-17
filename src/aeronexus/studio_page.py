@@ -72,6 +72,28 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .map-bar{position:absolute;z-index:500;top:16px;left:16px;right:16px;display:flex;gap:7px;align-items:center;flex-wrap:wrap;pointer-events:none}
 .map-bar>*{pointer-events:auto;box-shadow:0 5px 20px #0006}.map-bar button,.map-bar select{background:#162b44;border:1px solid #466a8c}
 .map-bar select{width:auto;max-width:160px}
+.map-bar [hidden]{display:none!important}
+.map-bar .map-primary{font-weight:650}
+#map-info[data-minimized="true"]{max-width:min(330px,calc(100% - 24px));overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#cloud-overview-panel[data-minimized="true"] #cloud-overview-list,
+#cloud-overview-panel[data-minimized="true"] .cloud-overview-help{display:none}
+body.map-focus-active{overflow:hidden}
+body.map-focus-active .content{position:fixed;inset:0;z-index:1500;height:100dvh;min-height:0;width:100%;background:var(--bg)}
+body.map-focus-active #map-pane{height:100%}
+body.map-focus-active #map{height:100%;min-height:0}
+@media(max-width:700px){
+  .map-bar{top:9px;left:9px;right:9px;gap:6px}
+  .map-bar button,.map-bar select{font-size:12px;padding:8px 10px;min-height:38px}
+  .map-bar[data-compact="true"] .map-extra{display:none}
+  .map-bar #wayline-preview-fit{max-width:48vw}
+  #cloud-overview-panel{top:auto;right:9px;bottom:90px;width:min(355px,calc(100% - 18px));max-height:50dvh}
+  #cloud-overview-panel[data-minimized="true"]{max-height:140px}
+  .map-info{left:9px;bottom:14px;max-width:calc(100% - 18px);font-size:11px;padding:7px 9px}
+  #map-info[data-minimized="true"]{-webkit-line-clamp:1}
+  body.map-focus-active .map-bar{top:calc(9px + env(safe-area-inset-top))}
+  body.map-focus-active #cloud-overview-panel{bottom:calc(75px + env(safe-area-inset-bottom))}
+  body.map-focus-active .map-info{bottom:calc(8px + env(safe-area-inset-bottom))}
+}
 .map-info{position:absolute;z-index:500;bottom:34px;left:12px;max-width:min(480px,80%);padding:9px 12px;border-radius:9px;background:#101d2ce8;color:#dceaff;font-size:12px;pointer-events:none}
 .map-info.warning{border:1px solid #a87548;color:#ffe3b0;background:#34251de8}
 .point-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 7px;border-radius:9px;border:1px solid #314961;margin:7px 0;background:#16263d}
@@ -158,7 +180,7 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .analysis-warning:empty{display:none}
 footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 @media(max-width:1000px){.layout{grid-template-columns:320px minmax(0,1fr)}header{gap:9px}.auth{min-width:250px}}
-@media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}header{padding:11px}.map-bar{top:8px;left:8px;right:8px}}
+@media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}header{padding:11px}}
 </style>
 </head>
 <body>
@@ -312,18 +334,28 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <main class="content">
 <section class="pane active" id="map-pane">
 <div id="map" role="application" aria-label="Interaktive Missionskarte"></div>
-<div class="map-bar">
-<select id="map-layer" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
-<button id="pilot2-map-toggle" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button><button id="wayline-preview-fit" hidden>Cloud-Vorschau zentrieren</button><button id="wayline-preview-clear" hidden>Cloud-Vorschau schließen</button><button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
+<div class="map-bar" id="map-toolbar" data-compact="true">
+<button id="map-focus-toggle" type="button" class="map-primary" aria-pressed="false">Kartenfokus</button>
+<button id="map-tools-toggle" type="button" class="map-primary" aria-expanded="false" aria-controls="map-tools-details">Werkzeuge</button>
+<button id="wayline-preview-fit" type="button" class="map-primary" hidden>Route zentrieren</button>
+<div id="map-tools-details" class="map-extra" style="display:contents">
+<select id="map-layer" class="map-extra" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
+<button id="pilot2-map-toggle" class="map-extra" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button>
+<button id="wayline-preview-clear" class="map-extra" hidden>Cloud-Vorschau schließen</button>
+<button id="map-zoom-in" class="map-extra">+</button><button id="map-zoom-out" class="map-extra">−</button>
+<button id="map-home" class="map-extra" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button>
+<button id="map-fit" class="map-extra">Mission zentrieren</button>
+<button id="map-info-toggle" class="map-extra" type="button" aria-expanded="false" aria-controls="map-info">Hinweis zeigen</button>
+</div>
 </div>
 <section id="cloud-overview-panel" role="region" aria-label="Cloud-Waylines auf der Karte" hidden>
-  <div class="cloud-head"><strong>Cloud-Routen · nur lesen</strong><button id="cloud-overview-close" type="button">Schließen</button></div>
+  <div class="cloud-head"><strong>Cloud-Routen · nur lesen</strong><button id="cloud-overview-expand" type="button" aria-expanded="false" aria-controls="cloud-overview-list">Routen anzeigen</button><button id="cloud-overview-close" type="button">Schließen</button></div>
   <p class="note" id="cloud-overview-status" role="status" aria-live="polite">Keine Cloud-Routen geladen.</p>
   <button id="cloud-overview-fit" type="button" disabled>Alle sichtbaren Routen zentrieren</button>
   <div id="cloud-overview-list" aria-label="Routen ein- oder ausblenden"></div>
-  <p class="note">Linienlänge = horizontale WGS84-Segmentstrecke, keine Flugdistanz. Weiße Kreise: Linienanfang, farbige Kreise: Linienende. Keine Flugfreigabe oder Missionsänderung.</p>
+  <p class="note cloud-overview-help">Linienlänge = horizontale WGS84-Segmentstrecke, keine Flugdistanz. Weiße Kreise: Linienanfang, farbige Kreise: Linienende. Keine Flugfreigabe oder Missionsänderung.</p>
 </section>
-<div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
+<div class="map-info" id="map-info" role="status" aria-live="polite" data-minimized="true">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
 </section>
 <section class="pane" id="terrain-pane">
 <div class="terrain-stage">
@@ -1304,6 +1336,37 @@ function cloudOverviewFormatDistance(distance){
   if(distance>=1000)return (distance/1000).toLocaleString("de-DE",{maximumFractionDigits:2})+" km";
   return Math.round(distance)+" m";
 }
+function setCloudOverviewMinimized(minimized){
+  const panel=$("cloud-overview-panel"),button=$("cloud-overview-expand");
+  panel.dataset.minimized=String(minimized);
+  button.setAttribute("aria-expanded",String(!minimized));
+  button.textContent=minimized?"Routen anzeigen":"Routen verbergen";
+}
+function setMapToolsExpanded(expanded){
+  const toolbar=$("map-toolbar"),button=$("map-tools-toggle");
+  toolbar.dataset.compact=String(!expanded);
+  button.setAttribute("aria-expanded",String(expanded));
+  button.textContent=expanded?"Weniger":"Werkzeuge";
+}
+function setMapInfoExpanded(expanded){
+  $("map-info").dataset.minimized=String(!expanded);
+  $("map-info-toggle").setAttribute("aria-expanded",String(expanded));
+  $("map-info-toggle").textContent=expanded?"Hinweis kürzen":"Hinweis zeigen";
+}
+function refreshMobileMapSize(){
+  if(!map)return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(map)map.invalidateSize({pan:false});
+  }));
+}
+function setMapFocus(enabled){
+  document.body.classList.toggle("map-focus-active",enabled);
+  const button=$("map-focus-toggle");
+  button.setAttribute("aria-pressed",String(enabled));
+  button.textContent=enabled?"Kartenfokus beenden":"Kartenfokus";
+  if(enabled&&$("map-pane").classList.contains("active")===false)switchTab("map-pane");
+  refreshMobileMapSize();
+}
 function closeCloudOverview(quiet=false){
   ++cloudOverviewGeneration;
   if(cloudOverviewController)cloudOverviewController.abort();
@@ -1316,6 +1379,7 @@ function closeCloudOverview(quiet=false){
   $("cloud-overview-list").replaceChildren();
   $("cloud-overview-panel").hidden=true;
   $("cloud-overview-fit").disabled=true;
+  setCloudOverviewMinimized(true);
   if(!quiet&&map)mapWarning("Cloud-Routenübersicht geschlossen. Missionen unverändert.");
 }
 function fitCloudRoutes(entry=null){
@@ -1409,6 +1473,7 @@ async function openCloudOverview(){
   }));
   cloudOverviewLayer.clearLayers();cloudOverviewLayer.addTo(map);
   $("cloud-overview-panel").hidden=false;
+  setCloudOverviewMinimized(true);
   renderCloudOverview();
   for(const entry of cloudOverviewRoutes){
     if(generation!==cloudOverviewGeneration||controller.signal.aborted)break;
@@ -1494,6 +1559,7 @@ async function loadWaylines(){
   }finally{clearTimeout(timer);if(serial===waylineSerial){$("refresh-waylines").disabled=false;$("wayline-grid").setAttribute("aria-busy","false");waylineAbort=null;}}
 }
 function switchTab(id){
+  if(id!=="map-pane"&&id!=="geo-pane"&&document.body.classList.contains("map-focus-active"))setMapFocus(false);
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
   ["mission-panel","geo-panel","media-panel","fleet-panel","wayline-panel"].forEach((key,i)=>{
@@ -2475,6 +2541,14 @@ function wire(){
     $("wayline-state").className="status error";$("wayline-state").textContent=errorMessage(err);
   }));
   $("cloud-overview-close").addEventListener("click",()=>closeCloudOverview());
+  $("cloud-overview-expand").addEventListener("click",()=>setCloudOverviewMinimized(
+    $("cloud-overview-panel").dataset.minimized!=="true"));
+  $("map-tools-toggle").addEventListener("click",()=>setMapToolsExpanded(
+    $("map-toolbar").dataset.compact==="true"));
+  $("map-info-toggle").addEventListener("click",()=>setMapInfoExpanded(
+    $("map-info").dataset.minimized==="true"));
+  $("map-focus-toggle").addEventListener("click",()=>setMapFocus(
+    !document.body.classList.contains("map-focus-active")));
   $("cloud-overview-fit").addEventListener("click",()=>fitCloudRoutes());
   $("wayline-search").addEventListener("input",()=>{waylinePage=1;renderWaylines();});
   $("wayline-source").addEventListener("change",()=>{waylinePage=1;renderWaylines();});
