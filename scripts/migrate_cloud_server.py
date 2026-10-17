@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 
-CORE = ("mysql", "redis", "emqx", "minio", "minio-init", "api", "control")
+CORE = ("mysql", "redis", "emqx", "minio", "minio-init", "api", "control", "mediamtx")
 IMAGES = (
     "mysql:8.4.11",
     "redis:7.2.5",
@@ -21,6 +21,7 @@ IMAGES = (
     "aeronexus/minio:RELEASE.2025-10-15T17-29-55Z-an1",
     "aeronexus/api:local",
     "aeronexus/control:local",
+    "bluenviron/mediamtx:1.15.1",
 )
 COPIES = (
     "edge",
@@ -212,8 +213,9 @@ def stage_migration(source: Path, target: Path, template: Path,
         run(["sudo", "mv", "--",
              str(partial / "edge/docker-compose.yml"),
              str(partial / "edge/docker-compose.legacy.yml")])
-        # Compose only the seven essential, locally available services.
+        # Compose only the essential, locally available services (incl. MediaMTX livestream).
         shutil.copyfile(template, partial / "edge/compose.core.yaml")
+        shutil.copyfile(template.with_name("mediamtx.yml"), partial / "edge/mediamtx.yml")
         run(["sudo", "chmod", "600", str(partial / "edge/.env")])
         validate_compose(partial, source)
         if external_minio:

@@ -151,6 +151,22 @@ def test_minimal_compose_is_isolated_and_uses_local_images():
     assert "services:\n  mapping:" not in compose
 
 
+def test_mediamtx_livestream_without_logins_but_lan_only():
+    compose = (ROOT / "deploy/cloud-server/compose.core.yaml").read_text()
+    assert "  mediamtx:\n" in compose and "network_mode: host" in compose
+    assert "./mediamtx.yml:/mediamtx.yml:ro" in compose
+    config = (ROOT / "deploy/cloud-server/mediamtx.yml").read_text()
+    assert "authMethod: internal" in config and "authHTTPAddress" not in config
+    users = config.split("authInternalUsers:", 1)[1].split("\nrtmp:", 1)[0]
+    assert "0.0.0.0/0" not in users and "::/0" not in users
+    assert '"192.168.178.0/24", "127.0.0.1/32", "::1/128"' in users
+    admin = users.split("- action: playback", 1)[1]
+    assert '"192.168.178.0/24"' not in admin and "- action: api" in admin
+    assert "apiAddress: 127.0.0.1:9997" in config
+    from aeronexus.lan_access import HOME_SUBNET
+    assert str(HOME_SUBNET) in users
+
+
 def test_migrated_secrets_are_gitignored():
     ignore = (ROOT / ".gitignore").read_text()
     assert "/cloud-server/" in ignore
