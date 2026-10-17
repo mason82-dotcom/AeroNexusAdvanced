@@ -12,6 +12,7 @@ separately authenticated BFF on a trusted private server may be queried.
 NEVER attempt direct DJI device access, SDK control, login, or any POST.
 """
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import ipaddress
@@ -234,14 +235,13 @@ class CloudApi2Bridge:
                     }) as response:
                         if response.status_code != 200:
                             raise CloudApi2BridgeError("Cloud API 2 backend unavailable")
-                        chunks, byte_count = [], 0
-                        async for chunk in response.aiter_bytes():
-                            byte_count += len(chunk)
-                            if byte_count > MAX_RESPONSE_BYTES:
+                        content = bytearray()
+                        async for chunk in response.aiter_bytes(chunk_size=65536):
+                            if len(content) + len(chunk) > MAX_RESPONSE_BYTES:
                                 raise CloudApi2BridgeError("Cloud API 2 response too large")
-                            chunks.append(chunk)
+                            content.extend(chunk)
                     devices = normalize_devices(
-                        json.loads(b"".join(chunks)),
+                        json.loads(content),
                         stale_after_seconds=self.settings.stale_after_seconds,
                     )
                 self._cached = devices
@@ -253,23 +253,18 @@ class CloudApi2Bridge:
             return self._response()
 
     def _response(self) -> dict:
-        # A 15-second cache must not freeze the 'fresh' classification.
-        # Recompute age using the SDK's lastOsdAt event time on every read.
+        devices = deepcopy(self._cached)
         now = datetime.now(timezone.utc)
-        devices = []
-        for cached in self._cached:
-            row = dict(cached)
-            sample_at = _date(row.get("received_at"))
-            if sample_at is not None and row["freshness"] != "missing":
-                age = (now - sample_at).total_seconds()
-                row["freshness"] = (
-                    "clock_skew" if age < -1 else
-                    "fresh" if age <= self.settings.stale_after_seconds else "stale"
-                )
-                row["age_seconds"] = round(max(age, 0), 2) if age >= 0 else None
-            row["online"] = (
-                row["reported_online"] if row["freshness"] == "fresh" else None
-            )
-            devices.append(row)
+        for device in devices:
+            received = _date(device["received_at"])
+            age = (now - received).total_seconds() if received else None
+            # Missing OSD remains missing even when lastOsdAt exists.
+            if device["freshness"] != "missing":
+                device["freshness"] = (
+                    "clock_skew" if age is not None and age < -1 else
+                    "fresh" if age is not None and age <= self.settings.stale_after_seconds
+                    else "stale")
+            device["age_seconds"] = round(max(age, 0), 2) if age is not None and age >= 0 else None
+            device["online"] = device["reported_online"] if device["freshness"] == "fresh" else None
         return {"state": self._status, "source": "dji-cloud-api-2",
                 "devices": devices, "total": len(devices)}

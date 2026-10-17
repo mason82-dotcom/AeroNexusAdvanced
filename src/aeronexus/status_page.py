@@ -92,7 +92,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <main>
 <header>
 <div><div class="eyebrow">DJI Monitoring · Nur Lesen</div><h1>AeroNexusAdvanced</h1>
-<div class="subtle">Flottenstatus · Flugbefehle deaktiviert · <a href="/studio" style="color:#9cd2ff">Mission Studio für Chrome ↗</a> · <a href="/operations" style="color:#9cd2ff">Operations Center ↗</a></div></div>
+<div class="subtle">Flottenstatus · Flugbefehle deaktiviert · <a href="/studio" style="color:#9cd2ff">Mission Studio für Chrome ↗</a> · <a href="/operations" style="color:#9cd2ff">Operations Center ↗</a> · <a href="/thermal" style="color:#9cd2ff">Thermal ↗</a> · <a href="/multispectral" style="color:#9cd2ff">Multispektral ↗</a> · <a href="/results" style="color:#9cd2ff">Ergebnisraster ↗</a></div></div>
 <div class="meta">Automatische Anzeigeaktualisierung: __INTERVAL_SECONDS__ s<br>
 <span id="timestamp">Noch keine Daten</span><br>
 <span id="feed">Live-Feed: –</span></div>

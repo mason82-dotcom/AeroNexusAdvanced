@@ -5,7 +5,7 @@ import pytest
 
 from aeronexus.cloud_api_mqtt import CloudOsdIngest
 from aeronexus.cloud_api_osd import (CloudOsdError, classify, normalize_osd, osd_data,
-                                     topic_serial)
+                                     topic_device, topic_serial)
 from aeronexus.inventory import DeviceType
 from aeronexus.providers import ProviderKind
 from aeronexus.status_runtime import StatusRuntime
@@ -148,3 +148,77 @@ def test_bad_topic_and_payload_rejected(ingest):
     assert not ingest.handle("thing/product/x/state", envelope(AIRCRAFT))
     assert not ingest.handle(topic(DRONE), b"not json")
     assert ingest.rejected == 2
+
+
+def test_dji_state_topic_is_distinct_and_never_accepts_commands():
+    assert topic_device(f"thing/product/{DRONE}/state") == (DRONE, "state")
+    assert topic_device(topic(DRONE)) == (DRONE, "osd")
+    with pytest.raises(CloudOsdError):
+        topic_serial(f"thing/product/{DRONE}/state")
+    for other in (
+        f"thing/product/{DRONE}/services",
+        f"thing/product/{DRONE}/property/set",
+        f"sys/product/{DRONE}/status",
+        "thing/product/+/state",
+        "thing/product/../state",
+        f"thing/product/{DRONE}/state/extra",
+    ):
+        with pytest.raises(CloudOsdError):
+            topic_device(other)
+
+
+def test_rtk_string_enums_supported_but_unbounded_data_rejected():
+    result = normalize_osd(DeviceType.AIRCRAFT, {
+        "position_state": {"is_fixed": "not_started", "gps_number": 19}})
+    assert result["rtk_state"] == "is_fixed:not_started"
+    assert result["gps_satellites"] == 19
+    assert normalize_osd(DeviceType.AIRCRAFT, {
+        "position_state": {"is_fixed": "fixing_successful"}})["rtk_state"] == (
+        "is_fixed:fixing_successful")
+    for bad in ("UPPER_CASE", "not started", "<script>", "x" * 100, True, []):
+        with pytest.raises(CloudOsdError):
+            normalize_osd(DeviceType.AIRCRAFT, {"position_state": {"is_fixed": bad}})
+
+
+def test_opt_in_state_merges_only_known_telemetry_fields(ingest):
+    ingest.handle(topic(DRONE), envelope(AIRCRAFT))
+    first = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
+    state_topic = f"thing/product/{DRONE}/state"
+    assert not ingest.handle(state_topic, envelope({"elevation": 55}))
+    assert ingest.rejected == 1  # default remains OSD only
+    assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == first
+    assert ingest.handle(state_topic, envelope({
+        "elevation": 55, "position_state": {"is_fixed": "not_started"},
+        "device_secret": "must-not-be-stored", "nonce": "also-private",
+    }), allow_state=True)
+    sample = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
+    assert sample.elevation_m == 55
+    assert sample.battery_percent == 76
+    assert sample.rtk_state == "is_fixed:not_started"
+    assert "must-not-be-stored" not in repr(sample)
+    assert "also-private" not in repr(sample)
+
+
+def test_state_cannot_create_device_or_mix_controller_and_aircraft(ingest):
+    state_topic = f"thing/product/{DRONE}/state"
+    assert not ingest.handle(state_topic, envelope({"elevation": 7}), allow_state=True)
+    assert ingest.ignored == 1
+    assert not ingest.runtime.inventory.devices()
+    ingest.handle(topic(DRONE), envelope(AIRCRAFT))
+    old = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
+    assert not ingest.handle(state_topic, envelope(CONTROLLER), allow_state=True)
+    assert ingest.rejected == 1
+    assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == old
+    assert not ingest.handle(state_topic, envelope({"payloads": [{"x": "y"}]}),
+                             allow_state=True)
+    assert ingest.ignored == 2
+    assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == old
+
+
+def test_invalid_state_is_atomic_and_never_imports_secrets(ingest):
+    ingest.handle(topic(DRONE), envelope(AIRCRAFT))
+    before = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
+    assert not ingest.handle(f"thing/product/{DRONE}/state",
+                             envelope({"battery": {"capacity_percent": 200}}),
+                             allow_state=True)
+    assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == before

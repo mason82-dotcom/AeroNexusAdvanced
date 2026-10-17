@@ -1,0 +1,173 @@
+# AeroNexusAdvanced: isolated minimal DJI Cloud API backend on Raspberry Pi 5.
+# Start only after running scripts/migrate_cloud_server.py --stage and reviewing
+# docs/local-cloud-server-migration.md. This stack is NOT FlightHub 2 On-Premises.
+# Legacy Compose services remain stopped; never use the old edge/compose for this.
+# No image is built or updated automatically. No automatic container restarts.
+name: aeronexusadvanced-cloud
+
+x-common: &common
+  restart: "no"
+  labels:
+    com.centurylinklabs.watchtower.enable: "false"
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  mysql:
+    <<: *common
+    image: mysql:8.4.11
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_general_ci"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+      TZ: Europe/Berlin
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./runtime/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    <<: *common
+    image: redis:7.2.5
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?required}", "--appendonly", "yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  emqx:
+    <<: *common
+    image: emqx/emqx:5.8.6
+    environment:
+      EMQX_NODE__NAME: emqx@127.0.0.1
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:?required}
+      EMQX_AUTHENTICATION__1__MECHANISM: password_based
+      EMQX_AUTHENTICATION__1__BACKEND: built_in_database
+      EMQX_AUTHENTICATION__1__USER_ID_TYPE: username
+      EMQX_AUTHENTICATION__1__BOOTSTRAP_FILE: /opt/emqx/etc/auth-bootstrap.csv
+      EMQX_AUTHENTICATION__1__BOOTSTRAP_TYPE: plain
+    volumes:
+      - ./runtime/emqx/auth-bootstrap.csv:/opt/emqx/etc/auth-bootstrap.csv:ro
+      - ../telemetry/emqx/acl.conf:/opt/emqx/etc/acl.conf:ro
+      - ./data/emqx:/opt/emqx/data
+    ports:
+      - "1884:1883"        # DJI Pilot 2; host 1883 belongs to Mosquitto
+      - "8084:8083"        # DJI MQTT over WebSocket (DRC)
+      - "127.0.0.1:18083:18083"
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  minio:
+    <<: *common
+    # Use the existing, pinned ARM64 image; no build or download on migration.
+    image: aeronexus/minio:RELEASE.2025-10-15T17-29-55Z-an1
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      MINIO_API_CORS_ALLOW_ORIGIN: http://${SERVER_HOST:?required}:8085
+    volumes:
+      - type: bind
+        source: ${MINIO_DATA_DIR:-./data/minio}
+        target: /data
+        bind:
+          create_host_path: false
+    ports:
+      - "9000:9000"
+      - "127.0.0.1:9001:9001"
+
+  minio-init:
+    <<: *common
+    image: aeronexus/minio:RELEASE.2025-10-15T17-29-55Z-an1
+    entrypoint: ["/bin/sh", "/init/minio-init.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      MINIO_STS_USER: ${MINIO_STS_USER:?required}
+      MINIO_STS_PASSWORD: ${MINIO_STS_PASSWORD:?required}
+      MINIO_BUCKET: ${MINIO_BUCKET:?required}
+      MAPPING_MINIO_USER: ${MAPPING_MINIO_USER:?required}
+      MAPPING_MINIO_PASSWORD: ${MAPPING_MINIO_PASSWORD:?required}
+      MAPPING_RESULTS_BUCKET: mapping-results
+      MAPPING_BASEMAPS_BUCKET: basemaps
+      FARMING_MINIO_USER: ${FARMING_MINIO_USER:?required}
+      FARMING_MINIO_PASSWORD: ${FARMING_MINIO_PASSWORD:?required}
+      FARMING_BUCKET: farming
+      PV_MINIO_USER: ${PV_MINIO_USER:?required}
+      PV_MINIO_PASSWORD: ${PV_MINIO_PASSWORD:?required}
+      PV_BUCKET: pv-inspections
+    volumes:
+      - ../evidence/scripts/minio-init.sh:/init/minio-init.sh:ro
+    depends_on:
+      - minio
+
+  api:
+    <<: *common
+    image: aeronexus/api:local
+    environment:
+      SERVER_HOST: ${SERVER_HOST:?required}
+      BROKER_PROTOCOL: MQTT
+      BROKER_HOST: ${SERVER_HOST:?required}
+      BROKER_PORT: "1884"
+      BROKER_PATH: ""
+      DRC_PROTOCOL: WS
+      DRC_HOST: ${SERVER_HOST:?required}
+      DRC_PORT: "8084"
+      OSS_ENDPOINT: http://${SERVER_HOST:?required}:9000
+      WHIP_URL: http://${SERVER_HOST:?required}:8889/live/{stream}/whip?user=${LIVE_PUBLISH_USER:-}&pass=${LIVE_PUBLISH_PASSWORD:-}
+      RTMP_URL: rtmp://${SERVER_HOST:?required}:1935/live/{stream}?user=${LIVE_PUBLISH_USER:-}&pass=${LIVE_PUBLISH_PASSWORD:-}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+      JWT_SECRET: ${JWT_SECRET:?required}
+      BROKER_USER: ${MQTT_SERVER_USER:?required}
+      BROKER_PASSWORD: ${MQTT_SERVER_PASSWORD:?required}
+      MINIO_STS_USER: ${MINIO_STS_USER:?required}
+      MINIO_STS_PASSWORD: ${MINIO_STS_PASSWORD:?required}
+      MINIO_BUCKET: ${MINIO_BUCKET:?required}
+      DJI_APP_ID: ${DJI_APP_ID:?required}
+      DJI_APP_KEY: ${DJI_APP_KEY:?required}
+      DJI_APP_LICENSE: ${DJI_APP_LICENSE:?required}
+      RTSP_USER: ${RTSP_USER:?required}
+      RTSP_PASSWORD: ${RTSP_PASSWORD:?required}
+      NTP_SERVER: ${NTP_SERVER:-ptbtime1.ptb.de}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PILOT_SKIP_UPLOAD_EXT: ${PILOT_SKIP_UPLOAD_EXT:-}
+      TZ: Europe/Berlin
+    volumes:
+      - ../api/docker/application.yml:/app/config/application.yml:ro
+      - ./logs:/app/logs
+    ports:
+      - "6789:6789"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  control:
+    <<: *common
+    image: aeronexus/control:local
+    volumes:
+      - ./data/basemaps:/usr/share/nginx/basemaps:ro
+    ports:
+      - "8085:80"
+    depends_on:
+      - api

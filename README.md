@@ -8,7 +8,7 @@ Python/FastAPI integration gateway for DJI enterprise data on Raspberry Pi 5.
 |---|---|
 | FlightHub 2 Public Cloud OpenAPI V2 | Project listing, project fleet (aircraft + remote controllers), thing model state, opt-in polling |
 | FlightHub 2 On-Premises OpenAPI V2 | Project listing, project topology (aircraft + remote controllers) with embedded state, opt-in polling |
-| DJI Cloud API (AeroNexus EMQX, Pilot 2) | Opt-in read-only MQTT OSD live feed for aircraft and remote controllers |
+| DJI Cloud API (AeroNexus EMQX, Pilot 2) | Opt-in read-only MQTT OSD live feed; optional event-driven `/state` updates for already known aircraft and controllers |
 | DJI Cloud API 2 (official SDK BFF) | Optional read-only GET of aircraft OSD/HMS snapshots via a separately deployed authenticated x86_64 backend; disabled by default |
 
 The project has a validated local inventory for **aircraft and remote
@@ -28,8 +28,39 @@ not appear as a distinct FlightHub device. See
 [confirmed project status](docs/PROJECT_STATUS.md) for the precise scope.
 
 The DJI Cloud API live feed (phase 9) subscribes read-only to the OSD
-telemetry that DJI Pilot 2 pushes to the AeroNexus MQTT broker:
-[Phase 9 live feed](docs/phase-9-cloud-api-live-feed.md).
+telemetry that DJI Pilot 2 pushes to the AeroNexus MQTT broker; optional
+`AERONEXUS_OSD_STATE_ENABLED=1` also reads approved change-driven
+`thing/product/+/state` packets. The consumer **does not itself provide**
+the Pilot 2 workspace, licence validation or MQTT broker; the legacy
+FlightHub EU provider remains independent. DJI Cloud API 1.18 (2026-10-13)
+adds mainly O4 Ground Station and Dock functions, not a new Matrice 4T
+Pilot 2 API. See [Phase 9 live feed and 1.18 audit](docs/phase-9-cloud-api-live-feed.md).
+
+## DJI Cloud API server under AeroNexusAdvanced (Raspberry Pi 5)
+
+The previously installed `~/Projekte/AeroNexus/edge` server can be staged,
+with its stopped MySQL, Redis, EMQX and MinIO state, into the **gitignored**
+`~/Projekte/AeroNexusAdvanced/cloud-server/` directory. An isolated seven-service
+Compose template uses the existing Pi Docker images, excludes mapping/farming/PV,
+and does not start or delete anything automatically.
+
+```bash
+python3 scripts/migrate_cloud_server.py           # read-only preflight
+python3 scripts/migrate_cloud_server.py --stage   # checked cold copy; no start
+```
+
+Source data, DJI credentials and the prior stopped containers remain intact.
+The copied `edge/.env` is private, distinct from the current FlightHub
+`.env` at the repository root. See
+[Pi migration guide](docs/local-cloud-server-migration.md); [Pilot 2 branding and safe web-only rebuild](docs/pilot2-web-branding.md); [RC Plus 2 einmalig koppeln und Sitzung automatisch wiederherstellen](docs/pilot2-auto-session.md) for conditions,
+Compose validation, rollout and rollback. **No FlightHub 2 On-Premises
+installation** is included or implied.
+
+## GeoTIFF-/COG-Ergebnisraster
+
+`/results` ergänzt einen lokalen Ergebniskatalog mit Band-/RGB-Kachelviewer,
+NoData-Transparenz, reprojizierten XYZ-Kacheln und Kontrasteinstellungen.
+Optionales Extra `[raster]`; [Einrichtung und Grenzen](docs/raster-results.md).
 
 ## Development
 
@@ -164,6 +195,74 @@ Als zusätzliche technische Referenz wurde das
 geprüft. Sein Kommandozeilenprogramm/MCP-Server wird **nicht**
 automatisch installiert oder mit DJI-Schreibberechtigungen gestartet.
 
+## DJI-MinIO-Medienkatalog (Phase 21)
+
+DJI-Medien aus dem lokalen MinIO-Bucket `dji-cloud` lassen sich ohne
+Kopieren, Löschen oder DJI-Steuerbefehle **schreibgeschützt indizieren**.
+Der transaktionale Metadatenkatalog erscheint separat in der
+Mission-Studio-Medienbibliothek; JPEG/PNG/WebP sind bis 32 MiB als
+Vorschau abrufbar, große DNG/Videoobjekte bleiben als Download verfügbar.
+
+Einlesen auf dem Pi: `python -m aeronexus.minio_media_index` (manuell,
+optional mit `--dry-run`). Erfordert einen eigenen MinIO-Lesezugang
+und das optionale Paket-Extra `minio`.
+Die bisherige Seite `/media` liest denselben Katalog; ihre Metadaten-API
+bleibt kompatibel. Der alte Root-basierte Scanpfad ist entfernt. Bestehende
+Phase-20-Indizes unter `var/` bleiben unangetastet; für deren Umstieg ist
+ein expliziter Scan mit dem neuen Lesezugang erforderlich.
+Details: [Phase 21 – DJI-MinIO-Medien](docs/phase-21-dji-minio-media.md).
+
+**Fotokatalog auf `/media`:** Alle DJI-JPEGs sind nach Drohne (M3E, M3T, M4T,
+M3M), Kamera und Flug geordnet. Grundlage sind die Bild-Metadaten, nicht der
+Dateiname. Die Seite zeigt eine Karte mit Aufnahmepunkten, Footprints und GSD;
+unplausible GNSS-Positionen sind markiert.
+Details: [docs/photo-catalog.md](docs/photo-catalog.md).
+
+## Thermal (`/thermal`)
+
+Eigener Web-UI-Tab für radiometrische DJI-Wärmebilder (M3T/M4T R-JPEG) aus
+dem MinIO-Index. Temperaturen nur über das DJI Thermal SDK (`dji_irp`,
+auf dem Pi 5 via Box64): Paletten, Isotherme, Hot-/Coldspot, Punkt- und
+Bereichsmessung, Emissionsgrad & Co., PNG/CSV/JSON-Export, Karte mit
+Aufnahmepunkten und Footprints, Overlay mit dem Sichtbild sowie PV-Inspektion
+(ΔT-Klassen und Messbedingungen, Orientierung an IEC TS 62446-3). Installation:
+`deploy/pi/install-thermal-sdk.sh <dji_thermal_sdk_v1.8_*.zip>`.
+Details: [docs/thermal.md](docs/thermal.md).
+
+## Automatischer Medien-Sync (Pilot 2 Uploads)
+
+Dienst `aeronexusadvanced-media-sync`: vollständiger Scan beim Start, danach
+nach jedem Pilot-2-Upload (Bucket-Abfrage alle 2 min oder MinIO-Ereignisse)
+Aktualisierung von Medienindex, Fotokatalog, Thermal-Geo-Index, Multispektral-Katalog,
+NDVI-Übersichten und Thermal-Messungen – nur lesend. Status auf `/media`.
+Details: [docs/media-auto-sync.md](docs/media-auto-sync.md).
+
+## Multispektral DJI Mavic 3M (`/multispectral`)
+
+Eigener Web-UI-Tab für M3M-Bänder (Grün, Rot, RedEdge, NIR) aus dem
+MinIO-Index, über die CaptureUUID zu Aufnahmen gruppiert. Verarbeitung nach
+DJIs *Mavic 3M Image Processing Guide* (Schwarzwert, Gain, Belichtung,
+Vignettierung, Entzerrung, HMatrix-Ausrichtung, Sonnenlichtsensor); NDVI,
+GNDVI, NDRE, LCI, CIR-Falschfarben, Messwerkzeuge und Export; 4-Band-GeoTIFF
+für QGIS (NIR, G, R, RE; nach mirrormapper/m3m-image-stacking, plus
+Feinausrichtung und Nadir-Georeferenz), auch für lokale Ordner:
+`python -m aeronexus.m3m_stack ORDNER -o AUSGABE`. Katalog:
+`.venv/bin/python -m aeronexus.multispectral`; Abhängigkeit
+`pip install -e '.[multispectral]'`. Details: [docs/multispectral.md](docs/multispectral.md).
+
+## DEM-Hangneigung im 3D-Geländeviewer (Phase 20)
+
+Im Mission Studio lässt sich das importierte, auf maximal 48×48 Stützpunkte
+resampelte Höhenmodell alternativ nach **lokaler Hangneigung** einfärben
+(0–8°, 8–15°, 15–30°, ab 30°). Zellmittel/Maximum und ein Klick-Neigungswert
+ergänzen die bestehenden WGS84-/Höhenprofilfunktionen. Die Berechnung
+verwendet die **Originalhöhen ohne visuelle Überhöhung** und die lokalen
+metrischen Rasterabstände. **Keine** DJI-Flugfreigabe, Hindernisprüfung
+oder Änderung an WPML, STL und den lesenden DJI-Datenquellen.
+
+Grenzen, Prüfungen und manuelle Pi-/Chrome-Abnahme:
+[Phase 20 – DEM-Hangneigung](docs/phase-20-terrain-slope.md).
+
 ## Running on the Pi (systemd + HTTPS)
 
 `deploy/pi/` contains a local-CA certificate script, a launcher that refuses
@@ -191,6 +290,17 @@ certificate verification.
 docker build -t aeronexusadvanced:dev .
 docker run --rm -p 127.0.0.1:8000:8000 aeronexusadvanced:dev
 ```
+
+## Optional Metashape orthomosaic workflow
+
+The Multispectral page can package 3–100 selected M3M captures for an external
+Agisoft Metashape Professional worker. The Pi exports read-only copies; it does
+not install Metashape or start reconstruction. RGB and independent MS raw-band
+mosaics are supported. Raw-band outputs are not calibrated reflectance/NDVI
+products and tiled GeoTIFFs are not automatically certified COGs.
+
+See [Metashape integration](docs/metashape-integration.md) for the separately
+installed GeoSense processor, license requirements, export limits and worker use.
 
 ## Security limitations
 

@@ -72,6 +72,14 @@ header{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px
 .cockpit-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;flex-shrink:0;margin:1px 0 10px}
 .cockpit-summary .hero-value{background:#102c46;border:1px solid #335773;border-radius:10px;padding:7px 9px;min-width:0}
 .cockpit-summary .hero-value.battery{grid-column:1/-1}
+.osd-live-card{border-color:#386989;background:#102c43}
+.osd-live-card .sub{margin-top:6px}
+.controller-status{margin:0 0 10px;display:grid;gap:6px;flex-shrink:0}
+.controller-card{border:1px solid #365370;background:#112840;border-radius:9px;padding:9px}
+.controller-card b{font-size:12px;display:block}
+.controller-card span{font-size:12px;color:#b9cfe5;display:block;margin-top:3px}
+.gnss-note{border-left:3px solid #568caf;padding:8px 10px;background:#132d44;border-radius:4px;margin:9px 0}
+.gnss-note.warn{border-left-color:#d6a862}
 .right>.panel:first-child{flex:1.2}
 .right>.panel:last-child{flex:.8}
 .hero-value .hero-label{font-size:11px;color:#b4cce5;display:block}
@@ -117,7 +125,10 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <span class="active">FlightHub 2 Übersicht</span>
 <a href="/studio">Mission Studio ↗</a>
 <a href="/status">Live-Status ↗</a>
-</nav>
+<a href="/media">DJI Medien ↗</a>
+<a href="/thermal">Thermal ↗</a>
+<a href="/multispectral">Multispektral ↗</a>
+<a href="/results">Ergebnisraster</a></nav>
 <span class="header-state" id="connection" role="status" aria-live="polite">Lade lokalen FlightHub-Status…</span>
 </header>
 <div class="layout">
@@ -137,6 +148,11 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <div class="eyebrow">DJI Cloud API 2</div>
 <div class="row between"><b>Zusätzlicher SDK-Datenkanal</b><span id="cloud-api-state" class="badge">Nicht konfiguriert</span></div>
 <div id="cloud-api-detail" class="sub">Schreibgeschützte Anbindung über eine separate Cloud-API-2-Serverinstanz. Keine direkte DJI-Cloud-Verbindung im Browser.</div>
+</div>
+<div class="list-card osd-live-card" id="cloud-osd-panel">
+<div class="eyebrow">DJI Cloud API · MQTT</div>
+<div class="row between"><b>OSD-Liveempfang (nur lesen)</b><span id="osd-feed-state" class="badge" role="status">Prüfe…</span></div>
+<div id="osd-feed-detail" class="sub">Lokaler Telemetrieempfänger wird geprüft.</div>
 </div>
 <h3>Geräte im Projekt</h3><div class="scroll grow" id="project-devices"><div class="note">Lade Geräte…</div></div>
 </section>
@@ -182,6 +198,7 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <span id="cockpit-received" class="sub">Empfangszeit ausstehend</span>
 </div>
 <div id="cockpit-summary" class="cockpit-summary" aria-label="Wichtigste Fluggerätedaten"></div>
+<div id="controller-status" class="controller-status" aria-label="Status der Fernsteuerungen"></div>
 <div id="cockpit-content" class="scroll grow"><div class="note">Die Cockpitwerte werden lokal geladen…</div></div>
 </section>
 <section class="panel grow">
@@ -227,7 +244,19 @@ function gps(t){
 function currentDevices(){
   return devices.filter(d=>!currentProject||d.project_id===currentProject);
 }
-function selectedDevices(){return currentDevices().filter(d=>d.kind==="aircraft")}
+// Multiple providers can report one aircraft with the same serial number.
+// The full identity prevents the FlightHub-only row from masking live MQTT.
+function deviceKey(d){return JSON.stringify([d.provider,d.project_id,d.device_id]);}
+function providerLabel(provider){
+  return provider==="dji-cloud-api"?"DJI Cloud API MQTT":
+    provider==="flighthub-public-v2"?"FlightHub EU":
+    provider==="flighthub-onprem-v2"?"FlightHub On-Prem":
+    provider==="dji-cloud-api-2"?"DJI Cloud API 2":"Andere Quelle";
+}
+function selectedDevices(){
+  return currentDevices().filter(d=>d.kind==="aircraft").sort((a,b)=>
+    Number(b.provider==="dji-cloud-api")-Number(a.provider==="dji-cloud-api"));
+}
 function selectedProjectCatalog(){
   return projects.filter(p=>!currentProject||p.project_id===currentProject);
 }
@@ -274,7 +303,7 @@ function repaintDeviceLayer(){
     available.push(loc);
     const dot=L.circleMarker(loc,{radius:8,color:"#75e3bd",fillColor:"#33a88c",fillOpacity:.9,weight:3});
     dot.bindTooltip(elem("span","",(d.name||"Fluggerät")+" · aktuell"));
-    dot.on("click",()=>{currentDevice=d.device_id;renderCockpit();});
+    dot.on("click",()=>{currentDevice=deviceKey(d);renderCockpit();});
     dot.addTo(deviceLayer);
   }
   return available;
@@ -299,11 +328,12 @@ function clearOverlays(){
 function selectProject(projectId){
   currentProject=projectId;
   const candidates=selectedDevices();
-  if(!candidates.some(d=>d.device_id===currentDevice))currentDevice=candidates[0]?.device_id||"";
+  if(!candidates.some(d=>deviceKey(d)===currentDevice))currentDevice=candidates.length?deviceKey(candidates[0]):"";
   $("project-filter").value=projectId;
   repaintDeviceLayer();
   renderSummary();
   renderDevices();
+  renderControllerStatus();
   renderCockpit();
   renderCatalog();
   renderTracks();
@@ -312,8 +342,10 @@ function selectProject(projectId){
 function renderSummary(){
   const relevant=currentDevices();
   const aircraft=selectedDevices();
-  message("count-online",aircraft.filter(d=>d.freshness==="fresh"&&d.online===true).length);
-  message("count-drones",aircraft.length);
+  // Count physical aircraft once even when FlightHub and MQTT both report it.
+  message("count-online",new Set(aircraft.filter(d=>d.freshness==="fresh"&&d.online===true)
+    .map(d=>d.device_id)).size);
+  message("count-drones",new Set(aircraft.map(d=>d.device_id)).size);
   message("count-routes",visibleCatalogCount("waylines"));
   message("count-models",visibleCatalogCount("models"));
 }
@@ -337,18 +369,61 @@ function renderDevices(){
     if(d.kind!=="aircraft"&&d.kind!=="controller")continue;
     const selectable=d.kind==="aircraft";
     const card=add(body,"div","list-card"+(selectable?" clickable":"")+
-      (selectable&&d.device_id===currentDevice?" active":""));
+      (selectable&&deviceKey(d)===currentDevice?" active":""));
     add(card,"b","",d.name||"Unbenanntes Gerät");
     add(card,"small","",d.kind==="aircraft"?"Drohne":"Fernsteuerung");
-    add(card,"small","",d.provider==="dji-cloud-api-2"?
-      "DJI Cloud API 2 · SDK-BFF" :
-      d.provider==="dji-cloud-api"?"DJI Cloud API MQTT":"FlightHub 2 OpenAPI");
+    add(card,"small","",providerLabel(d.provider));
     const state=d.freshness==="fresh"?(d.online===true?"Online":"Offline"):"Nicht aktuell";
     add(card,"span","badge "+(state==="Online"?"good":"warn"),state);
     if(selectable)card.addEventListener("click",()=>{
-      currentDevice=d.device_id;renderCockpit();renderDevices();
+      currentDevice=deviceKey(d);renderCockpit();renderDevices();
     });
   }
+}
+function renderControllerStatus(){
+  const body=$("controller-status");body.replaceChildren();
+  const controllers=currentDevices().filter(d=>d.kind==="controller");
+  if(!controllers.length)return;
+  for(const d of controllers.slice(0,4)){
+    const t=d.telemetry||{};
+    const card=add(body,"div","controller-card");
+    add(card,"b","",(d.name||"Fernsteuerung")+" · "+providerLabel(d.provider));
+    const battery=finite(t.battery_percent)&&t.battery_percent>=0&&t.battery_percent<=100?
+      formatNumber(t.battery_percent,0,"%"):"Nicht übermittelt";
+    const age=finite(d.age_seconds)&&d.age_seconds>=0?
+      " · vor "+Math.floor(d.age_seconds)+" s empfangen":"";
+    const connection=connectionStatus(d)[0];
+    add(card,"span","",connection+" · Akku "+battery+age);
+  }
+  if(controllers.length>4)
+    add(body,"div","sub",(controllers.length-4)+" weitere Fernsteuerungen");
+}
+function renderOsdPanel(summary){
+  const feed=summary?.live_feed||{};
+  const state=feed.state||"unknown";
+  const accepted=Number.isSafeInteger(feed.accepted)&&feed.accepted>=0?feed.accepted:null;
+  const rejected=Number.isSafeInteger(feed.rejected)&&feed.rejected>=0?feed.rejected:null;
+  const parsed=typeof feed.last_message_at==="string"?Date.parse(feed.last_message_at):NaN;
+  const age=Number.isFinite(parsed)?Math.floor((Date.now()-parsed)/1000):null;
+  const recent=state==="subscribed"&&accepted>0&&age!==null&&age>=0&&age<=60;
+  const labels={
+    disabled:"Deaktiviert",connecting:"Verbindet",connected:"Verbunden",
+    subscribed:"Abonniert · wartet",auth_failed:"Anmeldung fehlgeschlagen",
+    subscription_denied:"Abonnement verweigert",unreachable:"Broker nicht erreichbar",
+    disconnected:"Getrennt",stopped:"Gestoppt"
+  };
+  const label=recent?"OSD-Empfang aktiv":labels[state]||"Status unbekannt";
+  message("osd-feed-state",label);
+  $("osd-feed-state").className="badge "+(recent?"good":
+    state==="subscribed"||state==="connecting"?"warn":"bad");
+  let detail="Schreibgeschützter MQTT-Kanal · ";
+  detail+=accepted===null?"Noch keine Empfangszähler":
+    accepted+" gültige OSD-Nachrichten seit Dienststart";
+  if(rejected!==null)detail+=" · "+rejected+" abgewiesen";
+  if(age!==null&&age>=0)detail+=" · letzter Empfang vor "+age+" s";
+  if(state==="subscribed"&&!recent)
+    detail+=" · derzeit kein neuer Telemetrieempfang bestätigt";
+  message("osd-feed-detail",detail);
 }
 function metric(parent,title,value){
   const box=add(parent,"div","");
@@ -359,9 +434,11 @@ function metric(parent,title,value){
 function rtkLabel(raw){
   const officialObserved={
     "is_fixed:not_started":"RTK nicht gestartet",
+    "is_fixed:0":"Kein bestätigter RTK-Fix",
     "is_fixed:fixing":"RTK-Fix läuft",
     "is_fixed:fixing_successful":"RTK-Fix erfolgreich",
-    "is_fixed:fixing_failed":"RTK-Fix fehlgeschlagen"
+    "is_fixed:fixing_failed":"RTK-Fix fehlgeschlagen",
+    "is_fixed:0":"Kein bestätigter RTK-Fix (DJI-Code 0)"
   };
   // This map is deliberately limited to strings already handled in /status.
   // Unknown raw values stay accessible only in the technical section.
@@ -398,14 +475,17 @@ function hero(parent,label,value,extra=""){
 function renderCockpit(){
   const options=$("cockpit-select");options.replaceChildren();
   const available=selectedDevices();
-  if(!available.some(d=>d.device_id===currentDevice))currentDevice=available[0]?.device_id||"";
+  if(!available.some(d=>deviceKey(d)===currentDevice))
+    currentDevice=available.length?deviceKey(available[0]):"";
   for(const d of available){
-    const option=add(options,"option","",d.name||d.device_id);option.value=d.device_id;
+    const option=add(options,"option","",
+      (d.name||"Fluggerät")+" · "+providerLabel(d.provider));
+    option.value=deviceKey(d);
   }
   options.value=currentDevice;
   const summary=$("cockpit-summary");
   const body=$("cockpit-content");
-  const d=available.find(x=>x.device_id===currentDevice);
+  const d=available.find(x=>deviceKey(x)===currentDevice);
   if(!d){
     lastCockpitSignature=null;
     summary.replaceChildren();body.replaceChildren();
@@ -448,9 +528,19 @@ function renderCockpit(){
     level.setAttribute("aria-label","Akkustand "+Math.round(battery)+" Prozent (AeroNexus-Anzeige)");
   }
   hero(summary,"Flugmodus",modeLabel(t));
-  hero(summary,"Höhe über Start",formatNumber(t.elevation_m,1,"m"));
+  hero(summary,"DJI elevation (Bezug ungeprüft)",formatNumber(t.elevation_m,1,"m"));
   hero(summary,"Geschwindigkeit horizontal",formatNumber(t.horizontal_speed_mps,1,"m/s"));
   hero(summary,"RTK-Status",rtkLabel(t.rtk_state));
+  const position=gps(t);
+  const gnss=add(body,"div","gnss-note"+(!position?" warn":""));
+  add(gnss,"b","","GNSS / RTK · "+(position?"Koordinaten vorhanden":"Keine gültige GPS-Position"));
+  add(gnss,"div","sub","GPS-Satelliten: "+text(t.gps_satellites)+
+    " · RTK-Satelliten: "+text(t.rtk_satellites)+
+    " · "+rtkLabel(t.rtk_state));
+  if(!position)
+    add(gnss,"div","sub","Indoor oder ohne Positionsfix möglich; keine Position auf der Karte.");
+  add(body,"div","cockpit-info","Quelle: "+providerLabel(d.provider)+
+    " · Höhendefinition und Höhenbezug der DJI-Rohwerte sind nicht verifiziert.");
   if(!isCurrent){
     add(body,"div","cockpit-info critical",
       "Keine bestätigte Live-Verbindung. Die folgenden Werte sind nur zuletzt übermittelte Messwerte.");
@@ -476,7 +566,11 @@ function renderCockpit(){
   technical.open=detailsWasOpen;
   add(technical,"summary","","Technische Details und Flugstatistik");
   const grid=add(technical,"div","cockpit");
-  metric(grid,"Absolute Höhe",formatNumber(t.height_m,1,"m"));
+  metric(grid,"DJI height (Bezug ungeprüft)",formatNumber(t.height_m,1,"m"));
+  metric(grid,"DJI elevation (Rohwert)",formatNumber(t.elevation_m,1,"m"));
+  metric(grid,"Flugmodus (DJI-Code)",text(t.flight_mode_code));
+  metric(grid,"GPS-Position",position?
+    formatNumber(position[0],6,"°")+" / "+formatNumber(position[1],6,"°"):"Nicht übermittelt");
   metric(grid,"Geschwindigkeit vertikal",formatNumber(t.vertical_speed_mps,1,"m/s"));
   if(finite(t.speed_mps))
     metric(grid,"Geschwindigkeit (SDK)",formatNumber(t.speed_mps,1,"m/s"));
@@ -757,10 +851,13 @@ async function refreshAll(){
     renderProjects();
     if(before&&!projects.some(p=>p.project_id===before)&&!devices.some(d=>d.project_id===before))
       currentProject="";
-    renderSummary();renderDevices();renderCockpit();renderCatalog();renderTracks();
+    renderSummary();renderDevices();renderControllerStatus();renderCockpit();renderCatalog();renderTracks();
     renderSavedMissions();repaintDeviceLayer();
+    renderOsdPanel(summaryResult.status==="fulfilled"?summaryResult.value:null);
     message("project-sync",summaryResult.status==="fulfilled"?
-      receiveUpdatedAt(summaryResult.value):"Synchronisierungsstatus nicht verfügbar");
+      summaryResult.value?.polling==="disabled"?
+        "FlightHub-Polling deaktiviert · DJI MQTT funktioniert unabhängig":
+        receiveUpdatedAt(summaryResult.value):"Synchronisierungsstatus nicht verfügbar");
     if(summaryResult.status!=="fulfilled")errors.push("Statusübersicht nicht verfügbar");
     message("connection",errors.length?
       "Teilweise verfügbar · "+errors.join(" · "):

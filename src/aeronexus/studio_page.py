@@ -86,7 +86,25 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .geo-list{display:flex;flex-direction:column;gap:6px;margin:12px 0}
 .geo-row{display:flex;align-items:center;gap:8px;padding:8px;background:#142b42;border:1px solid #395a78;border-radius:8px}
 .geo-row span{flex:1;min-width:0;overflow-wrap:anywhere}
-#terrain-canvas{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c}
+.geo-vertex{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;border:2px solid #ffffff;background:#ffad65;color:#142132;font-size:11px;font-weight:800;box-shadow:0 1px 6px #0007;cursor:move}
+#terrain-canvas,#terrain-canvas-large{display:block;width:100%;height:auto;background:#0d2233;border-radius:9px;border:1px solid #39516c;touch-action:none;cursor:grab}
+#terrain-canvas:active,#terrain-canvas-large:active{cursor:grabbing}
+.terrain-stage{padding:18px;max-width:1300px;margin:auto}
+.terrain-stage h1{margin-bottom:8px}
+.terrain-controls{display:grid;grid-template-columns:repeat(4,minmax(135px,1fr));gap:7px 15px;margin:16px 0;padding:12px;background:#13263c;border:1px solid #344f68;border-radius:12px}
+.terrain-controls label{margin:0}
+.terrain-controls input[type=range]{padding:0;cursor:pointer}
+.terrain-toggles{display:flex;flex-wrap:wrap;gap:15px;align-items:center;margin:8px 0 14px}
+.terrain-toggles label{display:flex;flex-direction:row;align-items:center;gap:6px;margin:0}
+.terrain-toggles input[type=checkbox]{width:auto}
+.terrain-help{color:#a8c7dd;font-size:12px;line-height:1.6;margin:12px 0}
+.terrain-location{padding:11px;border:1px solid #3b5879;background:#10273c;border-radius:9px;margin:10px 0;font-size:12px;line-height:1.5}
+#terrain-profile-canvas{width:100%;max-height:190px;height:auto;display:block;background:#0d2233;border:1px solid #39516c;border-radius:8px}
+.terrain-geo-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;margin:12px 0}
+.terrain-geo-tools label{margin:0}
+.terrain-geo-tools button{white-space:nowrap}
+@media(max-width:700px){.terrain-geo-tools{grid-template-columns:1fr}}
+@media(max-width:700px){.terrain-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.terrain-stage{padding:12px}}
 .geo-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.geo-buttons button{flex:1}
 .editor-dirty{font-size:12px;padding:6px 9px;border-radius:7px;color:#a0efcf;background:#123e34;border:1px solid #316d56}
 .editor-dirty.unsaved{color:#ffdeaa;background:#3a2c1a;border-color:#7c5a2b}
@@ -112,11 +130,14 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <nav aria-label="Arbeitsbereiche">
 <button class="active" data-tab="map-pane">Karte & Missionen</button>
 <button data-tab="geo-pane">Geo &amp; Gelände</button>
+<button data-tab="terrain-pane">3D Gelände</button>
 <button data-tab="media-pane">Medienbibliothek</button>
 <button data-tab="fleet-pane">Flottenstatus</button>
 <a href="/operations" style="color:#9edaff;padding:9px;text-decoration:none">Operations Center ↗</a>
 <a href="/status" style="color:#9edaff;padding:9px;text-decoration:none">Live-Dashboard ↗</a>
-</nav>
+<a href="/thermal" style="color:#9edaff;padding:9px;text-decoration:none">Thermal ↗</a>
+<a href="/multispectral" style="color:#9edaff;padding:9px;text-decoration:none">Multispektral ↗</a>
+<a href="/results" style="color:#9edaff;padding:9px;text-decoration:none">Ergebnisraster ↗</a></nav>
 <div class="auth"><span class="dot on" aria-hidden="true"></span>
 <span id="auth-message" class="auth-message" role="status" aria-live="polite">Direkter LAN-Zugriff · Daten werden geladen…</span>
 </div>
@@ -186,8 +207,10 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <label>Geometrietyp<select id="geo-kind"><option value="polygon">Polygon / Fläche</option><option value="line">Linie</option><option value="point">Punkt</option><option value="circle">Kreis</option></select></label>
 <label>Kreisradius (m)<input id="geo-radius" type="number" min="1" max="5000" value="50"></label>
 </div>
-<div class="geo-buttons"><button id="geo-draw">Punkte auf Karte setzen</button><button id="geo-reset">Punkte verwerfen</button></div>
+<div class="geo-buttons"><button id="geo-draw">Punkte auf Karte setzen</button><button id="geo-undo-vertex">Letzten Punkt entfernen</button><button id="geo-reset">Entwurf verwerfen</button></div>
 <div id="geo-draft-status" class="note" role="status">Noch keine Geo-Punkte gesetzt.</div>
+<div id="geo-draft-points" class="geo-list" aria-label="Stützpunkte des Geo-Entwurfs"></div>
+<p class="note">Eckpunkte auf der Karte verschieben oder einzeln aus der Liste entfernen. Gespeicherte Objekte werden erst durch „Speichern“ aktualisiert.</p>
 <button id="geo-save" class="primary" style="width:100%">Geo-Objekt speichern</button>
 <h2>Lokale Geo-Objekte</h2><div id="geo-list" class="geo-list"></div>
 <hr><h2>Parallele Flugstreifen · Vorschau</h2>
@@ -201,7 +224,11 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <hr><h2>Gelände aus GeoTIFF</h2>
 <label>DEM-GeoTIFF (max. 8 MiB)<input type="file" id="terrain-file" accept=".tif,.tiff,image/tiff"></label>
 <div class="geo-buttons"><button id="terrain-preview" class="primary">3D-Vorschau</button><button id="terrain-export" disabled>STL exportieren</button></div>
-<canvas id="terrain-canvas" width="320" height="210" role="img" aria-label="Lokale vereinfachte perspektivische Höhenraster-Vorschau"></canvas>
+<canvas id="terrain-canvas" width="320" height="210" role="img" aria-label="Drehbare schematische 3D-Höhenraster-Vorschau"></canvas>
+<div class="geo-buttons">
+<button id="terrain-open-large" disabled>Interaktive Großansicht öffnen</button>
+<button id="terrain-show-map" disabled>Geländeausschnitt auf Karte</button>
+</div>
 <div id="terrain-message" class="note" role="status">Lokales GDAL erforderlich. Höhenmodell nur Visualisierung und 3D-Modell – nicht zur Flugfreigabe.</div>
 </aside>
 <aside class="side" id="media-panel" hidden>
@@ -244,6 +271,39 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </div>
 <div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
 </section>
+<section class="pane" id="terrain-pane">
+<div class="terrain-stage">
+<h1>Interaktive 3D-Geländeansicht</h1>
+<p class="note">Lokales Höhenraster aus GeoTIFF, ausschließlich zur Veranschaulichung. Mit Maus oder Finger drehen/neigen; Mausrad zoomt. Die Ansicht ist orthografisch und kein georeferenziertes 3D-Kartenmodell.</p>
+<div class="terrain-controls">
+<label>Rotation <output id="terrain-azimuth-value">45°</output><input id="terrain-azimuth" type="range" min="-180" max="180" step="1" value="45"></label>
+<label>Neigung <output id="terrain-tilt-value">45°</output><input id="terrain-tilt" type="range" min="15" max="80" step="1" value="45"></label>
+<label>Zoom <output id="terrain-zoom-value">1,0×</output><input id="terrain-zoom" type="range" min="0.5" max="2.5" step="0.1" value="1"></label>
+<label>Höhenüberhöhung <output id="terrain-exaggeration-value">2,0×</output><input id="terrain-exaggeration" type="range" min="1" max="6" step="0.5" value="2"></label>
+</div>
+<div class="terrain-toggles">
+<label><input id="terrain-color" type="checkbox" checked> Höhenfarben</label>
+<label><input id="terrain-slope" type="checkbox"> Hangneigung einfärben</label>
+<label><input id="terrain-wire" type="checkbox" checked> Gitternetz</label>
+<label><input id="terrain-geo-overlay" type="checkbox" checked> Geo-Objekte (nur EPSG:4326)</label>
+<button id="terrain-reset-view">Ansicht zurücksetzen</button>
+</div>
+<div id="terrain-georef-info" class="terrain-location" role="status">Keine WGS84-Georeferenz geladen. Geländedarstellung weiterhin möglich.</div>
+<div id="terrain-slope-info" class="terrain-location" role="status">Noch keine Hangneigungsanalyse. GeoTIFF laden, um die lokale DEM-Neigung auszuwerten.</div>
+<canvas id="terrain-canvas-large" width="1000" height="590" role="img" aria-label="Interaktive orthografische Geländedarstellung"></canvas>
+<div id="terrain-large-message" class="terrain-help" role="status">Noch kein Höhenraster geladen. Links unter „Gelände aus GeoTIFF“ eine Datei auswählen und „3D-Vorschau“ drücken.</div>
+<div id="terrain-coordinate-probe" class="terrain-location" role="status">Klick auf die Geländeoberfläche: Rasterhöhe und WGS84-Position anzeigen (kein bekannter vertikaler Höhenbezug).</div>
+<h2>Höhenprofil einer gespeicherten Linie</h2>
+<div class="terrain-geo-tools">
+<label>Geo-Linie auswählen<select id="terrain-profile-object"><option value="">Linie auswählen…</option></select></label>
+<button id="terrain-profile-generate">Höhenprofil erzeugen</button>
+</div>
+<canvas id="terrain-profile-canvas" width="980" height="190" role="img" aria-label="Schematisches Profil der interpolierten DEM-Höhen"></canvas>
+<div id="terrain-profile-message" class="terrain-help" role="status">Nur gespeicherte Linien, deren Punkte vollständig innerhalb des WGS84-Rasters liegen, können ausgewertet werden.</div>
+<p class="terrain-help">Die Hangneigung wird aus benachbarten Original-Rasterhöhen und den angenäherten horizontalen Rasterabständen berechnet (ohne Höhenüberhöhung). Stark vereinfachte, resampelte DEM-Visualisierung: keine Böschungs-, Hindernis- oder Flugfreigabe.</p>
+<p class="terrain-help">Schematische EPSG:4326-Punktzuordnung nur für kleine nordorientierte Raster. Höhenwerte bleiben in Metern, ihre vertikale Referenz (z. B. Geoid oder Ellipsoid) ist unbekannt. Überhöhung betrifft nur die Darstellung, niemals STL-Daten. Keine Hindernisprüfung oder DJI-Flugfreigabe.</p>
+</div>
+</section>
 <section class="pane" id="media-pane">
 <div class="pane-inner">
 <div class="page-head"><div><h1>Medienbibliothek</h1><p class="muted">Private Dateien auf deinem Raspberry Pi · Fotos & Videos</p></div>
@@ -251,6 +311,15 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button id="refresh-media">Aktualisieren</button></div></div>
 <div class="gallery" id="gallery"><div class="empty">Lokale Medienbibliothek wird geladen…</div></div>
 <div class="button-row"><button id="more-media" hidden>Weitere Medien anzeigen</button></div>
+<hr>
+<div class="page-head">
+  <div><h2>DJI-Medien aus MinIO</h2><p class="muted">Lesender, separater Objektkatalog · keine Kopien oder Löschfunktion</p></div>
+  <div class="filters"><input type="search" id="dji-media-search" placeholder="DJI-Dateinamen suchen…">
+  <button id="refresh-dji-media">DJI-Katalog laden</button></div>
+</div>
+<p class="note" id="dji-media-status" role="status">Noch keine MinIO-Medien geladen.</p>
+<div class="gallery" id="dji-media-gallery"></div>
+<div class="button-row"><button id="more-dji-media" hidden>Weitere DJI-Medien anzeigen</button></div>
 <footer>Vorschaubilder werden mit deinem Token geladen und nur als temporäre Browser-Objekte angezeigt. Kein externer Mediendienst.</footer>
 </div>
 </section>
@@ -277,8 +346,8 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Fixed initial view of Forst (Baden), postal code 76694, approximate town centre.
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
-let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
-let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,studioSocket=null,studioFleetLoading=false;
+let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
+let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainGeo=null,terrainLoadSerial=0,terrainProfile=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
   $("auth-message").textContent=text;
@@ -490,6 +559,7 @@ function getMap(){
   });
   waypointsLayer=L.layerGroup().addTo(map);deviceLayer=L.layerGroup().addTo(map);
   geoLayer=L.layerGroup().addTo(map);surveyLayer=L.layerGroup().addTo(map);photoLayer=L.layerGroup().addTo(map);
+  terrainFootprintLayer=L.layerGroup().addTo(map);
   map.on("click",event=>{
     if(geoDraw){
       const lat=+event.latlng.lat.toFixed(7),lon=+(((((event.latlng.lng+540)%360)+360)%360)-180).toFixed(7);
@@ -795,7 +865,10 @@ async function exportMission(){
 function switchTab(id){
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
-  ["mission-panel","geo-panel","media-panel","fleet-panel"].forEach((key,i)=>$(key).hidden=(["map-pane","geo-pane","media-pane","fleet-pane"][i]!==id));
+  ["mission-panel","geo-panel","media-panel","fleet-panel"].forEach((key,i)=>{
+    const current=["map-pane","geo-pane","media-pane","fleet-pane"][i];
+    $(key).hidden=(current!==id&&!(key==="geo-panel"&&id==="terrain-pane"));
+  });
   const mapVisible=(id==="map-pane"||id==="geo-pane");
   $("map-pane").classList.toggle("active",mapVisible);
   if(mapVisible&&map)setTimeout(()=>map.invalidateSize(),80);
@@ -811,7 +884,7 @@ async function loadWorkspace(){
     notice("Missionsspeicher nicht verfügbar: "+msg,true);
     statusMessage("Missionsspeicherfehler: "+msg,true);
   }
-  await Promise.allSettled([loadMedia(),loadFleet(),loadGeoObjects()]);
+  await Promise.allSettled([loadMedia(),loadDjiMedia(),loadFleet(),loadGeoObjects()]);
 }
 function revokeMedia(){mediaUrls.forEach(url=>URL.revokeObjectURL(url));mediaUrls=[];}
 function closePreview(){const dlg=$("media-dialog");if(dlg.open)dlg.close();$("preview-content").replaceChildren();if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}}
@@ -825,6 +898,67 @@ async function uploadMedia(){
   }
   $("media-file").value="";$("media-notice").textContent=files.length+" Datei(en) gespeichert";
   await loadMedia();
+}
+let djiMediaItems=[],djiMediaTotal=0,djiMediaOffset=0;
+async function loadDjiMedia(reset=true){
+  if(reset){djiMediaOffset=0;djiMediaItems=[];}
+  const search=$("dji-media-search").value.trim();
+  const params=new URLSearchParams({q:search,limit:"40",offset:String(djiMediaOffset)});
+  const result=await api("/api/v1/studio/dji-media?"+params.toString());
+  const data=await result.json();
+  djiMediaItems.push(...data.media);djiMediaTotal=data.total;
+  djiMediaOffset+=data.media.length;
+  const stamp=data.last_scanned_at?new Date(data.last_scanned_at).toLocaleString("de-DE"):"noch nie";
+  $("dji-media-status").textContent=
+    djiMediaTotal+" DJI-Medien indiziert · letzter vollständiger Scan: "+stamp+
+    ". Neue Uploads werden erst nach erneutem Pi-Scan sichtbar.";
+  renderDjiMedia();
+}
+function renderDjiMedia(){
+  const grid=$("dji-media-gallery");grid.replaceChildren();
+  $("more-dji-media").hidden=djiMediaItems.length>=djiMediaTotal;
+  if(!djiMediaItems.length){
+    cardText(grid,"div","empty","Keine indizierten DJI-Medien vorhanden.");
+    return;
+  }
+  for(const m of djiMediaItems){
+    const card=cardText(grid,"article","media-card");
+    cardText(card,"div","media-cover",m.mime.startsWith("image/")?"DJI · Foto":"DJI · Video/Datei");
+    cardText(card,"div","media-name",m.name);
+    const stamp=m.modified_at?new Date(m.modified_at).toLocaleString("de-DE"):"ohne Zeitstempel";
+    cardText(card,"div","note",m.mime+" · "+(m.size_bytes/1048576).toFixed(1)+" MiB · "+stamp);
+    const buttons=cardText(card,"div","button-row");
+    if(m.previewable){
+      const preview=cardText(buttons,"button","","Ansehen");
+      preview.addEventListener("click",()=>previewDjiMedia(m).catch(
+        err=>$("dji-media-status").textContent=errorMessage(err)));
+    }
+    const save=cardText(buttons,"button","","Herunterladen");
+    save.addEventListener("click",()=>downloadDjiMedia(m).catch(
+      err=>$("dji-media-status").textContent=errorMessage(err)));
+  }
+}
+async function previewDjiMedia(m){
+  closePreview();
+  const result=await api("/api/v1/studio/dji-media/"+m.id+"/file");
+  previewUrl=URL.createObjectURL(await result.blob());
+  $("preview-name").textContent=m.name;
+  const image=els("img");image.alt=m.name;image.src=previewUrl;
+  $("preview-content").appendChild(image);$("media-dialog").showModal();
+}
+async function downloadDjiMedia(m){
+  const url="/api/v1/studio/dji-media/"+m.id+"/file?download=true";
+  // Large media is streamed by the server. In direct trusted-LAN mode,
+  // navigate instead of allocating huge videos in JavaScript memory.
+  if(m.size_bytes>128*1048576){
+    const a=els("a");a.href=url;a.download=m.name;
+    document.body.appendChild(a);a.click();a.remove();return;
+  }
+  const result=await api(url);
+  const temp=URL.createObjectURL(await result.blob());
+  const a=els("a");a.href=temp;a.download=m.name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(temp),5000);
 }
 async function loadMedia(){
   const r=await api("/api/v1/studio/media");knownMedia=(await r.json()).media;displayMedia=20;await renderMedia();
@@ -923,6 +1057,14 @@ function setGeoMode(enabled){
 function redrawGeo(){
   $("geo-draft-status").textContent=geoDraft.length+" Koordinaten im Entwurf · "+$("geo-kind").value+
     ". Zum Speichern Kartenmodus beenden.";
+  const list=$("geo-draft-points");list.replaceChildren();
+  geoDraft.forEach((point,index)=>{
+    const row=cardText(list,"div","geo-row");
+    cardText(row,"span","",String(index+1)+": "+point.latitude.toFixed(7)+", "+point.longitude.toFixed(7));
+    const remove=cardText(row,"button","danger","Entfernen");
+    remove.addEventListener("click",()=>{geoDraft.splice(index,1);redrawGeo();});
+  });
+  $("geo-undo-vertex").disabled=geoDraft.length===0;
   if(!geoLayer||!map)return;
   geoLayer.clearLayers();
   const draw=(points,kind,label,draft=false,radius=0)=>{
@@ -934,7 +1076,22 @@ function redrawGeo(){
     else if(kind==="circle"&&coords.length===1)shape=L.circle(coords[0],{...style,radius});
     else if(coords.length===1)shape=L.circleMarker(coords[0],{...style,radius:6});
     if(shape)shape.bindTooltip(label).addTo(geoLayer);
-    if(draft)coords.forEach(p=>L.circleMarker(p,{color:"#ffc878",radius:4}).addTo(geoLayer));
+    if(draft)coords.forEach((p,index)=>{
+      // Draggable draft vertices only; saved geometry stays unchanged until save.
+      L.marker(p,{draggable:true,autoPan:true,
+        icon:L.divIcon({className:"geo-vertex",html:"+" ,iconSize:[18,18],iconAnchor:[9,9]})})
+        .bindTooltip("Eckpunkt "+(index+1)+" verschieben")
+        .on("dragend",event=>{
+          const moved=event.target.getLatLng();
+          const lat=+moved.lat.toFixed(7);
+          const lon=+(((((moved.lng+540)%360)+360)%360)-180).toFixed(7);
+          if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)){
+            redrawGeo();return;
+          }
+          geoDraft[index]={latitude:lat,longitude:lon};
+          redrawGeo();
+        }).addTo(geoLayer);
+    });
   };
   for(const row of geoObjects){
     if(row.id===geoEditingId)continue;
@@ -948,6 +1105,8 @@ function redrawGeo(){
 async function loadGeoObjects(){
   const r=await api("/api/v1/studio/geo-objects");
   geoObjects=(await r.json()).objects;
+  terrainRefreshProfileOptions();
+  terrainRedrawSoon();
   const list=$("geo-list");list.replaceChildren();
   const pick=$("survey-object");const chosen=pick.value;pick.replaceChildren();
   const empty=els("option","","Polygon auswählen…");empty.value="";pick.appendChild(empty);
@@ -957,6 +1116,8 @@ async function loadGeoObjects(){
     cardText(row,"span","",obj.name+" · "+obj.kind+" · "+obj.vertices.length+" Punkte");
     const edit=cardText(row,"button","","Bearbeiten");
     edit.addEventListener("click",()=>{
+      if(geoDraft.length&&(!geoEditingId||geoEditingId!==item.id)&&
+         !window.confirm("Ungespeicherten Geo-Entwurf verwerfen?"))return;
       geoEditingId=item.id;
       $("geo-name").value=obj.name;
       $("geo-kind").value=obj.kind;
@@ -984,11 +1145,21 @@ async function saveGeoObject(){
   const kind=$("geo-kind").value;
   const obj={name:$("geo-name").value.trim(),kind,vertices:geoDraft.slice(),
     radius_m:kind==="circle"?Number($("geo-radius").value):null};
-  const path="/api/v1/studio/geo-objects"+(geoEditingId?"/"+encodeURIComponent(geoEditingId):"");
+  const editingId=geoEditingId;
+  const saveSignature=JSON.stringify([geoDraft,$("geo-name").value,
+    $("geo-kind").value,$("geo-radius").value]);
+  const path="/api/v1/studio/geo-objects"+(editingId?"/"+encodeURIComponent(editingId):"");
   const r=await api(path,{
-    method:geoEditingId?"PUT":"POST",
+    method:editingId?"PUT":"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
   const saved=await r.json();
+  // A completed request must not wipe points drawn while the save was pending.
+  if(geoEditingId!==editingId||JSON.stringify([geoDraft,$("geo-name").value,
+      $("geo-kind").value,$("geo-radius").value])!==saveSignature){
+    await loadGeoObjects();
+    $("geo-draft-status").textContent="Gespeicherte frühere Version. Der aktuelle Geo-Entwurf blieb erhalten.";
+    return;
+  }
   geoDraft=[];geoEditingId=null;setGeoMode(false);await loadGeoObjects();
   if(kind==="polygon")$("survey-object").value=saved.id;
   $("geo-draft-status").textContent="Geo-Objekt gespeichert (nur lokal).";
@@ -1056,36 +1227,517 @@ function showGeoPhotos(){
   if(spots.length)map.fitBounds(L.latLngBounds(spots),{padding:[40,40],maxZoom:17});
   notice(spots.length+" gespeicherte Aufnahmeorte auf Karte; keine Bildabdeckung behauptet.");
 }
-function drawTerrainPreview(grid){
-  const cv=$("terrain-canvas"),ctx=cv.getContext("2d");
-  if(!ctx)return;
-  const heights=grid.heights_m,h=heights.length,w=heights[0].length;
-  ctx.clearRect(0,0,cv.width,cv.height);ctx.fillStyle="#0d2233";ctx.fillRect(0,0,cv.width,cv.height);
-  const zmin=Math.min(...heights.flat()),zmax=Math.max(...heights.flat());
-  const coords=(r,c)=>{
-    const depth=(zmax===zmin?0:(heights[r][c]-zmin)/(zmax-zmin));
-    return [160+(c/(w-1)-r/(h-1))*105,
-      135+(c/(w-1)+r/(h-1)-1)*44-depth*62];
-  };
-  ctx.strokeStyle="#8ed7b8";ctx.lineWidth=1;
-  for(let r=0;r<h;r+=Math.max(1,Math.floor(h/16))){
-    ctx.beginPath();for(let c=0;c<w;c++){const p=coords(r,c);c?ctx.lineTo(...p):ctx.moveTo(...p);}ctx.stroke();
+// Phase 18: local 2D-canvas rasterizer of an orthographic 3D height field.
+// No WebGL, external 3D library, DJI flight path, map tiles or new backend API.
+// Never mutate the validated TerrainGrid: the STL uses original metre values.
+const TERRAIN_DEFAULT_VIEW=Object.freeze({
+  azimuth:45,tilt:45,zoom:1,exaggeration:2,color:true,wire:true,slope:false,geoOverlay:true
+});
+let terrainView={...TERRAIN_DEFAULT_VIEW},terrainDrag=null,terrainDrawQueued=false;
+function terrainClamp(value,min,max){
+  return Math.max(min,Math.min(max,value));
+}
+function terrainColor(value){
+  const colors=[[23,78,94],[38,112,112],[99,155,112],[194,177,105],[235,210,156]];
+  const index=terrainClamp(value,0,1)*(colors.length-1);
+  const start=Math.min(colors.length-2,Math.floor(index));
+  const t=index-start,from=colors[start],to=colors[start+1];
+  return "rgb("+from.map((channel,i)=>Math.round(channel+(to[i]-channel)*t)).join(",")+")";
+}
+// Phase 20: derive local DEM inclination from *unexaggerated* raster heights.
+// The bilinear partial derivatives use horizontal grid spacing in metres.
+// The result is a display-only angle, not a safe flight/terrain assessment.
+function terrainSlopeAt(grid,row,col){
+  if(!grid||!Number.isFinite(row)||!Number.isFinite(col))return null;
+  const z=grid.heights_m;
+  if(!Array.isArray(z)||z.length<2||!Array.isArray(z[0])||z[0].length<2||
+     !(grid.x_step_m>0)||!(grid.y_step_m>0))return null;
+  const nr=z.length,nc=z[0].length;
+  if(row<0||col<0||row>nr-1||col>nc-1)return null;
+  const r=Math.min(nr-2,Math.floor(row)),c=Math.min(nc-2,Math.floor(col));
+  const ty=row-r,tx=col-c;
+  const dx=((1-ty)*(z[r][c+1]-z[r][c])+
+    ty*(z[r+1][c+1]-z[r+1][c]))/grid.x_step_m;
+  const dy=((1-tx)*(z[r+1][c]-z[r][c])+
+    tx*(z[r+1][c+1]-z[r][c+1]))/grid.y_step_m;
+  const degrees=Math.atan(Math.hypot(dx,dy))*180/Math.PI;
+  return Number.isFinite(degrees)?degrees:null;
+}
+function terrainSlopeStatistics(grid){
+  if(!grid||!Array.isArray(grid.heights_m)||grid.heights_m.length<2||
+     !Array.isArray(grid.heights_m[0]))return null;
+  const rows=grid.heights_m.length,cols=grid.heights_m[0].length;
+  let min=Infinity,max=-Infinity,sum=0,count=0,steep=0;
+  for(let r=0;r<rows-1;r++){
+    for(let c=0;c<cols-1;c++){
+      const deg=terrainSlopeAt(grid,r+0.5,c+0.5);
+      if(deg===null)return null;
+      min=Math.min(min,deg);max=Math.max(max,deg);sum+=deg;count++;
+      if(deg>=30)steep++;
+    }
   }
-  for(let c=0;c<w;c+=Math.max(1,Math.floor(w/16))){
-    ctx.beginPath();for(let r=0;r<h;r++){const p=coords(r,c);r?ctx.lineTo(...p):ctx.moveTo(...p);}ctx.stroke();
+  return count?{min_deg:min,max_deg:max,mean_deg:sum/count,
+    steep_cells:steep,total_cells:count}:null;
+}
+function terrainSlopeColor(degrees){
+  if(degrees===null||!Number.isFinite(degrees))return "#456677";
+  if(degrees<8)return "#3da989";
+  if(degrees<15)return "#b5bf5b";
+  if(degrees<30)return "#e4a354";
+  return "#d95c63";
+}
+function terrainUpdateSlopeInfo(grid){
+  const stats=terrainSlopeStatistics(grid);
+  $("terrain-slope-info").textContent=stats?
+    "DEM-Hangneigung (resampelte Zellen, keine Flugfreigabe): Mittel "+
+    stats.mean_deg.toFixed(1)+"°, Maximum "+stats.max_deg.toFixed(1)+
+    "° · ≥30°: "+stats.steep_cells+"/"+stats.total_cells+
+    " Zellen. Farben: Grün <8°, Gelb 8–15°, Orange 15–30°, Rot ≥30°. "+
+    "Rastergradient ohne Darstellungsüberhöhung; Höhenbezug ungeprüft.":
+    "Noch keine Hangneigungsanalyse. GeoTIFF laden, um die lokale DEM-Neigung auszuwerten.";
+}
+function terrainProjection(grid,view,width,height){
+  const heights=grid.heights_m;
+  const rows=heights.length,cols=heights[0].length;
+  const zmin=Math.min(...heights.flat()),zmax=Math.max(...heights.flat());
+  const xextent=(cols-1)*grid.x_step_m,yextent=(rows-1)*grid.y_step_m;
+  const extent=Math.max(xextent,yextent,1e-9);
+  const radians=Math.PI/180,yaw=view.azimuth*radians,tilt=view.tilt*radians;
+  const cy=Math.cos(yaw),sy=Math.sin(yaw),sp=Math.sin(tilt),cp=Math.cos(tilt);
+  const scale=Math.min(width,height)*0.66*view.zoom;
+  const originX=width/2,originY=height*0.58;
+  const project=(r,c,elevation)=>{
+    const x=(c*grid.x_step_m-xextent/2)/extent;
+    const y=(r*grid.y_step_m-yextent/2)/extent;
+    // Display clip only: never alter original DEM values.
+    const z=terrainClamp((elevation-zmin)/extent,0,1.5)*view.exaggeration;
+    const rx=x*cy-y*sy,ry=x*sy+y*cy;
+    return {x:originX+rx*scale,y:originY+(ry*sp-z*cp)*scale,
+      depth:ry*cp+z*sp,elevation,row:r,col:c};
+  };
+  const vertices=heights.map((row,r)=>row.map((elevation,c)=>
+    project(r,c,elevation)));
+  const cells=[];
+  for(let r=0;r<rows-1;r++){
+    for(let c=0;c<cols-1;c++){
+      const points=[vertices[r][c],vertices[r][c+1],
+        vertices[r+1][c+1],vertices[r+1][c]];
+      cells.push({points,depth:points.reduce((sum,p)=>sum+p.depth,0)/4,
+        elevation:points.reduce((sum,p)=>sum+p.elevation,0)/4});
+    }
+  }
+  cells.sort((a,b)=>a.depth-b.depth);
+  return {cells,zmin,zmax,rows,cols,project};
+}
+// Phase 19: WGS84 sample centres, bounded; never infer lat/lon from a
+// projected CRS or attach unknown vertical datums to elevation values.
+function terrainGeoBounds(grid,geo){
+  if(!grid||!geo||geo.crs!=="EPSG:4326")return null;
+  const rows=grid.heights_m.length,cols=grid.heights_m[0].length;
+  const south=geo.north_lat+(rows-1)*geo.lat_step_deg;
+  const east=geo.west_lon+(cols-1)*geo.lon_step_deg;
+  if(![south,east,geo.north_lat,geo.west_lon].every(Number.isFinite))return null;
+  return [[south,geo.west_lon],[geo.north_lat,east]];
+}
+function terrainDrawMapFootprint(){
+  if(!map||!terrainFootprintLayer)return;
+  terrainFootprintLayer.clearLayers();
+  const bounds=terrainGeoBounds(terrainGrid,terrainGeo);
+  if(!bounds)return;
+  L.rectangle(bounds,{color:"#ffd282",weight:2,fillOpacity:0.04,dashArray:"6 6"})
+    .bindTooltip("GeoTIFF: WGS84-Rasterpunktmitten (nicht volle Pixelränder)")
+    .addTo(terrainFootprintLayer);
+}
+function terrainShowOnMap(){
+  const bounds=terrainGeoBounds(terrainGrid,terrainGeo);
+  if(!bounds){$("terrain-message").textContent="Für dieses Raster fehlen geeignete EPSG:4326-Koordinaten.";return;}
+  switchTab("map-pane");
+  getMap();
+  if(!map)return;
+  terrainDrawMapFootprint();
+  map.fitBounds(L.latLngBounds(bounds).pad(0.15),{maxZoom:18});
+  notice("GeoTIFF-Rasterpunktmitten auf Karte hervorgehoben. Nur geografische Vorschau.");
+}
+function terrainGridPoint(grid,geo,location){
+  if(!grid||!geo||geo.crs!=="EPSG:4326"||!location)return null;
+  if(!Number.isFinite(location.latitude)||!Number.isFinite(location.longitude)||
+     !(geo.lon_step_deg>0)||!(geo.lat_step_deg<0))return null;
+  const col=(location.longitude-geo.west_lon)/geo.lon_step_deg;
+  const row=(location.latitude-geo.north_lat)/geo.lat_step_deg;
+  const lastRow=grid.heights_m.length-1,lastCol=grid.heights_m[0].length-1;
+  if(!Number.isFinite(col)||!Number.isFinite(row)||
+     row < -1e-7 || col < -1e-7 || row>lastRow+1e-7 || col>lastCol+1e-7)return null;
+  return terrainHeightAt(grid,terrainClamp(row,0,lastRow),terrainClamp(col,0,lastCol));
+}
+function terrainHeightAt(grid,row,col){
+  if(!grid||!Number.isFinite(row)||!Number.isFinite(col))return null;
+  const heights=grid.heights_m,rows=heights.length,cols=heights[0].length;
+  if(row<0||col<0||row>rows-1||col>cols-1)return null;
+  const r0=Math.min(rows-2,Math.floor(row)),c0=Math.min(cols-2,Math.floor(col));
+  const ry=row-r0,cx=col-c0;
+  const z=(1-ry)*((1-cx)*heights[r0][c0]+cx*heights[r0][c0+1])+
+        ry*((1-cx)*heights[r0+1][c0]+cx*heights[r0+1][c0+1]);
+  return {row,col,elevation:z};
+}
+function terrainGeoFromGrid(geo,row,col){
+  if(!geo||geo.crs!=="EPSG:4326")return null;
+  return {latitude:geo.north_lat+row*geo.lat_step_deg,
+    longitude:geo.west_lon+col*geo.lon_step_deg};
+}
+function terrainOverlayGeometry(obj){
+  if(!obj||!Array.isArray(obj.vertices)||!obj.vertices.length)return null;
+  if(obj.kind==="circle"){
+    if(obj.vertices.length!==1||!Number.isFinite(obj.radius_m))return null;
+    const centre=obj.vertices[0],cosine=Math.cos(centre.latitude*Math.PI/180);
+    if(cosine<0.01)return null;
+    const circle=[];
+    for(let i=0;i<33;i++){
+      const angle=2*Math.PI*i/32;
+      circle.push({latitude:centre.latitude+Math.cos(angle)*obj.radius_m/111132,
+        longitude:centre.longitude+Math.sin(angle)*obj.radius_m/(111320*cosine)});
+    }
+    return circle;
+  }
+  if(!["point","line","polygon"].includes(obj.kind))return null;
+  return obj.vertices;
+}
+function terrainGeoPolyline(obj,grid,geo){
+  const vertices=terrainOverlayGeometry(obj);
+  if(!vertices||vertices.length>129)return null;
+  const points=vertices.map(loc=>terrainGridPoint(grid,geo,loc));
+  if(points.some(p=>p===null))return null; // Never draw out-of-bounds segments.
+  if(obj.kind==="polygon"&&points.length>2)points.push({...points[0]});
+  return points;
+}
+// Piecewise bilinear DEM interpolation makes a 3D GeoObject line follow
+// the displayed terrain instead of connecting only its elevated vertices.
+// Bound work even for many saved shapes; never mutate original GeoObjects.
+function terrainDrapePolyline(points,grid){
+  if(!Array.isArray(points)||points.length<1||points.length>130)return null;
+  if(points.length===1)return [{...points[0]}];
+  const maxSegments=1024;
+  const lengths=points.slice(1).map((point,i)=>
+    Math.hypot(point.row-points[i].row,point.col-points[i].col));
+  // Use an even subdivision count so midpoint terrain peaks are not
+  // systematically skipped when the straight segment crosses a summit.
+  const wanted=lengths.map(len=>len===0?1:Math.max(2,2*Math.ceil(len*1.5)));
+  const totalWanted=wanted.reduce((sum,count)=>sum+count,0);
+  let remaining=maxSegments;
+  const result=[{...points[0]}];
+  for(let i=0;i<lengths.length;i++){
+    const remainingEdges=lengths.length-i-1;
+    const limit=remaining-remainingEdges;
+    const count=Math.max(1,Math.min(wanted[i],limit,
+      Math.floor(wanted[i]*maxSegments/Math.max(maxSegments,totalWanted))));
+    const first=points[i],last=points[i+1];
+    for(let k=1;k<=count;k++){
+      const t=k/count;
+      const r=first.row+(last.row-first.row)*t;
+      const c=first.col+(last.col-first.col)*t;
+      const sampled=terrainHeightAt(grid,terrainClamp(r,0,grid.heights_m.length-1),
+        terrainClamp(c,0,grid.heights_m[0].length-1));
+      if(!sampled)return null;
+      result.push(sampled);
+    }
+    remaining-=count;
+  }
+  return result;
+}
+function terrainDrawOverlays(ctx,projection,grid,geo,objects,view){
+  if(!geo||!view.geoOverlay||!Array.isArray(objects))return;
+  ctx.lineWidth=2.4;
+  for(const item of objects){
+    const obj=item.object;
+    const points=terrainGeoPolyline(obj,grid,geo);
+    if(!points||!points.length)continue;
+    const draped=terrainDrapePolyline(points,grid);
+    if(!draped||!draped.length)continue;
+    ctx.beginPath();
+    for(let i=0;i<draped.length;i++){
+      const p=draped[i],screen=projection.project(p.row,p.col,p.elevation);
+      if(i===0)ctx.moveTo(screen.x,screen.y);
+      else ctx.lineTo(screen.x,screen.y);
+    }
+    if(draped.length===1){
+      const p=draped[0],screen=projection.project(p.row,p.col,p.elevation);
+      ctx.arc(screen.x,screen.y,4,0,2*Math.PI);
+    }
+    ctx.strokeStyle="#ff7c8d";
+    ctx.stroke();
   }
 }
+function terrainPolylineProfile(obj,grid,geo){
+  if(!obj||obj.kind!=="line")return null;
+  const points=terrainGeoPolyline(obj,grid,geo);
+  if(!points||points.length<2)return null;
+  const distances=[0];
+  for(let i=1;i<points.length;i++){
+    const dx=(points[i].col-points[i-1].col)*grid.x_step_m;
+    const dy=(points[i].row-points[i-1].row)*grid.y_step_m;
+    distances.push(distances[i-1]+Math.hypot(dx,dy));
+  }
+  const total=distances[distances.length-1];
+  if(!Number.isFinite(total)||total<=0)return null;
+  const result=[];
+  let leg=1;
+  for(let i=0;i<=128;i++){
+    const d=total*i/128;
+    while(leg<distances.length-1&&distances[leg]<d)leg++;
+    const span=distances[leg]-distances[leg-1];
+    const t=span>0?(d-distances[leg-1])/span:0;
+    const row=points[leg-1].row+t*(points[leg].row-points[leg-1].row);
+    const col=points[leg-1].col+t*(points[leg].col-points[leg-1].col);
+    const sample=terrainHeightAt(grid,row,col);
+    if(!sample)return null;
+    result.push({distance_m:d,...sample});
+  }
+  return {samples:result,distance_m:total,
+    min_m:Math.min(...result.map(p=>p.elevation)),
+    max_m:Math.max(...result.map(p=>p.elevation))};
+}
+function terrainDrawProfile(profile){
+  const canvas=$("terrain-profile-canvas"),ctx=canvas.getContext("2d");
+  if(!ctx)return;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#0d2233";ctx.fillRect(0,0,canvas.width,canvas.height);
+  if(!profile)return;
+  const margin=35,width=canvas.width-2*margin,height=canvas.height-2*margin;
+  const range=Math.max(1,profile.max_m-profile.min_m);
+  ctx.beginPath();
+  for(const [i,p] of profile.samples.entries()){
+    const x=margin+p.distance_m/profile.distance_m*width;
+    const y=margin+(1-(p.elevation-profile.min_m)/range)*height;
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle="#75e5cb";ctx.lineWidth=2.5;ctx.stroke();
+}
+function terrainDrawCanvas(canvas,grid,view){
+  const ctx=canvas.getContext("2d");
+  if(!ctx)return;
+  const width=canvas.width,height=canvas.height;
+  ctx.clearRect(0,0,width,height);
+  ctx.fillStyle="#0d2233";
+  ctx.fillRect(0,0,width,height);
+  if(!grid)return;
+  const projected=terrainProjection(grid,view,width,height);
+  for(const cell of projected.cells){
+    ctx.beginPath();
+    cell.points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+    ctx.closePath();
+    const fraction=(cell.elevation-projected.zmin)/
+      Math.max(projected.zmax-projected.zmin,1e-9);
+    const slope=view.slope?terrainSlopeAt(grid,cell.points[0].row+0.5,
+      cell.points[0].col+0.5):null;
+    ctx.fillStyle=view.slope?terrainSlopeColor(slope):
+      view.color?terrainColor(fraction):"#456677";
+    ctx.fill();
+    if(view.wire){
+      ctx.strokeStyle="rgba(210,239,250,0.42)";
+      ctx.lineWidth=width>500?0.8:0.5;
+      ctx.stroke();
+    }
+  }
+  if(canvas.id==="terrain-canvas-large")
+    terrainDrawOverlays(ctx,projected,grid,terrainGeo,geoObjects,view);
+}
+function drawTerrainPreview(grid){
+  terrainDrawCanvas($("terrain-canvas"),grid,terrainView);
+  terrainDrawCanvas($("terrain-canvas-large"),grid,terrainView);
+}
+function terrainSyncControls(){
+  for(const key of ["azimuth","tilt","zoom","exaggeration"]){
+    $("terrain-"+key).value=String(terrainView[key]);
+  }
+  $("terrain-color").checked=terrainView.color;
+  $("terrain-wire").checked=terrainView.wire;
+  $("terrain-slope").checked=terrainView.slope;
+  $("terrain-geo-overlay").checked=terrainView.geoOverlay;
+  $("terrain-azimuth-value").textContent=Math.round(terrainView.azimuth)+"°";
+  $("terrain-tilt-value").textContent=Math.round(terrainView.tilt)+"°";
+  $("terrain-zoom-value").textContent=terrainView.zoom.toFixed(1).replace(".",",")+"×";
+  $("terrain-exaggeration-value").textContent=
+    terrainView.exaggeration.toFixed(1).replace(".",",")+"×";
+}
+function terrainRedrawSoon(){
+  if(!terrainGrid||terrainDrawQueued)return;
+  terrainDrawQueued=true;
+  const request=window.requestAnimationFrame||((fn)=>fn());
+  request(()=>{
+    terrainDrawQueued=false;
+    if(terrainGrid)drawTerrainPreview(terrainGrid);
+  });
+}
+function terrainResetView(){
+  terrainView={...TERRAIN_DEFAULT_VIEW};
+  terrainSyncControls();
+  terrainRedrawSoon();
+}
+function terrainControlChanged(){
+  const numeric={azimuth:[-180,180],tilt:[15,80],zoom:[0.5,2.5],
+    exaggeration:[1,6]};
+  for(const [key,[min,max]] of Object.entries(numeric)){
+    const input=Number($("terrain-"+key).value);
+    if(Number.isFinite(input))terrainView[key]=terrainClamp(input,min,max);
+  }
+  terrainView.color=$("terrain-color").checked;
+  terrainView.wire=$("terrain-wire").checked;
+  terrainView.slope=$("terrain-slope").checked;
+  terrainView.geoOverlay=$("terrain-geo-overlay").checked;
+  terrainSyncControls();
+  terrainRedrawSoon();
+}
+// Screen-space triangle pick: use only the visually rendered terrain surface.
+function terrainTriangleWeights(a,b,c,x,y){
+  const det=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);
+  if(Math.abs(det)<1e-9)return null;
+  const u=((b.y-c.y)*(x-c.x)+(c.x-b.x)*(y-c.y))/det;
+  const v=((c.y-a.y)*(x-c.x)+(a.x-c.x)*(y-c.y))/det;
+  const w=1-u-v;
+  return u>=-1e-7&&v>=-1e-7&&w>=-1e-7?[u,v,w]:null;
+}
+function terrainProbeAt(grid,view,x,y,width,height){
+  if(!grid||!Number.isFinite(x)||!Number.isFinite(y))return null;
+  const projection=terrainProjection(grid,view,width,height);
+  for(let i=projection.cells.length-1;i>=0;i--){
+    const q=projection.cells[i].points;
+    for(const [a,b,c] of [[0,1,2],[0,2,3]]){
+      const weights=terrainTriangleWeights(q[a],q[b],q[c],x,y);
+      if(!weights)continue;
+      const mix=key=>weights[0]*q[a][key]+weights[1]*q[b][key]+
+        weights[2]*q[c][key];
+      return terrainHeightAt(grid,mix("row"),mix("col"));
+    }
+  }
+  return null;
+}
+function terrainShowProbe(canvas,event){
+  if(!terrainGrid||typeof canvas.getBoundingClientRect!=="function")return;
+  const rect=canvas.getBoundingClientRect();
+  if(rect.width<=0||rect.height<=0)return;
+  const x=(event.clientX-rect.left)*canvas.width/rect.width;
+  const y=(event.clientY-rect.top)*canvas.height/rect.height;
+  const hit=terrainProbeAt(terrainGrid,terrainView,x,y,canvas.width,canvas.height);
+  const target=$("terrain-coordinate-probe");
+  if(!hit){
+    target.textContent="Kein Geländepunkt getroffen. Auf die gezeichnete Oberfläche klicken.";
+    return;
+  }
+  const geo=terrainGeoFromGrid(terrainGeo,hit.row,hit.col);
+  const slope=terrainSlopeAt(terrainGrid,hit.row,hit.col);
+  target.textContent="Rasterhöhe (vertikaler Bezug unbekannt): "+
+    hit.elevation.toFixed(2)+" m · "+(geo?
+      "WGS84 "+geo.latitude.toFixed(7)+", "+geo.longitude.toFixed(7):
+      "GPS-Position nicht verfügbar (CRS oder Rasterausdehnung ungeeignet)")+
+    (slope===null?"":" · lokale DEM-Hangneigung "+slope.toFixed(1)+"° (ungeprüft)");
+}
+function terrainRefreshProfileOptions(){
+  const select=$("terrain-profile-object"),old=select.value;
+  select.replaceChildren();
+  const empty=els("option","","Linie auswählen…");empty.value="";
+  select.appendChild(empty);
+  if(terrainGrid&&terrainGeo){
+    for(const row of geoObjects){
+      if(row.object.kind!=="line"||
+         !terrainGeoPolyline(row.object,terrainGrid,terrainGeo))continue;
+      const option=els("option","",row.object.name);
+      option.value=row.id;
+      select.appendChild(option);
+    }
+  }
+  select.value=geoObjects.some(row=>row.id===old&&row.object.kind==="line"&&
+    terrainGeoPolyline(row.object,terrainGrid,terrainGeo))?old:"";
+  if(!select.value)terrainProfile=null;
+  terrainDrawProfile(terrainProfile);
+}
+function terrainGenerateProfile(){
+  const row=geoObjects.find(item=>item.id===$("terrain-profile-object").value);
+  if(!row||!terrainGrid||!terrainGeo){
+    $("terrain-profile-message").textContent="WGS84-Raster und vollständig enthaltene Geo-Linie auswählen.";
+    return;
+  }
+  const profile=terrainPolylineProfile(row.object,terrainGrid,terrainGeo);
+  if(!profile){
+    $("terrain-profile-message").textContent="Profil nicht möglich: Linie außerhalb des Rasters.";
+    return;
+  }
+  terrainProfile=profile;
+  terrainDrawProfile(profile);
+  $("terrain-profile-message").textContent="Profil "+row.object.name+
+    " · "+profile.distance_m.toFixed(1)+" m · Höhen "+
+    profile.min_m.toFixed(2)+"–"+profile.max_m.toFixed(2)+
+    " m (interpolierte DEM-Werte, Höhenbezug unbekannt; keine Flugfreigabe).";
+}
+function terrainBindPointer(canvas){
+  canvas.addEventListener("pointerdown",event=>{
+    if(!terrainGrid||event.button>0)return;
+    terrainDrag={canvas,pointerId:event.pointerId,x:event.clientX,y:event.clientY,
+      startX:event.clientX,startY:event.clientY};
+    if(canvas.setPointerCapture)canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  canvas.addEventListener("pointermove",event=>{
+    const drag=terrainDrag;
+    if(!terrainGrid||!drag||drag.canvas!==canvas||drag.pointerId!==event.pointerId)return;
+    const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
+    drag.x=event.clientX;drag.y=event.clientY;
+    terrainView.azimuth=((terrainView.azimuth+dx*0.5+540)%360)-180;
+    terrainView.tilt=terrainClamp(terrainView.tilt+dy*0.3,15,80);
+    terrainSyncControls();
+    terrainRedrawSoon();
+    event.preventDefault();
+  });
+  const stop=event=>{
+    if(terrainDrag&&terrainDrag.canvas===canvas&&
+       terrainDrag.pointerId===event.pointerId){
+      const distance=Math.hypot(event.clientX-terrainDrag.startX,
+        event.clientY-terrainDrag.startY);
+      if(event.type==="pointerup"&&distance<=4)terrainShowProbe(canvas,event);
+      terrainDrag=null;
+    }
+  };
+  canvas.addEventListener("pointerup",stop);
+  canvas.addEventListener("pointercancel",stop);
+  canvas.addEventListener("lostpointercapture",stop);
+  canvas.addEventListener("wheel",event=>{
+    if(!terrainGrid)return;
+    terrainView.zoom=terrainClamp(terrainView.zoom*(event.deltaY>0?0.9:1.1),0.5,2.5);
+    terrainSyncControls();
+    terrainRedrawSoon();
+    event.preventDefault();
+  },{passive:false});
+}
 async function previewTerrain(){
+  const loadSerial=++terrainLoadSerial;
   const file=$("terrain-file").files?.[0];
   if(!file)throw new Error("Zuerst DEM-GeoTIFF auswählen");
   if(file.size>8*1024*1024)throw new Error("GeoTIFF maximal 8 MiB");
   const r=await api("/api/v1/studio/terrain/geotiff",{
     method:"POST",headers:{"Content-Type":"image/tiff"},body:file});
-  const data=await r.json();terrainGrid=data.grid;
-  drawTerrainPreview(terrainGrid);$("terrain-export").disabled=false;
+  const data=await r.json();
+  // An old upload must not overwrite a newly selected DEM in the viewer.
+  if(loadSerial!==terrainLoadSerial)return;
+  terrainGrid=data.grid;
+  terrainGeo=data.geo||null;
+  $("terrain-show-map").disabled=!terrainGeo;
+  terrainDrawMapFootprint();
+  terrainProfile=null;
+  terrainRefreshProfileOptions();
+  terrainDrawProfile(null);
+  terrainUpdateSlopeInfo(terrainGrid);
+  drawTerrainPreview(terrainGrid);
+  $("terrain-georef-info").textContent=terrainGeo?
+    "EPSG:4326 / WGS84 · georeferenzierte Rasterpunktmitten · Nordwest: "+
+      terrainGeo.north_lat.toFixed(7)+", "+terrainGeo.west_lon.toFixed(7)+
+      " · Vertikaler Höhenbezug unbekannt.":
+    "Keine verifizierten WGS84-Rasterkoordinaten verfügbar (z. B. projiziertes CRS oder zu große Fläche). Geo-Overlays, Positionsabfrage und Profil deaktiviert.";
+  $("terrain-export").disabled=false;
+  $("terrain-open-large").disabled=false;
+  $("terrain-large-message").textContent=data.overview.rows+" × "+data.overview.columns+
+    " Zellen · "+data.overview.min_elevation_m+"–"+data.overview.max_elevation_m+
+    " m (orthografische Visualisierung; keine Vermessungs-/Flugfreigabe).";
   $("terrain-message").textContent=data.overview.rows+" × "+data.overview.columns+
     " Zellen · Höhe "+data.overview.min_elevation_m+"–"+data.overview.max_elevation_m+
-    " m. Schematische lokale Höhenvorschau, kein tatsächliches 3D-Kartenmodell oder Flugfreigabe.";
+    " m. Interaktive schematische Höhenansicht, keine georeferenzierte 3D-Karte oder Flugfreigabe.";
 }
 async function exportTerrain(){
   if(!terrainGrid)throw new Error("Zuerst GeoTIFF auswerten");
@@ -1129,7 +1781,7 @@ function wire(){
     $(id).addEventListener("change",()=>historyRecord());
   }
   window.addEventListener("beforeunload",e=>{
-    if(!editorDirty())return;
+    if(!editorDirty()&&geoDraft.length===0&&geoEditingId===null)return;
     e.preventDefault();
     e.returnValue="";
   });
@@ -1179,7 +1831,11 @@ function wire(){
     }catch(_){notice("Kopieren nicht möglich. Koordinaten im Editor markieren.",true);}
   });
   $("geo-draw").addEventListener("click",()=>setGeoMode(!geoDraw));
-  $("geo-reset").addEventListener("click",()=>{geoDraft=[];geoEditingId=null;setGeoMode(false);redrawGeo();});
+  $("geo-reset").addEventListener("click",()=>{
+    if(geoDraft.length&&!window.confirm("Ungespeicherten Geo-Entwurf verwerfen?"))return;
+    geoDraft=[];geoEditingId=null;setGeoMode(false);redrawGeo();
+  });
+  $("geo-undo-vertex").addEventListener("click",()=>{geoDraft.pop();redrawGeo();});
   $("geo-save").addEventListener("click",()=>saveGeoObject().catch(err=>$("geo-draft-status").textContent=err.message));
   $("geo-kind").addEventListener("change",redrawGeo);
   $("survey-generate").addEventListener("click",()=>surveyPreview().catch(err=>$("survey-message").textContent=err.message));
@@ -1188,10 +1844,43 @@ function wire(){
   $("geophoto-show").addEventListener("click",showGeoPhotos);
   $("terrain-preview").addEventListener("click",()=>previewTerrain().catch(err=>$("terrain-message").textContent=err.message));
   $("terrain-export").addEventListener("click",()=>exportTerrain().catch(err=>$("terrain-message").textContent=err.message));
-  $("terrain-file").addEventListener("change",()=>{terrainGrid=null;$("terrain-export").disabled=true;});
+  $("terrain-file").addEventListener("change",()=>{
+    terrainLoadSerial++;
+    terrainGrid=null;
+    terrainGeo=null;
+    terrainDrawMapFootprint();
+    terrainProfile=null;
+    terrainRefreshProfileOptions();
+    $("terrain-coordinate-probe").textContent="Noch kein Geländepunkt ausgewählt.";
+    $("terrain-georef-info").textContent="Keine WGS84-Georeferenz geladen.";
+    terrainUpdateSlopeInfo(null);
+    $("terrain-profile-message").textContent="Noch kein Höhenprofil geladen.";
+    $("terrain-export").disabled=true;
+    $("terrain-open-large").disabled=true;
+    $("terrain-show-map").disabled=true;
+    $("terrain-large-message").textContent="Noch kein Höhenraster geladen. Bitte 3D-Vorschau starten.";
+    drawTerrainPreview(null);
+  });
+  $("terrain-open-large").addEventListener("click",()=>switchTab("terrain-pane"));
+  $("terrain-show-map").addEventListener("click",terrainShowOnMap);
+  $("terrain-reset-view").addEventListener("click",terrainResetView);
+  for(const key of ["azimuth","tilt","zoom","exaggeration","color","wire","slope","geo-overlay"]){
+    $("terrain-"+key).addEventListener("input",terrainControlChanged);
+    $("terrain-"+key).addEventListener("change",terrainControlChanged);
+  }
+  $("terrain-profile-generate").addEventListener("click",terrainGenerateProfile);
+  terrainBindPointer($("terrain-canvas"));
+  terrainBindPointer($("terrain-canvas-large"));
+  terrainSyncControls();
   $("connect-events").addEventListener("click",connectStudioEvents);
   $("upload-media").addEventListener("click",()=>uploadMedia().catch(err=>$("media-notice").textContent=err.message));
   $("refresh-media").addEventListener("click",()=>loadMedia().catch(err=>$("media-notice").textContent=err.message));
+  $("refresh-dji-media").addEventListener("click",()=>loadDjiMedia(true).catch(
+    err=>$("dji-media-status").textContent=errorMessage(err)));
+  $("dji-media-search").addEventListener("change",()=>loadDjiMedia(true).catch(
+    err=>$("dji-media-status").textContent=errorMessage(err)));
+  $("more-dji-media").addEventListener("click",()=>loadDjiMedia(false).catch(
+    err=>$("dji-media-status").textContent=errorMessage(err)));
   $("media-search").addEventListener("input",()=>{displayMedia=20;renderMedia().catch(()=>{});});
   $("more-media").addEventListener("click",()=>{displayMedia+=20;renderMedia().catch(()=>{});});
   $("preview-close").addEventListener("click",closePreview);$("media-dialog").addEventListener("close",closePreview);

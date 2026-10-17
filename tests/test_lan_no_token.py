@@ -146,3 +146,23 @@ def test_mode_is_explicit_opt_in(lan, monkeypatch):
 def test_dji_flight_commands_still_blocked(lan):
     assert send("POST", "/api/v1/flight/command",
                 headers=LAN_ORIGIN).status_code == 403
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("192.168.178.63", "192.168.178.63"), ("192.168.178.20", "192.168.178.20"),
+    ("10.0.0.5", None), ("192.168.178.0", None), ("192.168.178.255", None),
+    ("pi.local", None), ("", None), ("192.168.178.63:8000", None),
+])
+def test_lan_host_must_be_one_address_in_home_subnet(monkeypatch, value, expected):
+    from aeronexus.lan_access import lan_host
+    monkeypatch.setenv("AERONEXUS_LAN_HOST", value)
+    assert lan_host() == expected
+
+
+def test_studio_csp_socket_origin_follows_configuration(lan, monkeypatch):
+    monkeypatch.setenv("AERONEXUS_LAN_HOST", "192.168.178.20")
+    monkeypatch.setenv("AERONEXUS_PORT", "8443")
+    r = send("GET", "/studio", base="https://192.168.178.20:8443")
+    assert r.status_code == 200
+    assert "wss://192.168.178.20:8443 " in r.headers["content-security-policy"]
+    assert "192.168.178.63" not in r.headers["content-security-policy"]

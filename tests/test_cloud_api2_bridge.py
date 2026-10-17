@@ -2,7 +2,7 @@
 
 All tests use local fixtures. Never contact DJI or an SDK backend.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import asyncio
 
 from fastapi.testclient import TestClient
@@ -244,3 +244,49 @@ def test_cloud2_endpoint_disabled_by_default_and_private(monkeypatch):
         assert res.json() == {"source": "dji-cloud-api-2", "state": "disabled",
                               "devices": [], "total": 0}
         assert res.headers["cache-control"] == "no-store"
+
+
+def test_cached_osd_crosses_freshness_threshold_without_network(monkeypatch):
+    import aeronexus.cloud_api2_bridge as module
+    current = [NOW]
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current[0]
+    monkeypatch.setattr(module, "datetime", Clock)
+    bridge = CloudApi2Bridge(CloudApi2Settings("http://127.0.0.1:8080", TOKEN))
+    bridge._cached = normalize_devices([
+        {**DRONE, "lastOsdAt": (NOW-timedelta(seconds=44)).isoformat()}], now=NOW)
+    bridge._updated_at = module.time.monotonic()
+    bridge._status = "ok"
+    assert asyncio.run(bridge.read())["devices"][0]["freshness"] == "fresh"
+    current[0] += timedelta(seconds=2)
+    result = asyncio.run(bridge.read())
+    row = result["devices"][0]
+    assert (row["freshness"], row["age_seconds"], row["online"]) == ("stale", 46, None)
+    assert row["reported_online"] is True
+    row["telemetry"]["battery_percent"] = 0
+    assert bridge._cached[0]["telemetry"]["battery_percent"] == 81
+    assert bridge._cached[0]["freshness"] == "fresh"
+
+
+def test_response_limit_aborts_stream_before_reading_remainder(monkeypatch):
+    import aeronexus.cloud_api2_bridge as module
+    reads = []
+    class Body(httpx.AsyncByteStream):
+        closed = False
+        async def __aiter__(self):
+            for i in range(100):
+                reads.append(i)
+                yield b"x" * 65536
+        async def aclose(self):
+            self.closed = True
+    body = Body()
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, stream=body))
+    original = httpx.AsyncClient
+    monkeypatch.setattr(module.httpx, "AsyncClient", lambda **kw: original(transport=transport, **kw))
+    bridge = CloudApi2Bridge(CloudApi2Settings("http://127.0.0.1:8080", TOKEN))
+    result = asyncio.run(bridge.read())
+    assert result["state"] == "unavailable" and result["devices"] == []
+    assert len(reads) == 16  # stop at the first chunk crossing 1 MB
+    assert body.closed

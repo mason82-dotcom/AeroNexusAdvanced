@@ -6,7 +6,7 @@ geometries where that approximation could be misleading.
 """
 from __future__ import annotations
 
-from math import cos, radians, sin, hypot, isfinite
+from math import cos, radians, sin
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator

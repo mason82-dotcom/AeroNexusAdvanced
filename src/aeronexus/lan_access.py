@@ -20,10 +20,23 @@ def lan_mode_enabled() -> bool:
     return os.environ.get("AERONEXUS_LAN_NO_TOKEN") == "1"
 
 
+def lan_host() -> str | None:
+    """Configured Pi address: one private IPv4 inside HOME_SUBNET, else None."""
+    host = os.environ.get("AERONEXUS_LAN_HOST", "").strip()
+    try:
+        address = ipaddress.IPv4Address(host)
+    except ValueError:
+        return None
+    if address not in HOME_SUBNET or address in (HOME_SUBNET.network_address,
+                                                 HOME_SUBNET.broadcast_address):
+        return None
+    return str(address)
+
+
 def require_lan(request: Request) -> None:
     """Fail closed unless HTTPS direct access matches this Pi's LAN address."""
-    host = os.environ.get("AERONEXUS_LAN_HOST", "").strip()
-    if not host or host != "192.168.178.63":
+    host = lan_host()
+    if host is None:
         raise HTTPException(status_code=503, detail="LAN mode host is not configured")
     try:
         peer = ipaddress.ip_address(request.client.host if request.client else "")

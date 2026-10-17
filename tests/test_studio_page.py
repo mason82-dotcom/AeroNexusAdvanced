@@ -90,9 +90,20 @@ def test_lan_workspace_auto_loads_without_any_browser_token():
     assert 'headerToken' not in page
     assert 'Authorization' not in page
     assert 'loadWorkspace();' in page
-    assert 'await Promise.allSettled([loadMedia(),loadFleet(),loadGeoObjects()]);' in page
+    assert 'await Promise.allSettled([loadMedia(),loadDjiMedia(),loadFleet(),loadGeoObjects()]);' in page
     assert 'async function api(path,options={})' in page
     assert 'textContent' in page
+
+
+def test_readonly_minio_gallery_is_separate_from_local_editable_media():
+    page = render_studio()
+    assert 'id="dji-media-gallery"' in page
+    assert 'id="dji-media-search"' in page
+    assert 'async function loadDjiMedia(reset=true)' in page
+    assert '/api/v1/studio/dji-media/' in page
+    assert 'downloadDjiMedia(m)' in page
+    assert 'Datei auf dem Pi dauerhaft löschen?' in page
+    assert 'media_id}/file' not in page
 
 
 def test_wpml_reimport_exposed_for_saved_aeronexus_routes():
@@ -232,3 +243,63 @@ def test_new_geo_photo_survey_terrain_ui_is_explicitly_local():
     assert "keine verbundenen Flugwege" in page
     assert "no-store" in page
     assert "innerHTML" not in page
+
+
+
+def test_phase18_3d_viewer_controls_keep_local_read_only_terrain():
+    page = render_studio()
+    parser = _HTML()
+    parser.feed(page)
+    ids = {attrs["id"] for _, attrs in parser.nodes if "id" in attrs}
+    for element_id in (
+        "terrain-pane", "terrain-canvas-large", "terrain-open-large",
+        "terrain-reset-view", "terrain-azimuth", "terrain-tilt", "terrain-zoom",
+        "terrain-exaggeration", "terrain-color", "terrain-wire",
+        "terrain-azimuth-value", "terrain-large-message",
+    ):
+        assert element_id in ids
+    assert 'data-tab="terrain-pane"' in page
+    assert 'function terrainProjection(grid,view,width,height)' in page
+    assert 'function terrainDrawCanvas(canvas,grid,view)' in page
+    assert 'function terrainBindPointer(canvas)' in page
+    assert 'const loadSerial=++terrainLoadSerial;' in page
+    assert 'if(loadSerial!==terrainLoadSerial)return;' in page
+    assert 'function terrainResetView()' in page
+    assert "Keine DJI-Missionsausführung" in page
+    assert "Höhenwerte bleiben in Metern" in page
+    assert '"/api/v1/studio/terrain/export.stl"' in page
+    assert '"/api/v1/studio/terrain/geotiff"' in page
+    assert 'innerHTML' not in page
+    assert 'localStorage' not in page
+    assert "three.min.js" not in page
+    assert 'getContext("webgl")' not in page
+
+
+def test_phase19_wgs84_terrain_overlay_profile_and_map_controls():
+    page=render_studio()
+    for element_id in (
+        "terrain-show-map", "terrain-georef-info", "terrain-geo-overlay",
+        "terrain-coordinate-probe","terrain-profile-object",
+        "terrain-profile-generate","terrain-profile-canvas",
+        "terrain-profile-message",
+    ):
+        assert 'id="'+element_id+'"' in page
+    for snippet in (
+        "function terrainGeoBounds(grid,geo)",
+        "function terrainGridPoint(grid,geo,location)",
+        "function terrainHeightAt(grid,row,col)",
+        "function terrainGeoPolyline(obj,grid,geo)",
+        "function terrainPolylineProfile(obj,grid,geo)",
+        "function terrainProbeAt(grid,view,x,y,width,height)",
+        "function terrainDrawOverlays(",
+        "function terrainShowOnMap()",
+        "function terrainGenerateProfile()",
+        "terrainGeo=data.geo||null",
+        '"/api/v1/studio/terrain/geotiff"',
+        '"/api/v1/studio/terrain/export.stl"',
+    ):
+        assert snippet in page
+    assert "Vertikaler Höhenbezug" in page or "vertikaler Höhenbezug" in page
+    assert "innerHTML" not in page
+    assert "localStorage" not in page
+    assert "/api/v1/flight/command" not in page
