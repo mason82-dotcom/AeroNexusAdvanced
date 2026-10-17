@@ -66,7 +66,8 @@ def _geometry_segments(preview: dict):
             values = [values]
         elif kind != "LineString":
             return None
-        if not isinstance(values, list) or not values:
+        if (not isinstance(values, list) or not values
+                or (kind == "LineString" and len(values) < 2)):
             return None
         segment = []
         for point in values:
