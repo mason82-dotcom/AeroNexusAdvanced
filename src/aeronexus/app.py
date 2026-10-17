@@ -27,6 +27,9 @@ from .status_page import render_page
 from .studio_page import render_studio
 from .operations_page import render_operations
 from .studio_workspace import Workspace, WorkspaceError, MAX_MEDIA_BYTES, MEDIA_TYPES
+from .minio_media_index import (DjiMediaIndex, DjiMediaError, MinioMediaSettings,
+                                minio_client, BROWSER_PREVIEW_MIMES,
+                                MAX_BROWSER_PREVIEW_BYTES)
 from .geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
 from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
 from .studio_events import serve_studio_events
@@ -443,6 +446,76 @@ def studio_media_list(request: Request, response: Response,
                       authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
     return {"media": _studio_workspace(request, authorization).list_media()}
+
+
+# The DJI MinIO catalogue is separate from the editable local media library.
+# The re-indexing operation runs explicitly on the Pi; HTTP is read-only.
+@app.get("/api/v1/studio/dji-media")
+def studio_dji_media_list(request: Request, response: Response,
+                          q: str = Query(default="", max_length=120),
+                          limit: int = Query(default=100, ge=1, le=200),
+                          offset: int = Query(default=0, ge=0, le=1_000_000),
+                          authorization: str | None = Header(default=None)) -> dict:
+    workspace = _studio_workspace(request, authorization)
+    _no_cache(response)
+    try:
+        return DjiMediaIndex(workspace.root).list(query=q, limit=limit, offset=offset)
+    except (OSError, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
+
+
+@app.get("/api/v1/studio/dji-media/{media_id}/file")
+def studio_dji_media_file(media_id: str, request: Request,
+                          authorization: str | None = Header(default=None),
+                          download: bool = Query(default=False)):
+    """Read MinIO by indexed opaque id only, never by caller-supplied key.
+
+    Only explicit file requests contact MinIO. Unknown/raw media can be
+    downloaded, but only small browser-safe images can be previewed inline.
+    """
+    workspace = _studio_workspace(request, authorization)
+    try:
+        record = DjiMediaIndex(workspace.root).get(media_id)
+    except (OSError, DjiMediaError) as exc:
+        raise HTTPException(status_code=503, detail="DJI media index unavailable") from exc
+    if record is None:
+        raise HTTPException(status_code=404, detail="DJI media not indexed")
+    if (not download and (record["mime"] not in BROWSER_PREVIEW_MIMES
+                          or record["size_bytes"] > MAX_BROWSER_PREVIEW_BYTES)):
+        raise HTTPException(status_code=415, detail="Preview unavailable; use download")
+    try:
+        settings = MinioMediaSettings.from_env()
+        if settings.bucket != record["bucket"]:
+            raise HTTPException(status_code=503, detail="DJI media bucket changed")
+        client = minio_client(settings)
+        head = client.stat_object(record["bucket"], record["object_key"])
+        if head.size != record["size_bytes"] or head.etag != record["etag"]:
+            raise HTTPException(status_code=409, detail="DJI media changed; reindex required")
+        stream = client.get_object(record["bucket"], record["object_key"])
+    except HTTPException:
+        raise
+    except (DjiMediaError, OSError) as exc:
+        raise HTTPException(status_code=503, detail="MinIO media reader unavailable") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="MinIO object unavailable") from exc
+
+    def chunks():
+        try:
+            yield from stream.stream(64 * 1024)
+        finally:
+            stream.close()
+            stream.release_conn()
+
+    # No object keys, S3 URLs, credentials or DJI identifiers in headers.
+    disposition = "attachment" if download else "inline"
+    return StreamingResponse(chunks(), media_type=record["mime"],
+                             headers={
+                                 "Cache-Control": "no-store",
+                                 "X-Content-Type-Options": "nosniff",
+                                 "Referrer-Policy": "no-referrer",
+                                 "Content-Length": str(record["size_bytes"]),
+                                 "Content-Disposition": disposition,
+                             })
 
 
 @app.post("/api/v1/studio/media", status_code=201)
