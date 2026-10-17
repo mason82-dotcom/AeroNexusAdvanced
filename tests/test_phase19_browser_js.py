@@ -30,7 +30,7 @@ const $=id=>{
 const els=(tag,cls,text)=>({tag,cls,textContent:text,value:""});
 const api=new Function("$","els","let terrainGrid=null,terrainGeo=null,"+
   "geoObjects=[],terrainProfile=null;"+logic+
-  "\nreturn {terrainGridPoint,terrainHeightAt,terrainGeoFromGrid,"+
+  "\nreturn {terrainGeoBounds,terrainGridPoint,terrainHeightAt,terrainGeoFromGrid,"+
   "terrainGeoPolyline,terrainPolylineProfile,terrainProjection,"+
   "terrainProbeAt,terrainRefreshProfileOptions,terrainGenerateProfile,"+
   "setState(g,meta,objects){terrainGrid=g;terrainGeo=meta;geoObjects=objects;}};"
@@ -39,6 +39,13 @@ const grid={heights_m:[[100,100,100],[100,140,100],[100,100,100]],
   x_step_m:7,y_step_m:11};
 const geo={crs:"EPSG:4326",west_lon:8.5,north_lat:49.2,
   lon_step_deg:0.0001,lat_step_deg:-0.0001,vertical_reference:"unspecified"};
+const bounds=api.terrainGeoBounds(grid,geo);
+assert.ok(bounds);
+assert.ok(Math.abs(bounds[0][0]-49.1998)<1e-9);
+assert.ok(Math.abs(bounds[0][1]-8.5)<1e-9);
+assert.ok(Math.abs(bounds[1][0]-49.2)<1e-9);
+assert.ok(Math.abs(bounds[1][1]-8.5002)<1e-9);
+assert.equal(api.terrainGeoBounds(grid,null),null);
 const saved=JSON.stringify(grid);
 const center=api.terrainGridPoint(grid,geo,{latitude:49.1999,longitude:8.5001});
 assert.ok(center);
