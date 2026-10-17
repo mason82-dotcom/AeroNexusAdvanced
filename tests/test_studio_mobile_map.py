@@ -43,7 +43,7 @@ def test_mobile_controls_can_expand_and_exit_focus_without_browser_fullscreen():
                   page.index("function closeCloudOverview(")]
     program = r"""
 const fs=require('node:fs'),assert=require('node:assert/strict');
-const code='const mapStatusSummary=message=>String(message);\\n'+fs.readFileSync(0,'utf8');
+const code='const mapStatusSummary=message=>String(message);'+fs.readFileSync(0,'utf8');
 const elems=new Map();
 const $=id=>{
   if(!elems.has(id))elems.set(id,{
