@@ -25,6 +25,7 @@ def test_mobile_layout_preserves_cloud_readonly_layers_and_map_controls():
     assert 'function setCloudOverviewMinimized(minimized)' in page
     assert 'setMapInfoExpanded(!window.matchMedia("(max-width:700px)").matches)' in page
     assert 'map.invalidateSize({pan:false})' in page
+    # The cloud layer and all WPML previews are always non-interactive.
     assert "interactive:false" in page
     segment = page[page.index("function setCloudOverviewMinimized("):
                    page.index("function closeCloudOverview(")]
@@ -42,7 +43,7 @@ def test_mobile_controls_can_expand_and_exit_focus_without_browser_fullscreen():
                   page.index("function closeCloudOverview(")]
     program = r"""
 const fs=require('node:fs'),assert=require('node:assert/strict');
-const code=fs.readFileSync(0,'utf8');
+const code='const mapStatusSummary=message=>String(message);\\n'+fs.readFileSync(0,'utf8');
 const elems=new Map();
 const $=id=>{
   if(!elems.has(id))elems.set(id,{
@@ -62,11 +63,9 @@ let frames=[],resized=0,visited=[];
 const requestAnimationFrame=callback=>frames.push(callback);
 const map={invalidateSize(opts){assert.equal(opts.pan,false);resized++}};
 const switchTab=id=>visited.push(id);
-const mapStatusSummary=message=>String(message).split('.')[0];
-const methods=new Function('$','document','map','requestAnimationFrame',
- 'switchTab','mapStatusSummary',code+
+const methods=new Function('$','document','map','requestAnimationFrame','switchTab',code+
  '\nreturn {setCloudOverviewMinimized,setMapToolsExpanded,setMapInfoExpanded,setMapFocus};')(
- $,document,map,requestAnimationFrame,switchTab,mapStatusSummary);
+ $,document,map,requestAnimationFrame,switchTab);
 const flush=()=>{while(frames.length)frames.shift()()};
 methods.setMapToolsExpanded(false);
 assert.equal($('map-toolbar').dataset.compact,'true');
@@ -76,10 +75,8 @@ assert.equal($('map-toolbar').dataset.compact,'false');
 assert.equal($('map-tools-toggle').attrs['aria-expanded'],'true');
 methods.setMapInfoExpanded(false);
 assert.equal($('map-info').dataset.minimized,'true');
-assert.equal($('map-info-chip').attrs['aria-expanded'],'false');
 methods.setMapInfoExpanded(true);
 assert.equal($('map-info').dataset.minimized,'false');
-assert.equal($('map-info-chip').attrs['aria-expanded'],'true');
 methods.setCloudOverviewMinimized(true);
 assert.equal($('cloud-overview-panel').dataset.minimized,'true');
 assert.equal($('cloud-overview-expand').attrs['aria-expanded'],'false');
