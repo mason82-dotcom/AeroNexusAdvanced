@@ -10,10 +10,15 @@ from aeronexus.studio_page import render_studio
 def test_cloud_overview_has_explicit_button_and_private_readonly_layers():
     page = render_studio()
     for element in ("wayline-overview-open", "cloud-overview-panel", "cloud-overview-status",
-                    "cloud-overview-list", "cloud-overview-close", "cloud-overview-fit"):
+                    "cloud-overview-list", "cloud-overview-close", "cloud-overview-fit",
+                    "cloud-overview-map-open"):
         assert f'id="{element}"' in page
     assert 'id="wayline-overview-open" disabled' in page
     assert 'id="cloud-overview-panel" role="region"' in page
+    assert 'id="cloud-overview-map-open" hidden type="button"' in page
+    assert 'function syncCloudOverviewShortcut()' in page
+    assert 'fitWaylineMapBounds(bounds,()=>generation===cloudOverviewGeneration' in page
+    assert 'const loading=cloudOverviewRoutes.find(route=>route.state==="loading")' in page
     block = page[page.index("function closeCloudOverview("):page.index("function waylineSourceState(")]
     assert 'route.provider!=="pilot2-local-cloud"' in block
     assert "pilot.pagination_complete!==true" in block
@@ -88,13 +93,14 @@ const api=async (url,options)=>{
 const main=new Function('$','els','api','map','L','switchTab','getMap','mapWarning',
  'errorMessage','clean','cloudOverviewLayer','waylinePreviewLayer',
  'cloudOverviewGeneration','cloudOverviewController','cloudOverviewRoutes',
- 'CLOUD_OVERVIEW_COLORS','waylinePreviewRequest',logic+
+ 'CLOUD_OVERVIEW_COLORS','waylinePreviewRequest','fitWaylineMapBounds',logic+
  '\nreturn {openCloudOverview,closeCloudOverview,renderCloudOverview,fitCloudRoutes,'+
- 'cloudOverviewLineStats,cloudOverviewFormatDistance,'+
+ 'cloudOverviewLineStats,cloudOverviewFormatDistance,syncCloudOverviewShortcut,'+
  'setData(d){waylineData=d},getRoutes(){return cloudOverviewRoutes},getLayer(){return cloudOverviewLayer}};');
 const overview=main($,els,api,map,L,()=>{},()=>{},s=>warn.push(s),e=>e.message,v=>String(v??'–'),
  new Group(),new Group(),0,null,[],
- ["#ffb74d","#60b5ff","#82d39a","#df9eff","#ff7993","#66d8d5","#f3dc6d","#b8abff"],0);
+ ["#ffb74d","#60b5ff","#82d39a","#df9eff","#ff7993","#66d8d5","#f3dc6d","#b8abff"],0,
+ (bounds,isCurrent)=>{if(isCurrent())map.fitBounds(bounds)});
 const routes=Array.from({length:10},(_,n)=>({provider:n===9?'flighthub-public-v2':'pilot2-local-cloud',
  wayline_id:'r'+n,name:'Route '+n}));
 overview.setData({waylines:routes,local_pilot:{state:'connected',pagination_complete:true},missions:[]});
@@ -134,6 +140,9 @@ overview.setData({waylines:routes,local_pilot:{state:'connected',pagination_comp
  assert.equal(new Set(overview.getRoutes().map(x=>x.color)).size,8);
  assert.match($('cloud-overview-status').textContent,/7\/8 Routen gelesen/);
  assert.equal($('cloud-overview-panel').hidden,false);
+ assert.equal($('cloud-overview-map-open').hidden,false);
+ assert.equal($('cloud-overview-map-open').textContent,'Übersicht schließen');
+ assert.equal($('cloud-overview-map-open').hidden,false);
  assert.equal(overview.getLayer().layers.length,7);
  const row=$('cloud-overview-list').children[0], input=row.children[0].children[0];
  assert.equal(input.checked,true);input.checked=false;input.onchange();
@@ -143,11 +152,14 @@ overview.setData({waylines:routes,local_pilot:{state:'connected',pagination_comp
  assert.ok(map.lastBounds);
  overview.closeCloudOverview();
  assert.equal($('cloud-overview-panel').hidden,true);
+ assert.equal($('cloud-overview-map-open').textContent,'Alle Cloud-Routen (8)');
  assert.equal(overview.getLayer().layers.length,0);
  assert.equal(map.hasLayer(overview.getLayer()),false);
  hits=[];
  overview.setData({waylines:routes,local_pilot:{state:'connected',pagination_complete:false}});
  await overview.openCloudOverview();assert.equal(hits.length,0);
+ overview.syncCloudOverviewShortcut();
+ assert.equal($('cloud-overview-map-open').hidden,true);
  console.log('Cloud overview JS passed');
 })().catch(e=>{console.error(e);process.exitCode=1});
 """

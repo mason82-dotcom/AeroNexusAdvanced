@@ -441,3 +441,29 @@ Wayline-Namen weder HTML ausführen noch auf die Karte gezeichnet werden.
 Die Änderungen betreffen ausschließlich die mobile Browseroberfläche.
 DJI-Downloads, Flight-Commands, lokale Missionen und Cloud-KMZ bleiben
 unverändert. Die Darstellung muss auf dem realen Smartphone geprüft werden.
+
+## Direkter Wechsel zur Acht-Routen-Karte (Mobil)
+
+Nach erfolgreicher Live-Abnahme der einzelnen Cloud-Waylines kann das
+Kartenpanel die lokale Gesamtübersicht direkt starten: Wenn das
+`pilot2-local-cloud`-Inventar vollständig und verbunden ist, blendet
+die Kartenwerkzeugleiste die Aktion **„Alle Cloud-Routen (N)“** ein,
+wobei N auf höchstens acht begrenzt ist. Der Klick führt über dieselbe
+bereits abgesicherte `openCloudOverview`-Funktion wie der Bibliotheksbutton.
+Im geöffneten Zustand wechselt die Aktion zu **„Übersicht schließen“**.
+Bei nicht verfügbarem oder unvollständigem Inventar ist die Aktion
+ausgeblendet. Die Einzelvorschau wird beim Start der Gesamtübersicht
+zur Vermeidung doppelter Overlays entfernt.
+
+Auch die Gesamtübersicht nutzt die mobile Größenprüfung
+`fitWaylineMapBounds` statt einer sofortigen Leaflet-`fitBounds`-Operation.
+Damit werden Kartenausschnitte erst nach dem Sichtbarwerden und Messen
+des Kartencontainers zentriert. Spätere asynchrone Rückmeldungen
+geschlossener Übersichten können keine neue Kartenposition auslösen.
+
+Während des sequenziellen, nur durch Benutzerklick gestarteten Ladens
+zeigt das Panel den Namen der aktuell angeforderten Route. Die acht
+schreibgeschützten Einzel-GETs, die Zugriffsprüfung, die maximalen
+Dateigrößen und die vollständige Trennung vom Missionseditor
+bleiben unverändert. Die gemeinsame Anzeige auf dem Android-Browser
+steht noch zur Live-Abnahme aus.
