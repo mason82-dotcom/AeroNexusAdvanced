@@ -26,3 +26,13 @@ def test_map_layer_does_not_become_part_of_dji_wayline_export():
     assert "waypointsLayer=L.layerGroup().addTo(map)" in page
     assert "pilot2MapLayer=L.layerGroup()" in page
     assert 'export-mission' in page
+
+
+def test_map_ui_reports_empty_groups_without_inventing_geometry():
+    page = render_studio()
+    snippet = page[page.index("async function togglePilot2MapLayer()"):page.index("function centerOnForst()")]
+    assert 'group.source_elements===0' in snippet
+    assert 'Keine Kartengeometrien gemeldet.' in snippet
+    assert 'nicht unterstützte Objekte ausgelassen.' in snippet
+    assert 'pilot2MapLayer.clearLayers()' in snippet
+    assert 'innerHTML' not in snippet

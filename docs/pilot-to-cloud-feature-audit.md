@@ -130,3 +130,20 @@ Im Mission Studio unter **Flottenstatus** kann die reine Gerätekopplung über
 serverseitig validierte Gerätedaten und sichere DOM-`textContent`-Knoten.
 Die bestehende FlightHub-Flottenanzeige und der Telemetrie-Status bleiben
 unverändert; es werden keine MQTT-Kommandos gesendet.
+
+## Live-Datenprüfung (17.10.2026)
+
+Die produktive read-only API lieferte nach der Korrektur der Wayline-Diagnose:
+
+- **Topologie:** 4 Geräte, 1 als online markiert, 2 Controller-/Aircraft-Zuordnungen.
+  Das Online-Flag stammt vom Cloud-Server und ist keine garantierte Echtzeit-Telemetrie.
+- **Karte:** 3 Gruppen, 0 Geometrien, 0 verworfene Elemente. Damit liegt
+  aktuell keine Karte vor, die im Studio als GeoJSON zu zeichnen wäre. Die
+  API gibt pro Gruppe nun `source_elements` und `displayed_features` zurück,
+  um leere Gruppen von ungültigen oder nicht unterstützten Geometrien zu trennen.
+- **Waylines:** 8 von 8 Einträgen vollständig paginiert; der Inhalt der KMZ
+  ist damit nicht verifiziert und wird nicht bearbeitet oder ausgeführt.
+
+Die Studio-Flottenanzeige weist Online-/Offline-/Unbekannt-Zahlen und die
+zugehörigen Gerätebeziehungen aus; die Kartenmeldung unterscheidet leere
+Gruppen von übersprungenen Features. Beide Ansichten bleiben strikt lesend.

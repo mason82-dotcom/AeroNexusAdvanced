@@ -39,6 +39,8 @@ def test_map_read_only_fixed_origin_and_allowlisted_metadata():
     result = _get(p2.read_map_elements, handle)
     assert result["complete"] is True and result["crs"] == "EPSG:4326"
     assert len(result["features"]) == 1 and result["skipped_unsupported"] == 1
+    assert result["groups"][0]["source_elements"] == 2
+    assert result["groups"][0]["displayed_features"] == 1
     assert result["features"][0]["geometry"] == {"type": "Point", "coordinates": [-8.4, 47.2, 12]}
     as_text = json.dumps(result)
     assert "private person" not in as_text and "secret.invalid" not in as_text
@@ -155,3 +157,15 @@ def test_diagnostics_wayline_query_uses_required_backend_ordering():
     assert result["checks"]["waylines"] == {
         "http_status": 200, "api_code": 0, "state": "ok"}
     assert result["all_ok"] is True
+
+
+def test_map_empty_groups_are_distinguished_from_unsupported_geometry():
+    data = [{"id": UID, "name": "Leere Gruppe", "type": 1, "is_lock": False,
+             "elements": []} for _ in range(3)]
+    result = p2._map_payload(data)
+    assert len(result["groups"]) == 3
+    assert result["features"] == []
+    assert result["skipped_unsupported"] == 0
+    assert all(group["source_elements"] == 0 and group["displayed_features"] == 0
+               for group in result["groups"])
+    assert result["complete"] is True

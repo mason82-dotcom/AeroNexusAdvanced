@@ -701,9 +701,14 @@ async function togglePilot2MapLayer(){
         pointToLayer:(_feature,latlng)=>L.circleMarker(latlng,{radius:7,interactive:false})
       }).addTo(pilot2MapLayer);
     }
-    mapWarning("Pilot-2-Kartenebene: "+data.features.length+" Objekte (nur lesen). "+
-      clean(data.skipped_unsupported)+" nicht unterstützte Objekte ausgelassen. "+
-      "Lokale Missionen bleiben unverändert.");
+    const groups=Array.isArray(data.groups)?data.groups:[];
+    const emptyGroups=groups.filter(group=>group.source_elements===0).length;
+    const emptyMessage=data.features.length===0&&Number(data.skipped_unsupported)===0
+      ?" Keine Kartengeometrien gemeldet.":"";
+    mapWarning("Pilot-2-Kartenebene: "+groups.length+" Gruppen, "+data.features.length+
+      " Objekte (nur lesen). "+emptyGroups+" leere Gruppen. "+
+      clean(data.skipped_unsupported)+" nicht unterstützte Objekte ausgelassen."+
+      emptyMessage+" Lokale Missionen bleiben unverändert.");
   }catch(error){
     if(request!==pilot2LayerRequest)return;
     pilot2LayerVisible=false;
@@ -1359,16 +1364,30 @@ async function loadPilot2Topology(){
     const data=await response.json();
     if(data.state!=="connected")throw new Error("Pilot-2-Geräte: "+clean(data.state));
     if(!Array.isArray(data.devices)||!Array.isArray(data.links))throw new Error("Ungültige Geräte-Topologie");
-    status.className="status good";
-    status.textContent=data.devices.length+" Geräte, "+data.links.length+
-      " Zuordnungen · Aktualisierung: "+clean(data.updated_at)+
-      " · keine automatische Flugsteuerung";
+    const online=data.devices.filter(device=>device.online===true).length;
+    const offline=data.devices.filter(device=>device.online===false).length;
+    const unknown=data.devices.length-online-offline;
+    status.className="status"+(offline===0&&unknown===0?" good":"");
+    status.textContent=data.devices.length+" Geräte: "+online+" online, "+offline+
+      " offline, "+unknown+" unbekannt · "+data.links.length+
+      " Zuordnungen · Stand: "+clean(data.updated_at)+
+      " · Cloud-Momentaufnahme, keine automatische Flugsteuerung";
     for(const item of data.devices){
       const card=cardText(grid,"article","wayline-card");
       cardText(card,"h2","",item.callsign||"DJI-Gerät");
       cardText(card,"p","",item.role==="aircraft"?"Fluggerät":"Fernsteuerung");
       cardText(card,"p","",clean(item.serial_number)+" · "+clean(item.device_model_key));
       cardText(card,"p","",item.online===true?"Online":item.online===false?"Offline":"Online-Status unbekannt");
+      const related=data.links.filter(link=>item.role==="aircraft"
+        ?link.aircraft_sn===item.serial_number
+        :link.controller_sn===item.serial_number);
+      const counterpartRole=item.role==="aircraft"?"controller":"aircraft";
+      const names=related.map(link=>{
+        const serial=counterpartRole==="controller"?link.controller_sn:link.aircraft_sn;
+        const match=data.devices.find(device=>device.role===counterpartRole&&device.serial_number===serial);
+        return match?.callsign||match?.device_model_key||serial;
+      });
+      cardText(card,"p","note",names.length?"Zugeordnet: "+names.join(", "):"Keine Zuordnung gemeldet");
     }
     if(!data.devices.length)cardText(grid,"div","empty","Keine Geräte in der lokalen Pilot-2-Topologie gemeldet.");
   }catch(err){

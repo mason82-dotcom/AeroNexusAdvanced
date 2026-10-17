@@ -102,8 +102,10 @@ def _map_payload(data):
             raise LocalWaylineError("invalid_response")
         if type(raw.get("type")) not in (int, type(None)):
             raise LocalWaylineError("invalid_response")
-        groups.append({"id": identifier, "name": name, "locked": raw.get("is_lock"),
-                       "type_code": raw.get("type")})
+        group = {"id": identifier, "name": name, "locked": raw.get("is_lock"),
+                 "type_code": raw.get("type"), "source_elements": len(items),
+                 "displayed_features": 0}
+        groups.append(group)
         for item in items:
             if not isinstance(item, dict):
                 raise LocalWaylineError("invalid_response")
@@ -116,6 +118,7 @@ def _map_payload(data):
                 continue
             features.append({"id": element_id, "group_id": identifier, "name": element_name,
                              "geometry": geom})
+            group["displayed_features"] += 1
     return {"groups": groups, "features": features, "skipped_unsupported": skipped,
             "crs": "EPSG:4326", "complete": True}
 
