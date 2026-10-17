@@ -433,7 +433,8 @@ function rtkLabel(raw){
     "is_fixed:not_started":"RTK nicht gestartet",
     "is_fixed:fixing":"RTK-Fix läuft",
     "is_fixed:fixing_successful":"RTK-Fix erfolgreich",
-    "is_fixed:fixing_failed":"RTK-Fix fehlgeschlagen"
+    "is_fixed:fixing_failed":"RTK-Fix fehlgeschlagen",
+    "is_fixed:0":"Kein bestätigter RTK-Fix (DJI-Code 0)"
   };
   // This map is deliberately limited to strings already handled in /status.
   // Unknown raw values stay accessible only in the technical section.
