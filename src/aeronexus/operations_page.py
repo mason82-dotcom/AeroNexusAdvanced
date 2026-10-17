@@ -431,6 +431,7 @@ function metric(parent,title,value){
 function rtkLabel(raw){
   const officialObserved={
     "is_fixed:not_started":"RTK nicht gestartet",
+    "is_fixed:0":"Kein bestätigter RTK-Fix",
     "is_fixed:fixing":"RTK-Fix läuft",
     "is_fixed:fixing_successful":"RTK-Fix erfolgreich",
     "is_fixed:fixing_failed":"RTK-Fix fehlgeschlagen",
@@ -851,7 +852,9 @@ async function refreshAll(){
     renderSavedMissions();repaintDeviceLayer();
     renderOsdPanel(summaryResult.status==="fulfilled"?summaryResult.value:null);
     message("project-sync",summaryResult.status==="fulfilled"?
-      receiveUpdatedAt(summaryResult.value):"Synchronisierungsstatus nicht verfügbar");
+      summaryResult.value?.polling==="disabled"?
+        "FlightHub-Polling deaktiviert · DJI MQTT funktioniert unabhängig":
+        receiveUpdatedAt(summaryResult.value):"Synchronisierungsstatus nicht verfügbar");
     if(summaryResult.status!=="fulfilled")errors.push("Statusübersicht nicht verfügbar");
     message("connection",errors.length?
       "Teilweise verfügbar · "+errors.join(" · "):
