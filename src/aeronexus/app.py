@@ -11,6 +11,8 @@ import os
 import sqlite3
 import sys
 import time
+import threading
+from typing import Annotated, Literal
 from enum import Enum
 from secrets import compare_digest
 
@@ -46,6 +48,7 @@ from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, Metash
 from .raster_results import (RasterResults, RasterError, RasterUnavailable,
                              RasterNotFound, RasterChanged, RasterBusy, _libraries)
 from .results_page import render_results_page
+from .multispectral_report import build_report, report_csv
 from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
 from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
@@ -1045,6 +1048,40 @@ def _ms_http_error(exc: Exception) -> HTTPException:
 
 
 _MS_ERRORS = (MultispectralError, DjiMediaError, OSError, sqlite3.Error)
+_MS_REPORT_SLOT = threading.BoundedSemaphore(1)
+
+
+class MultispectralReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    capture_uuids: list[Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]] = Field(min_length=1, max_length=20)
+    layers: list[Literal["ndvi", "ndre", "gndvi", "lci"]] = Field(
+        default_factory=lambda: ["ndvi", "ndre", "gndvi", "lci"], min_length=1, max_length=4)
+    scale: Literal[1, 2, 4] = 4
+    ndvi_threshold: float | None = Field(default=None, ge=-1, le=1, allow_inf_nan=False)
+
+
+@app.post("/api/v1/multispectral/reports")
+def multispectral_report(body: MultispectralReportRequest, request: Request, response: Response,
+                         format: Literal["json", "csv"] = "json",
+                         authorization: str | None = Header(default=None)):
+    service = _ms_service(request, authorization)
+    _no_cache(response)
+    if not _MS_REPORT_SLOT.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="Ein Serienbericht wird bereits berechnet. Erneut versuchen.",
+                            headers={"Retry-After": "5"})
+    try:
+        report = build_report(service, body.capture_uuids, body.layers, scale=body.scale,
+                              threshold=body.ndvi_threshold)
+        if format == "csv":
+            result = Response(report_csv(report), media_type="text/csv; charset=utf-8",
+                              headers={"Content-Disposition": 'attachment; filename="m3m_serienbericht.csv"'})
+            _no_cache(result)
+            return result
+        return report
+    except _MS_ERRORS as exc:
+        raise _ms_http_error(exc) from exc
+    finally:
+        _MS_REPORT_SLOT.release()
 
 
 def _raster_http_error(exc: Exception) -> HTTPException:
