@@ -12,6 +12,8 @@ separately authenticated BFF on a trusted private server may be queried.
 NEVER attempt direct DJI device access, SDK control, login, or any POST.
 """
 import asyncio
+from copy import deepcopy
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import ipaddress
@@ -174,6 +176,7 @@ def normalize_devices(payload, *, now: datetime | None = None,
                 "name": _text(device.get("name")) or _text(device.get("model")) or "DJI-Fluggerät",
                 "model": _text(device.get("model")),
                 "online": online if freshness == "fresh" else None,
+                "reported_online": online,
                 "freshness": freshness,
                 "age_seconds": round(max(age, 0), 2) if age is not None and age >= 0 else None,
                 "received_at": received.isoformat().replace("+00:00", "Z") if received else None,
@@ -221,17 +224,20 @@ class CloudApi2Bridge:
                     base_url=self.settings.base_url, timeout=7,
                     follow_redirects=False, trust_env=False, verify=True,
                 ) as client:
-                    response = await client.get(_DEVICE_PATH, headers={
+                    async with client.stream("GET", _DEVICE_PATH, headers={
                         "Authorization": "Bearer " + self.settings.api_token,
                         "Accept": "application/json",
                         "User-Agent": "AeroNexusAdvanced/0.1 CloudAPI2 read-only",
-                    })
-                    if response.status_code != 200:
-                        raise CloudApi2BridgeError("Cloud API 2 backend unavailable")
-                    if len(response.content) > MAX_RESPONSE_BYTES:
-                        raise CloudApi2BridgeError("Cloud API 2 response too large")
+                    }) as response:
+                        if response.status_code != 200:
+                            raise CloudApi2BridgeError("Cloud API 2 backend unavailable")
+                        content = bytearray()
+                        async for chunk in response.aiter_bytes(chunk_size=65536):
+                            if len(content) + len(chunk) > MAX_RESPONSE_BYTES:
+                                raise CloudApi2BridgeError("Cloud API 2 response too large")
+                            content.extend(chunk)
                     devices = normalize_devices(
-                        response.json(),
+                        json.loads(content),
                         stale_after_seconds=self.settings.stale_after_seconds,
                     )
                 self._cached = devices
@@ -243,5 +249,18 @@ class CloudApi2Bridge:
             return self._response()
 
     def _response(self) -> dict:
+        devices = deepcopy(self._cached)
+        now = datetime.now(timezone.utc)
+        for device in devices:
+            received = _date(device["received_at"])
+            age = (now - received).total_seconds() if received else None
+            # Missing OSD remains missing even when lastOsdAt exists.
+            if device["freshness"] != "missing":
+                device["freshness"] = (
+                    "clock_skew" if age is not None and age < -1 else
+                    "fresh" if age is not None and age <= self.settings.stale_after_seconds
+                    else "stale")
+            device["age_seconds"] = round(max(age, 0), 2) if age is not None and age >= 0 else None
+            device["online"] = device["reported_online"] if device["freshness"] == "fresh" else None
         return {"state": self._status, "source": "dji-cloud-api-2",
-                "devices": list(self._cached), "total": len(self._cached)}
+                "devices": devices, "total": len(devices)}

@@ -1,27 +1,34 @@
 # AeroNexusAdvanced – Projektstatus / Wiederaufnahmepunkt
 
-**Stand:** 17. Oktober 2026  
-**Phase:** 20 (DEM-Hangneigungsanalyse über PR #16;
-GitHub CI: 641 Tests, eine bekannte Warnung; Pi-/Chrome-Abnahme offen).
-Phase 19 ist auf `main` mit dem Gelände-Overlay-Draping integriert.
-Phase 17/18 mit Geo-Polygonen, Flächenstreifen, GeoTIFF/STL,
-interaktivem 3D-Viewer und Höhenfarben wurden auf dem Pi/Chrome
-sichtgeprüft. Für Phase 18 zeigt ein Chrome-Screenshot eine gerenderte
-32×32-Großansicht mit Rotation -135°, Neigung 35° und Zoom 1,6×;
-die tatsächliche Pointer-/Mausrad-Interaktion wurde dadurch **nicht**
-abschließend bestätigt. Neue Phase-19-Funktionen ebenfalls noch nicht
-live auf Pi/Chrome geprüft. Siehe `docs/phase-19-georeferenced-terrain.md`.
-Phase 9 Cloud-MQTT und optionaler Cloud API 2 BFF bleiben deaktiviert.  
-**Repository:** `mason82-dotcom/AeroNexusAdvanced`  
-**Zuletzt bestätigter Pi-Teststand (Phase 17):** **619 Tests,
-1 Warnung**, Python 3.13.5, systemd-`active`, HTTPS-`/health` und
-`/studio` erfolgreich; Debian-GDAL 3.10.3 und NumPy 2.2.4 in
-der AeroNexus-venv importierbar, `pip check` fehlerfrei.
-Pi/Chrome: Geo-Polygonverwaltung und parallele Streifen sichtbar; GeoTIFF
-mit synthetischem 32×32-Test-DEM importiert, Höhen 120,003–184,327 m,
-Drahtgitter angezeigt und STL heruntergeladen. **Reale DEMs, Geoid-
-Höhenbezüge und Phase-18-Interaktionen noch nicht bestätigt.**
-DJI Matrice 4T im Operations Center in früherer Phase live bestätigt.
+**Stand:** 17. Oktober 2026 – Konsolidierungsbranch, noch nicht auf `main`.
+**Repository:** `mason82-dotcom/AeroNexusAdvanced`
+
+## Aktueller Entwicklungsstand
+
+- Phase 21 aus PR #18 mit dem Phase-20-Medienkatalog von `main`
+  zusammengeführt: `/media` und Mission Studio verwenden denselben privaten
+  SQLite-Index und denselben dedizierten MinIO-Lesezugang. Der Root-basierte
+  Scanpfad ist entfernt. Der frühere Index unter `var/` bleibt unangetastet.
+- Cloud-API-2-Antworten werden während des Streamings auf 1 MB begrenzt;
+  Cacheausgaben bewerten Alter/Frische/Online neu und geben `reported_online`
+  getrennt aus. Der optionale Adapter bleibt standardmäßig deaktiviert.
+- Beschädigte SQLite-Kataloge liefern kontrolliertes HTTP 503 ohne interne
+  Details. Der letzte vollständige Index bleibt bei Scanfehlern erhalten.
+- Provider-Statusrouten spiegeln die beim Serverstart konfigurierten Quellen.
+  `configured` bestätigt Konfiguration, keine erfolgreiche DJI-Verbindung.
+- CI prüft Python 3.12 und 3.13 einschließlich der optionalen MQTT-/MinIO-Extras.
+- Lokale vollständige Tests unter Python 3.12: **663 bestanden, 1 bekannte
+  Starlette/httpx-Warnung**. CI auf dem neuen Branch separat prüfen.
+
+## Bestätigter Pi-Stand und Grenzen
+
+Der [Checkpoint vom 17.10.2026](project-checkpoint-2026-10-17.md) hält die
+frühere Phase-21-Abnahme fest: 6.095 DJI-Medien, Katalog-API und JPEG-Vorschau
+funktionieren auf dem Pi. Diese Abnahme gilt nicht automatisch für diesen
+Konsolidierungsbranch. Kein neues Pi-Deployment oder Dienstneustart erfolgt.
+Phase 20: 641 Tests und aktiver Dienst wurden vom Anwender bestätigt.
+Manuelle Browserinteraktionen und reale DEM-/Höhenbezüge sind weiterhin
+getrennt zu prüfen. Der folgende Verlauf enthält historische Phasenstände.
 
 ## Phase 20 – lokale DEM-Hangneigungsanalyse
 
