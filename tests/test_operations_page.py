@@ -156,7 +156,7 @@ def test_cockpit_uses_only_normalized_drone_metrics():
     assert "Flugzeit gesamt" in page
     assert "Flugstarts gesamt" in page
     assert "Distanz zum Homepoint" in page
-    assert "Höhe über Start" in page
+    assert "DJI elevation (Bezug ungeprüft)" in page
     assert "Akkuspannung" in page
     assert "Akkutemperatur" in page
     assert "RTK-Satelliten" in page
@@ -272,3 +272,60 @@ def test_cockpit_does_not_rebuild_dom_when_only_received_age_changes():
     assert 'if(cockpitSignature===lastCockpitSignature)return;' in page
     assert 'lastCockpitSignature=cockpitSignature' in page
     assert 'message("cockpit-received",finite(d.age_seconds)' in page
+
+
+def test_live_mqtt_status_panel_is_explicit_and_read_only():
+    page = render_operations()
+    parser = Tags()
+    parser.feed(page)
+    ids = {attrs["id"] for _, attrs in parser.tags if "id" in attrs}
+    assert {"cloud-osd-panel", "osd-feed-state", "osd-feed-detail"} <= ids
+    assert "function renderOsdPanel(summary)" in page
+    assert 'const feed=summary?.live_feed||{}' in page
+    assert '"OSD-Empfang aktiv"' in page
+    assert '"Abonniert · wartet"' in page
+    assert "letzter Empfang vor " in page
+    assert "gültige OSD-Nachrichten seit Dienststart" in page
+    assert 'renderOsdPanel(summaryResult.status==="fulfilled"?summaryResult.value:null)' in page
+    assert 'FlightHub-Polling deaktiviert · DJI MQTT funktioniert unabhängig' in page
+    assert 'fetch(path,{cache:"no-store"})' in page
+    assert "mqtt://" not in page
+    assert "wss://" not in page
+    assert 'method:"POST"' not in page
+
+
+def test_live_cockpit_keeps_source_identity_for_mqtt_and_flighthub():
+    page = render_operations()
+    assert 'function deviceKey(d){return JSON.stringify([d.provider,d.project_id,d.device_id]);}' in page
+    assert 'option.value=deviceKey(d)' in page
+    assert 'const d=available.find(x=>deviceKey(x)===currentDevice)' in page
+    assert 'dot.on("click",()=>{currentDevice=deviceKey(d);renderCockpit();});' in page
+    assert 'currentDevice=deviceKey(d);renderCockpit();renderDevices();' in page
+    assert 'new Set(aircraft.map(d=>d.device_id)).size' in page
+    assert 'new Set(aircraft.filter(d=>d.freshness==="fresh"&&d.online===true)' in page
+    assert '"DJI Cloud API MQTT"' in page
+    assert '"FlightHub EU"' in page
+    assert 'Number(b.provider==="dji-cloud-api")-Number(a.provider==="dji-cloud-api")' in page
+
+
+def test_live_cockpit_indoor_gnss_and_controller_status_are_safe():
+    page = render_operations()
+    parser = Tags()
+    parser.feed(page)
+    ids = {attrs["id"] for _, attrs in parser.tags if "id" in attrs}
+    assert "controller-status" in ids
+    assert "function renderControllerStatus()" in page
+    assert "for(const d of controllers.slice(0,4))" in page
+    assert "Akku " in page
+    assert 'renderControllerStatus();renderCockpit()' in page
+    assert 'const position=gps(t)' in page
+    assert '"Keine gültige GPS-Position"' in page
+    assert "Indoor oder ohne Positionsfix möglich" in page
+    assert '"is_fixed:0":"Kein bestätigter RTK-Fix"' in page
+    assert '"GPS-Position",position?' in page
+    assert '"Nicht übermittelt"' in page
+    assert 'DJI height (Bezug ungeprüft)' in page
+    assert 'DJI elevation (Bezug ungeprüft)' in page
+    assert "document.createElement(tag)" in page
+    assert "innerHTML" not in page
+    assert "localStorage" not in page
