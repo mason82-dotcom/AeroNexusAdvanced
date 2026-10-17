@@ -35,6 +35,7 @@ import sys
 import threading
 
 from .minio_media_index import DjiMediaError, DjiMediaIndex
+from .processing_slot import ProcessingSlot
 from .thermal import ThermalError, _num, _text, _xmp_fields, jpeg_segments
 
 
@@ -580,9 +581,8 @@ class MultispectralService:
         self._settings_factory = settings_factory or MinioMediaSettings.from_env
         self._client_factory = client_factory or minio_client
         self._lock = threading.Lock()
-        # One band decode/rectification at a time: a full-resolution band needs
-        # a few hundred MB of temporary arrays; parallel requests could exhaust RAM.
-        self._compute = threading.BoundedSemaphore(1)
+        # Shared with other service instances, the media-sync process and TSDK.
+        self._compute = ProcessingSlot()
         self._bands: OrderedDict = OrderedDict()
         self.summary_failures: list[str] = []
 
@@ -612,13 +612,15 @@ class MultispectralService:
             dn, info = read_band(data)
             cal = (band_metadata(info["xmp"]).get("calibration") or {})
             grid = rectify(relative_reflectance(dn, info, cal), cal, scale=scale)
+            # Publish the cache entry before releasing the processing slot so
+            # the next waiter cannot start a duplicate decode.
+            with self._lock:
+                self._bands[key] = grid
+                while len(self._bands) > self.CACHE_BANDS:
+                    self._bands.popitem(last=False)
+            return grid
         finally:
             self._compute.release()
-        with self._lock:
-            self._bands[key] = grid
-            while len(self._bands) > self.CACHE_BANDS:
-                self._bands.popitem(last=False)
-        return grid
 
     def _cached(self, key):
         with self._lock:
