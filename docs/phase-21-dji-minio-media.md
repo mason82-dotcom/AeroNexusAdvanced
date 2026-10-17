@@ -68,22 +68,32 @@ MinIO-Lesezugang mit **ausschließlich** `s3:ListBucket` /
 `dji-cloud/*` angelegt werden. Weder Root-Passwort noch neuer
 Zugangsschlüssel werden im Terminal ausgegeben.
 
-Für den Raspberry Pi 5 (ARM64) den offiziellen MinIO-Client herunterladen
-und anhand der nebenstehenden SHA256-Prüfsummendatei verifizieren:
+Der früher dokumentierte Community-Download unter `dl.min.io` ist
+seit September 2026 außer Betrieb (HTTP 410). Für den Raspberry Pi 5 (ARM64)
+den veröffentlichten Binär-Release aus dem offiziellen, inzwischen
+archivierten GitHub-Repository `minio/mc` mit fester SHA256-Prüfsumme verwenden.
+Nicht den neuen AIStor-Client ungeprüft für den alten MinIO-Server einsetzen.
 
 ~~~bash
 mkdir -p "$HOME/minio-binaries"
 cd "$HOME/minio-binaries"
-curl -fL --retry 3 -o mc   https://dl.min.io/client/mc/release/linux-arm64/mc
-curl -fL --retry 3 -o mc.sha256sum   https://dl.min.io/client/mc/release/linux-arm64/mc.sha256sum
-echo "$(awk '{print $1}' mc.sha256sum)  mc" | sha256sum --check --status && echo 'SHA256 geprüft'
+VERSION="RELEASE.2025-08-13T08-35-41Z"
+BASE="https://github.com/minio/mc/releases/download/$VERSION"
+
+curl -fL --retry 3 -o mc "$BASE/mc.linux-arm64.$VERSION"
+echo "14c8c9616cfce4636add161304353244e8de383b2e2752c0e9dad01d4c27c12c  mc" | sha256sum -c -
+# Nur bei 'mc: OK' fortfahren:
 chmod 700 mc
 ./mc --version
 ~~~
 
-Falls die Prüfsumme **nicht** übereinstimmt, die Binärdatei nicht ausführen.
-Es werden keine Systempakete oder MinIO-Container installiert oder aktualisiert.
-Nur die offizielle URL `dl.min.io` verwenden.
+Offizieller Release:
+https://github.com/minio/mc/releases/tag/RELEASE.2025-08-13T08-35-41Z
+(Asset `mc.linux-arm64.RELEASE.2025-08-13T08-35-41Z`;
+SHA256-Digest aus GitHub-Asset-Metadaten.)
+**Wichtig:** Bei fehlgeschlagenem Download oder SHA256-Prüfung
+`chmod`, Ausführung und Einrichtung abbrechen. Es werden keine
+Systempakete oder MinIO-Container installiert oder aktualisiert.
 
 ~~~bash
 cd ~/Projekte/AeroNexusAdvanced
