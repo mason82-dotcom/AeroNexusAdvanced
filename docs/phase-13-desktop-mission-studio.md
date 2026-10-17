@@ -108,7 +108,7 @@ browser validation on the Raspberry Pi still pending.
   Das ist **keine** Geländehöhen-, Flugkorridor- oder Sicherheitsfreigabe.
   Das Zwischenpunkt-Werkzeug respektiert die maximale WPML-Wegpunktzahl.
 
-- Selected aircraft: DJI Matrice 4T (default) or Matrice 4E.
+- Selected aircraft: DJI Matrice 4T (default), Matrice 4E or Mavic 3E/3T/3M/3TA.
 - Editable mission metadata: name, description, uniform takeoff-relative
   height, horizontal airspeed, safe takeoff height, RTH height, finish action.
 - New/save/open/edit/delete missions in the Pi's private workspace;
@@ -140,6 +140,9 @@ Implemented subset:
   `payloadEnumValue=89`, position 0.
 - M4E `droneEnumValue=99`, `droneSubEnumValue=0`,
   `payloadEnumValue=88`, position 0.
+- M3E/M3T/M3M/M3TA: `droneEnumValue=77`, subtypes 0/1/2/3,
+  payload types 66/67/68/129 respectively; payload subtype and position 0.
+  These are waypoint profiles, not new mapping or multispectral capture modes.
 - WGS84 lat/lon, **uniform `relativeToStartPoint` height**, speed,
   conservative RC-loss action (goBack), finish action goHome/noAction,
   default follow-course heading and stop-at-waypoint turning; optional
@@ -150,6 +153,9 @@ Implemented subset:
   authorization or a validation of local aviation rules.
 - **Third-party DJI KMZ files** cannot be edited yet; only AeroNexus
   generated waypoint KMZ exports can be re-imported and edited.
+  Both full XML documents must match the supported mission representation;
+  inconsistent RTH, speeds, models, turn/heading rules, action parameters and
+  unknown/duplicate elements are rejected rather than silently discarded.
   Full mapping2d/mapping3d, polygon areas, gimbal actions, per-waypoint
   ellipsoid/terrain height and DJI-specific extended metadata are not
   generated. Those require separately verified device/payload support.
@@ -159,6 +165,10 @@ Implemented subset:
   inspect the planned track and actions, and verify airspace,
   altitude reference, obstacles, takeoff point, RTH and battery.
   The app cannot perform terrain/obstacle/airspace clearance.
+
+Cached FlightHub waylines and Studio missions can be compared with the
+authenticated, read-only metadata endpoint documented in
+[Mission/wayline reconciliation](mission-wayline-reconciliation.md).
 
 ### Private on-Pi media library
 

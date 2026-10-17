@@ -181,7 +181,7 @@ function keyValues(t) {
   return parts.length?parts.join(" \u00b7 "):"\u2013";
 }
 const modelNames={"0-99-0":"Matrice 4E","0-99-1":"Matrice 4T","0-100-0":"Matrice 4D","0-100-1":"Matrice 4TD",
-  "0-77-0":"Mavic 3E","0-77-1":"Mavic 3T","0-77-2":"Mavic 3M","0-91-0":"Matrice 3D","0-91-1":"Matrice 3TD",
+  "0-77-0":"Mavic 3E","0-77-1":"Mavic 3T","0-77-2":"Mavic 3M","0-77-3":"Mavic 3TA","0-91-0":"Matrice 3D","0-91-1":"Matrice 3TD",
   "0-67-0":"Matrice 30","0-67-1":"Matrice 30T","0-89-0":"Matrice 350 RTK","0-60-0":"Matrice 300 RTK"};
 const templateNames={waypoint:"Wegpunkte",mapping_2d:"Fl\u00e4che 2D",mapping_3d:"Schr\u00e4g 3D",
   mapping_strip:"Korridor",facade:"Fassade",solid:"K\u00f6rper",mapping_gobject:"Objekt"};

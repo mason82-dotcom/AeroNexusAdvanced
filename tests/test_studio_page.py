@@ -4,6 +4,17 @@ from html.parser import HTMLParser
 from aeronexus.studio_page import render_studio
 
 
+def test_mission_model_choices_match_validated_export_profiles():
+    import xml.etree.ElementTree as ET
+    from typing import get_args
+    from aeronexus.wpml_export import MODELS, MODEL_LABELS, MissionModel
+    page = render_studio()
+    choices = ET.fromstring(page[page.index('<select id="mission-model">'):].split('</select>', 1)[0] + '</select>')
+    assert [(option.attrib["value"], option.text) for option in choices] == list(MODEL_LABELS.items())
+    assert set(MODELS) == set(get_args(MissionModel)) == set(MODEL_LABELS)
+    assert "__MISSION_MODEL_OPTIONS__" not in page
+
+
 class _HTML(HTMLParser):
     def __init__(self):
         super().__init__()

@@ -1,7 +1,7 @@
 """Conservative offline DJI WPML waypoint KMZ exporter.
 
 Reference: DJI Cloud API WPML template.kml, waylines.wpml, product support.
-Only waypoint routes for Matrice 4T/4E; no upload, execution or flight API.
+Only named Mavic 3 Enterprise / Matrice 4 waypoint profiles; no flight API.
 Heights are uniform, relative to actual takeoff point. Per-waypoint ellipsoid
 heights require surveyed elevation data and are intentionally not guessed.
 """
@@ -23,7 +23,17 @@ ET.register_namespace("wpml", WPML_NS)
 MODELS = {
     "matrice4t": (99, 1, 89, 0),
     "matrice4e": (99, 0, 88, 0),
+    "mavic3e": (77, 0, 66, 0),
+    "mavic3t": (77, 1, 67, 0),
+    "mavic3m": (77, 2, 68, 0),
+    "mavic3ta": (77, 3, 129, 0),
 }
+MODEL_LABELS = {
+    "matrice4t": "Matrice 4T", "matrice4e": "Matrice 4E",
+    "mavic3e": "Mavic 3E", "mavic3t": "Mavic 3T",
+    "mavic3m": "Mavic 3M", "mavic3ta": "Mavic 3TA",
+}
+MissionModel = Literal["matrice4t", "matrice4e", "mavic3e", "mavic3t", "mavic3m", "mavic3ta"]
 
 
 def _k(tag: str) -> str:
@@ -69,7 +79,7 @@ class WaypointMission(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=1000)
-    drone_model: Literal["matrice4t", "matrice4e"] = "matrice4t"
+    drone_model: MissionModel = "matrice4t"
     altitude_m: float = Field(default=50.0, ge=2.0, le=500)
     speed_mps: float = Field(default=5.0, gt=0, le=15)
     takeoff_security_height_m: float = Field(default=20.0, ge=1.2, le=1500)
@@ -325,7 +335,7 @@ def import_kmz(data: bytes) -> WaypointMission:
     doc = template.find(_k("Document"))
     name = doc.findtext(_k("name")) if doc is not None else None
     description = doc.findtext(_k("description")) if doc is not None else None
-    return WaypointMission.model_validate({
+    mission = WaypointMission.model_validate({
         "name": name or "Importierte AeroNexus-Mission",
         "description": description or "",
         "drone_model": model,
@@ -337,3 +347,39 @@ def import_kmz(data: bytes) -> WaypointMission:
         "close_route": closed,
         "waypoints": waypoints,
     })
+    # A supported file must be representable without silently dropping flight
+    # semantics. Compare the ENTIRE parsed documents with our own supported
+    # representation, including settings, duplicate elements and action params.
+    # XML indentation/prefix spelling and the two creation timestamps are not
+    # flight semantics. No generic third-party KMZ compatibility is implied.
+    for actual, is_template in ((template, True), (route, False)):
+        expected = ET.fromstring(_xml(mission, template=is_template, timestamp_ms=0))
+        if is_template:
+            for tag in ("createTime", "updateTime"):
+                elements = actual.findall(_k("Document") + "/" + _w(tag))
+                value = (elements[0].text or "").strip() if len(elements) == 1 else ""
+                if not value.isascii() or not value.isdigit():
+                    raise ValueError("Invalid AeroNexus timestamp")
+                elements[0].text = "0"
+        if _document_signature(actual) != _document_signature(expected):
+            raise ValueError("WPML settings disagree or cannot be preserved by the supported mission format")
+    return mission
+
+
+def _document_signature(root: ET.Element) -> tuple:
+    """Compare expanded XML names, attributes and ordered text/children.
+
+    Only inter-element whitespace is ignored. Significant description/name
+    whitespace, unknown attributes and mixed text must not disappear on import.
+    Use an iterative traversal so a deeply nested invalid document cannot cause
+    a recursion error in the request handler.
+    """
+    result = []
+    stack = [(root, 0)]
+    while stack:
+        node, depth = stack.pop()
+        text = node.text or ""
+        result.append((depth, node.tag, tuple(sorted(node.attrib.items())),
+                       text if text.strip() else "", (node.tail or "").strip()))
+        stack.extend((child, depth + 1) for child in reversed(node))
+    return tuple(result)

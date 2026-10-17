@@ -3,6 +3,9 @@
 Static HTML shell; direct trusted-HTTPS-LAN workspace access with no token
 prompt. No flight commands, DJI upload or automatic geolocation sharing.
 """
+from html import escape
+
+from .wpml_export import MODELS, MODEL_LABELS
 
 
 HTML = r"""<!doctype html>
@@ -168,7 +171,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <label>Missionsname<input id="mission-name" maxlength="100" value="Neue Wegpunktmission"></label>
 <label>Beschreibung<textarea id="mission-description" rows="2" maxlength="1000" placeholder="Aufgabe, Einsatzgebiet, Hinweise"></textarea></label>
 <div class="field-row">
-<label>Fluggerät<select id="mission-model"><option value="matrice4t">Matrice 4T</option><option value="matrice4e">Matrice 4E</option></select></label>
+<label>Fluggerät<select id="mission-model">__MISSION_MODEL_OPTIONS__</select></label>
 <label>Flughöhe über Start (m)<input id="mission-altitude" type="number" min="2" max="500" step="1" value="50"></label>
 <label>Geschwindigkeit (m/s)<input id="mission-speed" type="number" min="0.1" max="15" step="0.5" value="5"></label>
 <label>Sichere Starthöhe (m)<input id="mission-takeoff" type="number" min="1.2" max="1500" step="1" value="20"></label>
@@ -2069,4 +2072,6 @@ loadWorkspace();
 
 def render_studio() -> str:
     """The shell includes no credentials or mission content."""
-    return HTML
+    options = "".join(f'<option value="{escape(model, quote=True)}">{escape(MODEL_LABELS[model])}</option>'
+                      for model in MODELS)
+    return HTML.replace("__MISSION_MODEL_OPTIONS__", options)

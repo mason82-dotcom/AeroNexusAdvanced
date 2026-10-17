@@ -157,7 +157,9 @@ Enable the Phase 14 HTTPS-LAN policy in `.env` before use.
   safe re-import of AeroNexus-generated KMZ waypoint files.
 - Download DJI waypoint KMZ (`wpmz/template.kml`, `wpmz/waylines.wpml`)
   for **manual** review/import in DJI Pilot 2; initial aircraft profiles
-  Matrice 4T and Matrice 4E, uniform height relative to takeoff.
+  Mavic 3E/3T/3M/3TA and Matrice 4T/4E, uniform height relative to takeoff.
+  [Mission/wayline comparison and import checks](docs/mission-wayline-reconciliation.md)
+  explain the metadata-only comparison and strict AeroNexus KMZ subset.
 - Local private media library: upload, search, preview and delete
   JPEG/PNG/WebP/MP4 (25 MiB maximum per file).
 - Read-only fleet tab with optional map plotting of valid *fresh* GPS.
