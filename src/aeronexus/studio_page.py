@@ -81,6 +81,7 @@ body.map-focus-active{overflow:hidden}
 body.map-focus-active .content{position:fixed;inset:0;z-index:1500;height:100dvh;min-height:0;width:100%;background:var(--bg)}
 body.map-focus-active #map-pane{height:100%}
 body.map-focus-active #map{height:100%;min-height:0}
+@media(min-width:701px){#map-tools-toggle{display:none}}
 @media(max-width:700px){
   .map-bar{top:9px;left:9px;right:9px;gap:6px}
   .map-bar button,.map-bar select{font-size:12px;padding:8px 10px;min-height:38px}
@@ -337,11 +338,11 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="map-bar" id="map-toolbar" data-compact="true">
 <button id="map-focus-toggle" type="button" class="map-primary" aria-pressed="false">Kartenfokus</button>
 <button id="map-tools-toggle" type="button" class="map-primary" aria-expanded="false" aria-controls="map-tools-details">Werkzeuge</button>
-<button id="wayline-preview-fit" type="button" class="map-primary" hidden>Route zentrieren</button>
+<button id="wayline-preview-fit" hidden type="button" class="map-primary">Route zentrieren</button>
 <div id="map-tools-details" class="map-extra" style="display:contents">
 <select id="map-layer" class="map-extra" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
 <button id="pilot2-map-toggle" class="map-extra" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button>
-<button id="wayline-preview-clear" class="map-extra" hidden>Cloud-Vorschau schließen</button>
+<button id="wayline-preview-clear" hidden class="map-extra">Cloud-Vorschau schließen</button>
 <button id="map-zoom-in" class="map-extra">+</button><button id="map-zoom-out" class="map-extra">−</button>
 <button id="map-home" class="map-extra" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button>
 <button id="map-fit" class="map-extra">Mission zentrieren</button>
@@ -355,7 +356,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
   <div id="cloud-overview-list" aria-label="Routen ein- oder ausblenden"></div>
   <p class="note cloud-overview-help">Linienlänge = horizontale WGS84-Segmentstrecke, keine Flugdistanz. Weiße Kreise: Linienanfang, farbige Kreise: Linienende. Keine Flugfreigabe oder Missionsänderung.</p>
 </section>
-<div class="map-info" id="map-info" role="status" aria-live="polite" data-minimized="true">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
+<div class="map-info" id="map-info" role="status" aria-live="polite" data-minimized="false">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
 </section>
 <section class="pane" id="terrain-pane">
 <div class="terrain-stage">
@@ -1473,7 +1474,7 @@ async function openCloudOverview(){
   }));
   cloudOverviewLayer.clearLayers();cloudOverviewLayer.addTo(map);
   $("cloud-overview-panel").hidden=false;
-  setCloudOverviewMinimized(true);
+  setCloudOverviewMinimized(window.matchMedia("(max-width:700px)").matches);
   renderCloudOverview();
   for(const entry of cloudOverviewRoutes){
     if(generation!==cloudOverviewGeneration||controller.signal.aborted)break;
@@ -2549,6 +2550,8 @@ function wire(){
     $("map-info").dataset.minimized==="true"));
   $("map-focus-toggle").addEventListener("click",()=>setMapFocus(
     !document.body.classList.contains("map-focus-active")));
+  setMapInfoExpanded(!window.matchMedia("(max-width:700px)").matches);
+  setMapToolsExpanded(false);
   $("cloud-overview-fit").addEventListener("click",()=>fitCloudRoutes());
   $("wayline-search").addEventListener("input",()=>{waylinePage=1;renderWaylines();});
   $("wayline-source").addEventListener("change",()=>{waylinePage=1;renderWaylines();});
