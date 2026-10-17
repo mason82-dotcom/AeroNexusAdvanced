@@ -248,9 +248,10 @@ class FakeMinio:
         data, etag = self.items[key]
         return SimpleNamespace(size=len(data), etag=etag)
 
-    def get_object(self, bucket, key):
+    def get_object(self, bucket, key, offset=0, length=None):
         self.gets += 1
-        return Stream(self.items[key][0])
+        data = self.items[key][0]
+        return Stream(data[offset:offset + length] if length else data)
 
 
 THERMAL = "sdimport-A/aaa/DJI_20241022172329_0438_T.JPG"

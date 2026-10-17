@@ -305,6 +305,19 @@ class DjiMediaIndex:
         finally:
             db.close()
 
+    def thermal_records(self) -> list[dict]:
+        """Internal records (with object keys) of all indexed thermal R-JPEGs."""
+        db = self._connect(write=False)
+        if db is None:
+            return []
+        try:
+            return [dict(row) for row in db.execute(
+                "SELECT id,bucket,object_key,filename,etag,size_bytes FROM media "
+                "WHERE mime='image/jpeg' AND filename LIKE '%\\_T.JPG' ESCAPE '\\' "
+                "ORDER BY filename DESC")]
+        finally:
+            db.close()
+
     def ids_by_filename(self, filename: str, *, limit: int = 2) -> list[str]:
         if not isinstance(filename, str) or not 0 < len(filename) <= 240:
             return []

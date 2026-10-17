@@ -36,6 +36,8 @@ from .minio_media_index import (DjiMediaIndex, DjiMediaError, MinioMediaSettings
 from .geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
 from .thermal import ThermalChanged, ThermalError, ThermalNotFound, ThermalService
 from .thermal_page import render_thermal_page
+from .thermal_geo import ThermalGeoIndex
+from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
 from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, terrain_stl, geotiff_preview
 from .studio_events import serve_studio_events
@@ -810,8 +812,10 @@ def thermal_page(request: Request, response: Response) -> str:
     _no_cache(response)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-        "img-src 'self' blob: data:; connect-src 'self'; "
+        "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' blob: data: https://tile.openstreetmap.org https://server.arcgisonline.com; "
+        "connect-src 'self'; "
         "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
     return render_thermal_page()
@@ -844,6 +848,18 @@ def thermal_images(request: Request, response: Response,
         raise _thermal_http_error(exc) from exc
 
 
+@app.get("/api/v1/thermal/map")
+def thermal_map(request: Request, response: Response,
+                authorization: str | None = Header(default=None)) -> dict:
+    """Positions and near-nadir footprints from the private thermal geo index."""
+    service = _thermal_service(request, authorization)
+    _no_cache(response)
+    try:
+        return ThermalGeoIndex(service.index).map_items()
+    except (DjiMediaError, OSError, sqlite3.Error, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Thermal geo index unavailable") from exc
+
+
 @app.get("/api/v1/thermal/images/{media_id}/analysis")
 def thermal_analysis(media_id: str, request: Request, response: Response,
                      distance: float | None = _Param(), humidity: float | None = _Param(),
@@ -855,6 +871,39 @@ def thermal_analysis(media_id: str, request: Request, response: Response,
     _no_cache(response)
     try:
         return service.analysis(media_id, params)
+    except _THERMAL_ERRORS as exc:
+        raise _thermal_http_error(exc) from exc
+
+
+@app.get("/api/v1/thermal/images/{media_id}/pv")
+def thermal_pv_inspection(
+        media_id: str, request: Request, response: Response,
+        distance: float | None = _Param(), humidity: float | None = _Param(),
+        emissivity: float | None = _Param(), reflection: float | None = _Param(),
+        ambient: float | None = _Param(),
+        x: int | None = Query(default=None, ge=0, le=8192), y: int | None = Query(default=None, ge=0, le=8192),
+        w: int | None = Query(default=None, ge=2, le=8192), h: int | None = Query(default=None, ge=2, le=8192),
+        detect_k: float = Query(default=3.0), class2_k: float = Query(default=10.0),
+        class3_k: float = Query(default=20.0), min_pixels: int = Query(default=4),
+        cell_size_m: float = Query(default=0.166),
+        irradiance: float | None = _Param(), wind: float | None = _Param(),
+        cloud: float | None = _Param(), tilt: float | None = _Param(),
+        azimuth: float | None = _Param(),
+        authorization: str | None = Header(default=None)) -> dict:
+    """PV abnormalities (ΔT vs. median of the PV area) and condition checklist."""
+    service = _thermal_service(request, authorization)
+    params = _thermal_params(distance, humidity, emissivity, reflection, ambient)
+    _no_cache(response)
+    try:
+        region = Region(x, y, w, h) if None not in (x, y, w, h) else None
+        thresholds = PvThresholds(detect_k, class2_k, class3_k, min_pixels, cell_size_m)
+        conditions = PvConditions(irradiance, wind, cloud, tilt, azimuth)
+    except PvInspectionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        return service.pv_inspection(media_id, params, region, thresholds, conditions)
+    except PvInspectionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except _THERMAL_ERRORS as exc:
         raise _thermal_http_error(exc) from exc
 

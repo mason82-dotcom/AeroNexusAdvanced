@@ -20,6 +20,16 @@
 - Lokale vollständige Tests unter Python 3.12: **663 bestanden, 1 bekannte
   Starlette/httpx-Warnung**. CI auf dem neuen Branch separat prüfen.
 
+## Thermografie: Karte, Overlay, PV-Inspektion (Branch `feature/thermal-map-overlay-pv-20261017`)
+
+- Karte: Geo-Index (`python -m aeronexus.thermal_geo`, Range-Reads) live
+  aufgebaut – 2.058 M3T-Bilder mit Position und Footprint, 14 ohne GNSS.
+- Overlay Wärme-/Sichtbild über DJI-Sichtfelder; an M3T-Aufnahme verifiziert.
+- PV-Inspektion mit einstellbaren ΔT-Klassen und Prüfliste (Orientierung an
+  IEC TS 62446-3, Schwellwerte nicht aus Normtext verifiziert). Fachliche
+  Abnahme mit echten PV-Aufnahmen steht aus.
+- Tests: **711 bestanden**.
+
 ## Thermografie-Modul (Branch `feature/thermography-tsdk-20261017`)
 
 - Neuer Tab `/thermal` (Links in Operations, Studio, Live-Status, Medien).
