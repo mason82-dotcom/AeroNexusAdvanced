@@ -162,6 +162,18 @@ services:
       minio-init:
         condition: service_completed_successfully
 
+  mediamtx:
+    <<: *common
+    image: bluenviron/mediamtx:1.15.1
+    # Livestream (RTMP/WHIP in; WebRTC, HLS, RTSP out) without logins, home LAN only.
+    # Host network: WebRTC ICE candidates then carry the real LAN IP (UDP 8189).
+    network_mode: host
+    environment:
+      MTX_HLSALLOWORIGIN: http://${SERVER_HOST:?required}:8085
+      MTX_WEBRTCALLOWORIGIN: http://${SERVER_HOST:?required}:8085
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+
   control:
     <<: *common
     image: aeronexus/control:local

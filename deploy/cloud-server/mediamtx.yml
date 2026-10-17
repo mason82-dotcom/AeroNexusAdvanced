@@ -1,0 +1,50 @@
+# MediaMTX for the local DJI Cloud API stack (AeroNexusAdvanced).
+# RTMP/WHIP ingest from DJI Pilot 2 -> WebRTC (WHEP) / HLS / RTSP for browser and VLC.
+#
+# Deliberately WITHOUT logins (owner decision 2026-10-17): publishing and
+# viewing need no credentials, but only from the home network and the Pi
+# itself. Credentials that the backend appends to RTMP/WHIP URLs are ignored.
+# The control API stays on localhost. Keep the subnet in sync with
+# HOME_SUBNET in src/aeronexus/lan_access.py.
+logLevel: info
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: ["192.168.178.0/24", "127.0.0.1/32", "::1/128"]
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+  - user: any
+    pass:
+    ips: ["127.0.0.1/32", "::1/128"]
+    permissions:
+      - action: api
+      - action: metrics
+
+rtmp: yes
+rtmpAddress: :1935
+rtsp: yes
+rtspAddress: :8554
+# TCP only: no UDP 8000/8001 next to the AeroNexusAdvanced gateway port 8000/TCP
+rtspTransports: [tcp]
+srt: no
+hls: yes
+hlsAddress: :8888
+hlsVariant: lowLatency
+webrtc: yes
+webrtcAddress: :8889
+# Media over UDP. The container uses the host network, so ICE candidates carry
+# the real LAN address. Allowed browser origins come from compose.
+webrtcLocalUDPAddress: :8189
+api: yes
+apiAddress: 127.0.0.1:9997
+metrics: no
+pprof: no
+playback: no
+
+paths:
+  # Any stream name: the backend builds rtmp://<host>:1935/live/<droneSn>-<payloadIndex>
+  all_others:

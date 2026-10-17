@@ -40,12 +40,31 @@ AeroNexusAdvanced/
     └── fleet/sql
 ```
 
-Nur **sieben** Container sind im neuen Compose enthalten:
-`mysql`, `redis`, `emqx`, `minio`, `minio-init`, `api`, `control`.
-Das Projekt heißt **`aeronexusadvanced-cloud`**. Anders als der
-Alt-Stack werden **keine** Mapping-, Farming-, PV-, TSDK- oder Streamingdienste
-gestartet; deren Webseitenbereiche im alten Vue-Control-Image funktionieren
-ohne diese Backend-Dienste gegebenenfalls nicht.
+Acht Container sind im neuen Compose enthalten:
+`mysql`, `redis`, `emqx`, `minio`, `minio-init`, `api`, `control` und
+`mediamtx` (Livestream, siehe unten). Das Projekt heißt
+**`aeronexusadvanced-cloud`**. Anders als der Alt-Stack werden **keine**
+Mapping-, Farming-, PV- oder TSDK-Dienste gestartet; deren Webseitenbereiche
+im alten Vue-Control-Image funktionieren ohne diese Backend-Dienste
+gegebenenfalls nicht.
+
+### Livestream (MediaMTX)
+
+`mediamtx` (`bluenviron/mediamtx:1.15.1`, Host-Netzwerk) nimmt den Livestream
+von DJI Pilot 2 per RTMP (`:1935`) oder WHIP an und gibt ihn ohne Umkodierung
+weiter: WebRTC/WHEP (`:8889`, Medien über UDP `:8189`), Low-Latency-HLS
+(`:8888`) und RTSP (`:8554`, z. B. VLC).
+
+- **Ohne Logins** (Entscheidung vom 17.10.2026): Senden und Ansehen sind nur
+  aus dem Heimnetz `192.168.178.0/24` und vom Pi selbst erlaubt. Die vom
+  Backend in RTMP-/WHIP-URLs angehängten Zugangsdaten werden ignoriert.
+- Verwaltungs-API `127.0.0.1:9997` nur lokal; Metriken, pprof und Playback aus.
+- Konfiguration: Vorlage `deploy/cloud-server/mediamtx.yml`, im Stack
+  `cloud-server/edge/mediamtx.yml`.
+- In Pilot 2 H.264 wählen: Browser zeigen per WebRTC nur H.264 zuverlässig an;
+  der Pi 5 kodiert nicht um.
+- Einzeln starten, ohne andere Dienste anzufassen:
+  `docker compose -f compose.core.yaml -f compose.brand.yaml up -d --no-deps mediamtx`
 
 Das Compose verwendet **bereits lokal installierte/pinnte Docker-Images**
 und baut nichts selbst. Das kopierte alte `docker-compose.yml` wird im
@@ -109,7 +128,7 @@ früher explizit deaktiviert und wird nicht wieder aktiviert.
 ```bash
 cd ~/Projekte/AeroNexusAdvanced/cloud-server/edge
 
-# Nur die sieben minimalen Dienste anzeigen:
+# Nur die minimalen Dienste anzeigen:
 docker compose -f compose.core.yaml config --services
 
 # Aktuell noch keine neuen laufenden Container:
