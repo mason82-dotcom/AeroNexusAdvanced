@@ -1026,6 +1026,8 @@ function redrawGeo(){
 async function loadGeoObjects(){
   const r=await api("/api/v1/studio/geo-objects");
   geoObjects=(await r.json()).objects;
+  terrainRefreshProfileOptions();
+  terrainRedrawSoon();
   const list=$("geo-list");list.replaceChildren();
   const pick=$("survey-object");const chosen=pick.value;pick.replaceChildren();
   const empty=els("option","","Polygon auswählen…");empty.value="";pick.appendChild(empty);
@@ -1385,10 +1387,90 @@ function terrainControlChanged(){
   terrainSyncControls();
   terrainRedrawSoon();
 }
+// Screen-space triangle pick: use only the visually rendered terrain surface.
+function terrainTriangleWeights(a,b,c,x,y){
+  const det=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);
+  if(Math.abs(det)<1e-9)return null;
+  const u=((b.y-c.y)*(x-c.x)+(c.x-b.x)*(y-c.y))/det;
+  const v=((c.y-a.y)*(x-c.x)+(a.x-c.x)*(y-c.y))/det;
+  const w=1-u-v;
+  return u>=-1e-7&&v>=-1e-7&&w>=-1e-7?[u,v,w]:null;
+}
+function terrainProbeAt(grid,view,x,y,width,height){
+  if(!grid||!Number.isFinite(x)||!Number.isFinite(y))return null;
+  const projection=terrainProjection(grid,view,width,height);
+  for(let i=projection.cells.length-1;i>=0;i--){
+    const q=projection.cells[i].points;
+    for(const [a,b,c] of [[0,1,2],[0,2,3]]){
+      const weights=terrainTriangleWeights(q[a],q[b],q[c],x,y);
+      if(!weights)continue;
+      const mix=key=>weights[0]*q[a][key]+weights[1]*q[b][key]+
+        weights[2]*q[c][key];
+      return terrainHeightAt(grid,mix("row"),mix("col"));
+    }
+  }
+  return null;
+}
+function terrainShowProbe(canvas,event){
+  if(!terrainGrid||typeof canvas.getBoundingClientRect!=="function")return;
+  const rect=canvas.getBoundingClientRect();
+  if(rect.width<=0||rect.height<=0)return;
+  const x=(event.clientX-rect.left)*canvas.width/rect.width;
+  const y=(event.clientY-rect.top)*canvas.height/rect.height;
+  const hit=terrainProbeAt(terrainGrid,terrainView,x,y,canvas.width,canvas.height);
+  const target=$("terrain-coordinate-probe");
+  if(!hit){
+    target.textContent="Kein Geländepunkt getroffen. Auf die gezeichnete Oberfläche klicken.";
+    return;
+  }
+  const geo=terrainGeoFromGrid(terrainGeo,hit.row,hit.col);
+  target.textContent="Rasterhöhe (vertikaler Bezug unbekannt): "+
+    hit.elevation.toFixed(2)+" m · "+(geo?
+      "WGS84 "+geo.latitude.toFixed(7)+", "+geo.longitude.toFixed(7):
+      "GPS-Position nicht verfügbar (CRS oder Rasterausdehnung ungeeignet)");
+}
+function terrainRefreshProfileOptions(){
+  const select=$("terrain-profile-object"),old=select.value;
+  select.replaceChildren();
+  const empty=els("option","","Linie auswählen…");empty.value="";
+  select.appendChild(empty);
+  if(terrainGrid&&terrainGeo){
+    for(const row of geoObjects){
+      if(row.object.kind!=="line"||
+         !terrainGeoPolyline(row.object,terrainGrid,terrainGeo))continue;
+      const option=els("option","",row.object.name);
+      option.value=row.id;
+      select.appendChild(option);
+    }
+  }
+  select.value=geoObjects.some(row=>row.id===old&&row.object.kind==="line"&&
+    terrainGeoPolyline(row.object,terrainGrid,terrainGeo))?old:"";
+  if(!select.value)terrainProfile=null;
+  terrainDrawProfile(terrainProfile);
+}
+function terrainGenerateProfile(){
+  const row=geoObjects.find(item=>item.id===$("terrain-profile-object").value);
+  if(!row||!terrainGrid||!terrainGeo){
+    $("terrain-profile-message").textContent="WGS84-Raster und vollständig enthaltene Geo-Linie auswählen.";
+    return;
+  }
+  const profile=terrainPolylineProfile(row.object,terrainGrid,terrainGeo);
+  if(!profile){
+    $("terrain-profile-message").textContent="Profil nicht möglich: Linie außerhalb des Rasters.";
+    return;
+  }
+  terrainProfile=profile;
+  terrainDrawProfile(profile);
+  $("terrain-profile-message").textContent="Profil "+row.object.name+
+    " · "+profile.distance_m.toFixed(1)+" m · Höhen "+
+    profile.min_m.toFixed(2)+"–"+profile.max_m.toFixed(2)+
+    " m (interpolierte DEM-Werte, Höhenbezug unbekannt; keine Flugfreigabe).";
+}
 function terrainBindPointer(canvas){
   canvas.addEventListener("pointerdown",event=>{
     if(!terrainGrid||event.button>0)return;
-    terrainDrag={canvas,pointerId:event.pointerId,x:event.clientX,y:event.clientY};
+    terrainDrag={canvas,pointerId:event.pointerId,x:event.clientX,y:event.clientY,
+      startX:event.clientX,startY:event.clientY};
     if(canvas.setPointerCapture)canvas.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
@@ -1405,7 +1487,12 @@ function terrainBindPointer(canvas){
   });
   const stop=event=>{
     if(terrainDrag&&terrainDrag.canvas===canvas&&
-       terrainDrag.pointerId===event.pointerId)terrainDrag=null;
+       terrainDrag.pointerId===event.pointerId){
+      const distance=Math.hypot(event.clientX-terrainDrag.startX,
+        event.clientY-terrainDrag.startY);
+      if(event.type==="pointerup"&&distance<=4)terrainShowProbe(canvas,event);
+      terrainDrag=null;
+    }
   };
   canvas.addEventListener("pointerup",stop);
   canvas.addEventListener("pointercancel",stop);
@@ -1429,7 +1516,16 @@ async function previewTerrain(){
   // An old upload must not overwrite a newly selected DEM in the viewer.
   if(loadSerial!==terrainLoadSerial)return;
   terrainGrid=data.grid;
+  terrainGeo=data.geo||null;
+  terrainProfile=null;
+  terrainRefreshProfileOptions();
+  terrainDrawProfile(null);
   drawTerrainPreview(terrainGrid);
+  $("terrain-georef-info").textContent=terrainGeo?
+    "EPSG:4326 / WGS84 · georeferenzierte Rasterpunktmitten · Nordwest: "+
+      terrainGeo.north_lat.toFixed(7)+", "+terrainGeo.west_lon.toFixed(7)+
+      " · Vertikaler Höhenbezug unbekannt.":
+    "Keine verifizierten WGS84-Rasterkoordinaten verfügbar (z. B. projiziertes CRS oder zu große Fläche). Geo-Overlays, Positionsabfrage und Profil deaktiviert.";
   $("terrain-export").disabled=false;
   $("terrain-open-large").disabled=false;
   $("terrain-large-message").textContent=data.overview.rows+" × "+data.overview.columns+
@@ -1547,6 +1643,12 @@ function wire(){
   $("terrain-file").addEventListener("change",()=>{
     terrainLoadSerial++;
     terrainGrid=null;
+    terrainGeo=null;
+    terrainProfile=null;
+    terrainRefreshProfileOptions();
+    $("terrain-coordinate-probe").textContent="Noch kein Geländepunkt ausgewählt.";
+    $("terrain-georef-info").textContent="Keine WGS84-Georeferenz geladen.";
+    $("terrain-profile-message").textContent="Noch kein Höhenprofil geladen.";
     $("terrain-export").disabled=true;
     $("terrain-open-large").disabled=true;
     $("terrain-large-message").textContent="Noch kein Höhenraster geladen. Bitte 3D-Vorschau starten.";
@@ -1554,10 +1656,11 @@ function wire(){
   });
   $("terrain-open-large").addEventListener("click",()=>switchTab("terrain-pane"));
   $("terrain-reset-view").addEventListener("click",terrainResetView);
-  for(const key of ["azimuth","tilt","zoom","exaggeration","color","wire"]){
+  for(const key of ["azimuth","tilt","zoom","exaggeration","color","wire","geo-overlay"]){
     $("terrain-"+key).addEventListener("input",terrainControlChanged);
     $("terrain-"+key).addEventListener("change",terrainControlChanged);
   }
+  $("terrain-profile-generate").addEventListener("click",terrainGenerateProfile);
   terrainBindPointer($("terrain-canvas"));
   terrainBindPointer($("terrain-canvas-large"));
   terrainSyncControls();
