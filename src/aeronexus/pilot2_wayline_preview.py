@@ -186,7 +186,7 @@ def _signed_location(location):
     return parts.netloc, parts.path + "?" + parts.query
 
 
-async def read_preview(credentials: Credentials, wayline_id: str, *, transport=None) -> dict:
+async def _download_kmz(credentials: Credentials, wayline_id: str, *, transport=None) -> bytes:
     """A selected UUID and fixed loopback backend are required for both safe GETs."""
     try:
         wayline_id = str(UUID(wayline_id))
@@ -220,7 +220,13 @@ async def read_preview(credentials: Credentials, wayline_id: str, *, transport=N
                 if len(content) + len(chunk) > MAX_KMZ:
                     raise LocalWaylineError("invalid_archive")
                 content.extend(chunk)
-    return parse_preview_kmz(bytes(content))
+    return bytes(content)
+
+
+async def read_preview(credentials: Credentials, wayline_id: str, *, transport=None) -> dict:
+    """Expose only the bounded geometry subset to callers (never raw KMZ)."""
+    content = await _download_kmz(credentials, wayline_id, transport=transport)
+    return parse_preview_kmz(content)
 
 
 
