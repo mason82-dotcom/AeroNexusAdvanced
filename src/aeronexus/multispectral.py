@@ -63,6 +63,7 @@ MAX_BAND_BYTES = 64 * 1024 * 1024
 MAX_SIDE = 8192
 DB_NAME = "multispectral.sqlite3"
 META_VERSION = "2"  # bump when band_metadata gains fields: forces a header re-read
+PROCESSING_VERSION = "2"  # invalidates persisted summaries after quality/geometry fixes
 _UUID_RE = re.compile(r"[0-9a-f]{32}\Z")
 
 
@@ -226,8 +227,17 @@ def relative_reflectance(dn, info: dict, cal: dict):
     needed = ("black_level", "sensor_gain", "exposure_time_us", "sensor_gain_adjustment", "irradiance")
     if any(cal.get(k) is None for k in needed):
         raise MultispectralError("Band calibration metadata incomplete")
+    if cal.get("sunlight_sensor_status") not in (1, 2):
+        raise MultispectralError("Sonnenlichtsensor ungültig oder Status fehlt; keine Reflexionsberechnung")
+    if not math.isfinite(cal["irradiance"]) or cal["irradiance"] <= 1:
+        raise MultispectralError("Sonnenlichtsensor ohne verwertbaren Einstrahlungswert (Irradiance ≤ 1)")
+    if any(not math.isfinite(cal[k]) or cal[k] <= 0 for k in
+           ("sensor_gain", "exposure_time_us", "sensor_gain_adjustment")):
+        raise MultispectralError("Band calibration gain/exposure invalid")
     scale = float(2 ** info["bits"])
     signal = (dn.astype(np.float32) - np.float32(cal["black_level"])) / np.float32(scale)
+    # Below-black and saturated pixels cannot provide quantitative reflectance.
+    signal[(dn <= cal["black_level"]) | (dn >= scale - 1)] = np.nan
     signal /= np.float32(cal["sensor_gain"] * cal["exposure_time_us"] / 1e6)
     k = cal.get("vignetting")
     if k:
@@ -242,8 +252,9 @@ def relative_reflectance(dn, info: dict, cal: dict):
             power *= r
             poly += np.float32(coefficient) * power
         signal *= poly
-    irradiance = max(cal["irradiance"], 1e-6)
-    return signal * np.float32(cal["sensor_gain_adjustment"] / irradiance)
+    signal *= np.float32(cal["sensor_gain_adjustment"] / cal["irradiance"])
+    signal[~np.isfinite(signal) | (signal <= 0)] = np.nan
+    return signal
 
 
 def rectify(image, cal: dict, *, scale: int = 2):
@@ -259,12 +270,22 @@ def rectify(image, cal: dict, *, scale: int = 2):
     v = (v + 0.5) * scale - 0.5
     H = cal.get("h_matrix")
     if H:
-        inv = np.linalg.inv(np.array(H, dtype=np.float64).reshape(3, 3))
+        try:
+            matrix = np.array(H, dtype=np.float64).reshape(3, 3)
+            if not np.isfinite(matrix).all() or np.linalg.cond(matrix) > 1e12:
+                raise ValueError("Invalid homography")
+            inv = np.linalg.inv(matrix)
+        except (ValueError, np.linalg.LinAlgError) as exc:
+            raise MultispectralError("Band calibration HMatrix invalid or singular") from exc
         den = inv[2, 0] * u + inv[2, 1] * v + inv[2, 2]
-        u, v = ((inv[0, 0] * u + inv[0, 1] * v + inv[0, 2]) / den,
-                (inv[1, 0] * u + inv[1, 1] * v + inv[1, 2]) / den)
+        den = np.where(np.abs(den) > 1e-12, den, np.nan)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            u, v = ((inv[0, 0] * u + inv[0, 1] * v + inv[0, 2]) / den,
+                    (inv[1, 0] * u + inv[1, 1] * v + inv[1, 2]) / den)
     dw = cal.get("dewarp")
     if dw:
+        if len(dw) != 9 or not np.isfinite(dw).all() or dw[0] <= 0 or dw[1] <= 0:
+            raise MultispectralError("Band calibration DewarpData invalid")
         fx, fy, cx, cy, k1, k2, p1, p2, k3 = dw
         ccx, ccy = cx0 + cx, cy0 + cy
         x, y = (u - ccx) / fx, (v - ccy) / fy
@@ -273,8 +294,9 @@ def rectify(image, cal: dict, *, scale: int = 2):
         xd = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
         yd = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
         u, v = fx * xd + ccx, fy * yd + ccy
+    valid = np.isfinite(u) & np.isfinite(v) & (u >= 0) & (v >= 0) & (u < w - 1) & (v < h - 1)
+    u, v = np.where(valid, u, 0), np.where(valid, v, 0)
     x0, y0 = np.floor(u).astype(np.int64), np.floor(v).astype(np.int64)
-    valid = (x0 >= 0) & (y0 >= 0) & (x0 < w - 1) & (y0 < h - 1)
     x0c, y0c = np.clip(x0, 0, w - 2), np.clip(y0, 0, h - 2)
     fx_, fy_ = (u - x0c).astype(np.float32), (v - y0c).astype(np.float32)
     a, b = image[y0c, x0c], image[y0c, x0c + 1]
@@ -290,6 +312,8 @@ def compute_layer(layer: str, bands: dict):
         name = {v: k for k, v in BAND_KEYS.items()}[layer[5:]]
         return bands[name]
     _, needed, _ = INDICES[layer]
+    if len({bands[name].shape for name in needed}) != 1:
+        raise MultispectralError("Band raster dimensions differ")
     nir = bands["NIR"]
     with np.errstate(divide="ignore", invalid="ignore"):
         if layer == "lci":
@@ -297,8 +321,11 @@ def compute_layer(layer: str, bands: dict):
         else:
             other = bands[needed[1]]
             out = (nir - other) / (nir + other)
-    out[~np.isfinite(out)] = np.nan
-    return np.clip(out, -1, 1).astype(np.float32)
+    valid = np.isfinite(out)
+    for name in needed:
+        valid &= np.isfinite(bands[name]) & (bands[name] > 0)
+    out[~valid] = np.nan
+    return out.astype(np.float32)
 
 
 def layer_stats(layer: str, grid) -> dict:
@@ -510,9 +537,13 @@ class MultispectralCatalog:
                 b for b in BANDS if b not in bands) + " fehlt.")
         if irr and min(irr) <= 1.0:
             warnings.append("Sonnenlichtsensor ohne Messwert (Irradiance ≤ 1, z. B. Innenaufnahme): "
-                            "keine Einstrahlungskorrektur, Indizes nur eingeschränkt aussagekräftig.")
+                            "Reflexions- und Indexberechnung gesperrt.")
+        if any(b["irradiance"] is None for b in bands.values()):
+            warnings.append("Einstrahlungswert fehlt: betroffene Bänder können nicht berechnet werden.")
+        if any(b["sunlight_sensor_status"] not in (1, 2) for b in bands.values()):
+            warnings.append("Sonnenlichtsensor ungültig oder Status fehlt: betroffene Bänder können nicht berechnet werden.")
         return {
-            "capture_uuid": uuid, "source_key": "|".join(sorted(sources)), "optics": optics,
+            "capture_uuid": uuid, "source_key": PROCESSING_VERSION + "|" + "|".join(sorted(sources)), "optics": optics,
             "captured_at": meta0 and meta0.get("captured_at"),
             "model": meta0 and meta0.get("model"), "position": meta0 and meta0.get("position"),
             "gimbal": meta0 and meta0.get("gimbal"),
@@ -533,6 +564,7 @@ class MultispectralService:
         self._client_factory = client_factory or minio_client
         self._lock = threading.Lock()
         self._bands: OrderedDict = OrderedDict()
+        self.summary_failures: list[str] = []
 
     def _band(self, band_id: str, scale: int):
         record = self.media.get(band_id)
@@ -608,9 +640,10 @@ class MultispectralService:
                 continue
             optics = c["optics"] or {}
             hfov, vfov = optics.get("hfov_deg"), optics.get("vfov_deg")
-            foot = ground_footprint(pos, c["gimbal"], hfov, vfov) if hfov else None
+            foot = ground_footprint(pos, c["gimbal"], hfov, vfov, account_for_pitch=True) if hfov else None
             height = pos.get("relative_altitude_m")
-            gsd = (height / optics["focal_length_px"] * 100
+            tilt = math.radians((c["gimbal"] or {}).get("pitch_deg", -90) + 90) if foot else 0
+            gsd = (height / optics["focal_length_px"] / math.cos(tilt) ** 2 * 100
                    if foot and optics.get("focal_length_px") else None)
             cached = summaries.get(c["capture_uuid"])
             ndvi = cached[1] if cached and cached[0] == c["source_key"] else None
@@ -632,9 +665,14 @@ class MultispectralService:
 
     def compute_missing_summaries(self, *, scale: int = 4) -> int:
         done = 0
+        self.summary_failures = []
         for item in self.map_items()["items"]:
             if item["has_ndvi"] and item["ndvi"] is None:
-                self.analysis(item["capture_uuid"], "ndvi", scale=scale)
+                try:
+                    self.analysis(item["capture_uuid"], "ndvi", scale=scale)
+                except (MultispectralError, DjiMediaError):
+                    self.summary_failures.append(item["capture_uuid"])
+                    continue
                 done += 1
         return done
 
@@ -654,13 +692,16 @@ def main(argv: list[str] | None = None) -> int:
         settings = MinioMediaSettings.from_env()
         report = MultispectralCatalog(DjiMediaIndex()).scan(minio_client(settings), settings.bucket)
         if args.ndvi:
-            report["ndvi_summaries"] = MultispectralService(DjiMediaIndex()).compute_missing_summaries()
+            service = MultispectralService(DjiMediaIndex())
+            report["ndvi_summaries"] = service.compute_missing_summaries()
+            report["ndvi_failed"] = len(service.summary_failures)
         print(json.dumps(report))
-        return 0
-    except (DjiMediaError, OSError, sqlite3.Error) as exc:
+        return 1 if report["failed"] or report.get("ndvi_failed") else 0
+    except (MultispectralError, DjiMediaError, OSError, sqlite3.Error) as exc:
         print("Multispectral catalogue error: " + str(exc).split("\n", 1)[0], file=sys.stderr)
         return 1
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
