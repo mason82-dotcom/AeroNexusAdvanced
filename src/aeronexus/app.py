@@ -45,6 +45,9 @@ from .thermal_flights import ThermalFlights, ThermalJobRunning
 from .media_sync import read_status as read_media_sync_status
 from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, MetashapePackageNotFound,
                                list_packages, package_path, prepare_package, remove_package)
+from .raster_results import (RasterResults, RasterError, RasterUnavailable,
+                             RasterNotFound, RasterChanged, RasterBusy, _libraries)
+from .results_page import render_results_page
 from .multispectral_report import build_report, report_csv
 from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
@@ -1079,6 +1082,104 @@ def multispectral_report(body: MultispectralReportRequest, request: Request, res
         raise _ms_http_error(exc) from exc
     finally:
         _MS_REPORT_SLOT.release()
+
+
+def _raster_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, RasterNotFound):
+        return HTTPException(404, str(exc))
+    if isinstance(exc, RasterChanged):
+        return HTTPException(409, str(exc))
+    if isinstance(exc, (RasterBusy, RasterUnavailable)):
+        return HTTPException(503, str(exc))
+    if isinstance(exc, RasterError):
+        return HTTPException(422, str(exc))
+    return HTTPException(503, "Ergebnisraster nicht verfügbar; Datei und Katalog prüfen.")
+
+
+@app.get("/results", response_class=HTMLResponse, include_in_schema=False)
+def results_page(request: Request, response: Response) -> str:
+    if lan_mode_enabled():
+        require_lan(request)
+    _no_cache(response)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
+        "frame-ancestors 'none'; form-action 'none'"
+    )
+    return render_results_page()
+
+
+@app.get("/api/v1/results")
+def raster_results_list(request: Request, response: Response,
+                        q: str = Query(default="", max_length=120),
+                        limit: int = Query(default=50, ge=1, le=100),
+                        offset: int = Query(default=0, ge=0),
+                        authorization: str | None = Header(default=None)) -> dict:
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        service = RasterResults()
+        result = service.list(query=q, limit=limit, offset=offset)
+        try:
+            _libraries()
+            result["raster_available"] = True
+        except RasterUnavailable:
+            result["raster_available"] = False
+        return result
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
+
+
+@app.post("/api/v1/results/scan")
+def raster_results_scan(request: Request, response: Response,
+                        authorization: str | None = Header(default=None)) -> dict:
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        return RasterResults().scan()
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
+
+
+@app.get("/api/v1/results/{result_id}")
+def raster_result(result_id: str, request: Request, response: Response,
+                  authorization: str | None = Header(default=None)) -> dict:
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        return RasterResults().get(result_id)[0]
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
+
+
+@app.get("/api/v1/results/{result_id}/statistics")
+def raster_statistics(result_id: str, request: Request, response: Response,
+                      band: int = Query(default=1, ge=1, le=16), v: str | None = None,
+                      authorization: str | None = Header(default=None)) -> dict:
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        return RasterResults().statistics(result_id, band, v)
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
+
+
+@app.get("/api/v1/results/{result_id}/tiles/{z}/{x}/{y}.png")
+def raster_tile(result_id: str, z: int, x: int, y: int, request: Request,
+                band: int = Query(default=1, ge=1, le=16), mode: str = "scalar",
+                palette: str = "viridis", low: float = 0., high: float = 1.,
+                v: str | None = None,
+                authorization: str | None = Header(default=None)) -> Response:
+    _require_viewer_access(request, authorization)
+    try:
+        png = RasterResults().tile(result_id, z, x, y, band=band, mode=mode,
+                                   palette=palette, low=low, high=high, version=v)
+        return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store",
+                        "X-Content-Type-Options": "nosniff"})
+    except Exception as exc:
+        raise _raster_http_error(exc) from exc
 
 
 @app.get("/multispectral", response_class=HTMLResponse, include_in_schema=False)

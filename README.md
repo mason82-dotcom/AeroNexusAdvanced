@@ -56,6 +56,12 @@ The copied `edge/.env` is private, distinct from the current FlightHub
 Compose validation, rollout and rollback. **No FlightHub 2 On-Premises
 installation** is included or implied.
 
+## GeoTIFF-/COG-Ergebnisraster
+
+`/results` ergänzt einen lokalen Ergebniskatalog mit Band-/RGB-Kachelviewer,
+NoData-Transparenz, reprojizierten XYZ-Kacheln und Kontrasteinstellungen.
+Optionales Extra `[raster]`; [Einrichtung und Grenzen](docs/raster-results.md).
+
 ## Development
 
 Requires Python 3.11+.
