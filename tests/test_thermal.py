@@ -138,6 +138,7 @@ print("Test done with return code 0")
 
 @pytest.fixture
 def sdk_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("AERONEXUS_WORKSPACE_DIR", str(tmp_path / "ws"))
     home = tmp_path / "tsdk"
     (home / "bin").mkdir(parents=True)
     tool = home / "bin" / "dji_irp"

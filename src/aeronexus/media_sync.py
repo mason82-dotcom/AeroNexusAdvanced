@@ -41,6 +41,7 @@ POLL_SECONDS = 120
 QUIET_SECONDS = 45
 MAX_DELAY_SECONDS = 600
 SAFETY_HOURS = 6
+RETRY_SECONDS = 120
 
 
 def _now() -> str:
@@ -106,8 +107,9 @@ class MediaSync:
             began = time.monotonic()
             try:
                 result = func()
-                report["steps"][name] = {"ok": True, "seconds": round(time.monotonic() - began, 1),
-                                         **(result if isinstance(result, dict) else {"result": result})}
+                values = result if isinstance(result, dict) else {"result": result}
+                report["steps"][name] = {**values, "ok": not values.get("failed", 0),
+                                         "seconds": round(time.monotonic() - began, 1)}
             except Exception as exc:  # report the type only: SDK/MinIO texts may echo keys
                 report["steps"][name] = {"ok": False, "error": type(exc).__name__,
                                          "seconds": round(time.monotonic() - began, 1)}
@@ -120,8 +122,13 @@ class MediaSync:
                                           "indexed", "read", "failed"))
         step("multispectral", lambda: _pick(MultispectralCatalog(self.index).scan(self.client, bucket),
                                             "captures", "read", "failed"))
-        step("ndvi_summaries", lambda: {"computed": MultispectralService(
-            self.index).compute_missing_summaries()})
+
+        def ndvi_summaries():
+            service = MultispectralService(self.index)
+            computed = service.compute_missing_summaries()
+            return {"computed": computed, "failed": len(service.summary_failures)}
+
+        step("ndvi_summaries", ndvi_summaries)
         if self.thermal:
             step("thermal_measurements", self._measure_thermal)
         report["seconds"] = round(time.monotonic() - started, 1)
@@ -158,41 +165,26 @@ class MediaSync:
 
     # ---------------------------------------------------------- watcher --
     def _listen(self, events: queue.Queue, stop: threading.Event) -> None:
-        backoff = 5
-        while not stop.is_set():
-            try:
-                with self.client.listen_bucket_notification(
-                        self.settings.bucket,
-                        events=["s3:ObjectCreated:*", "s3:ObjectRemoved:*"]) as stream:
-                    backoff = 5
-                    for _ in stream:
-                        events.put(time.monotonic())
-                        if stop.is_set():
-                            return
-            except Exception as exc:
-                events.put(("error", type(exc).__name__))
-                if "AccessDenied" in str(exc):
-                    return
-                stop.wait(backoff)
-                backoff = min(backoff * 2, 300)
-
-    def listen_allowed(self, seconds: float = 4.0) -> bool:
-        events: queue.Queue = queue.Queue()
-        stop = threading.Event()
-        thread = threading.Thread(target=self._listen, args=(events, stop), daemon=True)
-        thread.start()
-        thread.join(seconds)
-        stop.set()
         try:
-            first = events.get_nowait()
-        except queue.Empty:
-            return thread.is_alive()
-        return not (isinstance(first, tuple) and first[0] == "error")
+            with self.client.listen_bucket_notification(
+                    self.settings.bucket,
+                    events=["s3:ObjectCreated:*", "s3:ObjectRemoved:*"]) as stream:
+                for _ in stream:
+                    if stop.is_set():
+                        return
+                    events.put(time.monotonic())
+        except Exception as exc:
+            # MinIO reports permission codes on S3Error, not in the class name.
+            # Any broken listener falls back to polling; never inspect or expose
+            # exception text, which may contain private keys or URLs.
+            events.put(("error", type(exc).__name__))
+        else:
+            if not stop.is_set():
+                events.put(("error", "ListenerStopped"))
 
     def watch(self, *, mode: str = "auto", poll_seconds: int = POLL_SECONDS) -> None:
-        self.run(reason="startup")
         if mode == "auto":
-            mode = "events" if self.listen_allowed() else "poll"
+            mode = "events"
         self.set(mode=mode)
         LOG.info("media sync watching bucket in %s mode", mode)
         if mode == "events":
@@ -203,9 +195,13 @@ class MediaSync:
     def _safety_due(self, last: float) -> bool:
         return time.monotonic() - last >= SAFETY_HOURS * 3600
 
-    def _watch_poll(self, poll_seconds: int) -> None:
+    def _watch_poll(self, poll_seconds: int, *, initial_reason: str = "startup") -> None:
+        # Take the baseline BEFORE the scan, so uploads during the scan are
+        # detected on the next poll rather than silently accepted as indexed.
         indexed = previous = bucket_fingerprint(self.client, self.settings.bucket)
+        report = self.run(reason=initial_reason)
         last_run = time.monotonic()
+        retry_at = None if report["ok"] else last_run + RETRY_SECONDS
         changed_since = None
         while True:
             time.sleep(poll_seconds)
@@ -216,46 +212,65 @@ class MediaSync:
                 continue
             self.set(last_poll_at=_now(), objects=current[0])
             if current != indexed and current != previous:
-                changed_since = changed_since or time.monotonic()
+                if changed_since is None:
+                    changed_since = time.monotonic()
                 self.set(last_change_at=_now(), state="upload_in_progress")
             stable = current != indexed and current == previous  # the burst has finished
             overdue = changed_since is not None and time.monotonic() - changed_since >= MAX_DELAY_SECONDS
-            if stable or (overdue and current != indexed):
-                self.run(reason="upload")
+            retry_due = retry_at is not None and time.monotonic() >= retry_at
+            # A failed pass has its own retry deadline; a stable fingerprint
+            # must not cause a retry on every poll or postpone it for six hours.
+            if ((stable and retry_at is None) or (overdue and current != indexed)
+                    or retry_due):
+                report = self.run(reason="retry" if retry_due else "upload")
                 indexed, last_run, changed_since = current, time.monotonic(), None
+                retry_at = None if report["ok"] else last_run + RETRY_SECONDS
             elif self._safety_due(last_run):
-                self.run(reason="safety")
+                report = self.run(reason="safety")
                 indexed, last_run = current, time.monotonic()
+                retry_at = None if report["ok"] else last_run + RETRY_SECONDS
             previous = current
 
     def _watch_events(self, poll_seconds: int) -> None:
         events: queue.Queue = queue.Queue()
         stop = threading.Event()
         threading.Thread(target=self._listen, args=(events, stop), daemon=True).start()
+        try:
+            self._consume_events(events, stop, poll_seconds)
+        finally:
+            stop.set()
+
+    def _consume_events(self, events: queue.Queue, stop: threading.Event, poll_seconds: int) -> None:
         first = last = None
+        report = self.run(reason="startup")
         last_run = time.monotonic()
+        retry_at = None if report["ok"] else last_run + RETRY_SECONDS
         while True:
             try:
                 item = events.get(timeout=5)
                 if isinstance(item, tuple):
                     self.set(last_listen_error=item[1])
-                    if item[1] and "AccessDenied" in item[1]:
-                        self.set(mode="poll")
-                        return self._watch_poll(poll_seconds)
-                    continue
-                first = first or item
+                    stop.set()
+                    self.set(mode="poll")
+                    return self._watch_poll(poll_seconds, initial_reason="listener_fallback")
+                if first is None:
+                    first = item
                 last = item
                 self.set(last_change_at=_now(), state="upload_in_progress")
             except queue.Empty:
                 pass
             now = time.monotonic()
-            if last and (now - last >= QUIET_SECONDS or now - first >= MAX_DELAY_SECONDS):
-                self.run(reason="upload")
+            retry_due = retry_at is not None and now >= retry_at
+            if ((last is not None and (now - last >= QUIET_SECONDS or now - first >= MAX_DELAY_SECONDS))
+                    or retry_due):
+                report = self.run(reason="retry" if retry_due else "upload")
                 first = last = None
                 last_run = time.monotonic()
+                retry_at = None if report["ok"] else last_run + RETRY_SECONDS
             elif self._safety_due(last_run):
-                self.run(reason="safety")
+                report = self.run(reason="safety")
                 last_run = time.monotonic()
+                retry_at = None if report["ok"] else last_run + RETRY_SECONDS
 
 
 def _pick(report: dict, *keys: str) -> dict:

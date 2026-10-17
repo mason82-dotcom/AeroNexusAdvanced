@@ -30,6 +30,8 @@ import sys
 import tempfile
 import threading
 
+from .processing_slot import ProcessingSlot
+
 
 class ThermalSdkError(RuntimeError):
     """Safe for HTTP details: never contains paths, stdout or file names."""
@@ -164,9 +166,12 @@ _VERSION_RE = re.compile(r"(?:DIRP API version number|APP version)\s*:\s*(\S+)")
 class ThermalSdk:
     """Thread-safe, single-flight dji_irp runner (the Pi has 4 cores)."""
 
+    PROCESSING_WAIT_SECONDS = 30
+
     def __init__(self, settings: ThermalSdkSettings, *, max_parallel: int = 1):
         self.settings = settings
         self._slots = threading.BoundedSemaphore(max_parallel)
+        self._processing = ProcessingSlot()
         self._version: dict | None = None
 
     @classmethod
@@ -176,7 +181,11 @@ class ThermalSdk:
     def _run(self, args: list[str], workdir: str) -> subprocess.CompletedProcess:
         if not self._slots.acquire(timeout=30):
             raise ThermalSdkBusy("DJI Thermal SDK is busy")
+        acquired = False
         try:
+            acquired = self._processing.acquire(timeout=self.PROCESSING_WAIT_SECONDS)
+            if not acquired:
+                raise ThermalSdkBusy("Image processing is busy")
             return subprocess.run(
                 self.settings.command(*args), cwd=workdir, env=self.settings.child_env(workdir),
                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
@@ -186,6 +195,8 @@ class ThermalSdk:
         except OSError as exc:
             raise ThermalSdkUnavailable("DJI Thermal SDK could not be started") from exc
         finally:
+            if acquired:
+                self._processing.release()
             self._slots.release()
 
     def version(self) -> dict:

@@ -111,7 +111,22 @@ def test_stack_to_geotiff_tags_and_georef():
     assert b"approximate, nadir footprint" in data  # test bands: 30 m, pitch -90
 
 
-def test_cli_stacks_local_folder(tmp_path, capsys):
+@pytest.mark.parametrize("pitch", [-80.0, -75.0, -105.0, -89.9, float("nan"), None])
+def test_tilted_stack_has_no_misleading_affine_georeference(pitch):
+    result = stack_bands(bands(), refine=False, crop_margin=0)
+    result["gimbal"]["pitch_deg"] = pitch
+    assert georeference(result) is None
+    data = stack_to_geotiff(result)
+    offset = struct.unpack("<I", data[4:8])[0]
+    n = struct.unpack_from("<H", data, offset)[0]
+    tags = {struct.unpack_from("<H", data, offset + 2 + i * 12)[0] for i in range(n)}
+    assert not tags.intersection({34264, 34735})  # neither transform nor CRS
+    assert b"requires exact -90 degree pitch" in data
+    assert tiff_structure(data)["samples"] == 4  # image export is still available
+
+
+def test_cli_stacks_local_folder(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("AERONEXUS_WORKSPACE_DIR", str(tmp_path / "ws"))
     src, out = tmp_path / "in", tmp_path / "out"
     src.mkdir()
     for name, data in bands().items():

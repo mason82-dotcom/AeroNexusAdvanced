@@ -56,9 +56,11 @@ numpy umgesetzt (kein OpenCV nötig). Ausgabe in 1296×972 (Standard),
 
 **Grenzen:** Der gemeinsame Faktor ρ_NIR ist ohne Reflexions-Referenztafel
 unbekannt → Bandwerte sind *relative* Reflexion. NDVI, GNDVI, NDRE und LCI
-sind nach Gl. 6 davon unabhängig. DJIs optionaler Schritt 4 (ECC-/Merkmals-
-ausrichtung bei schnellem Flug) ist nicht umgesetzt; die HMatrix gilt für
-große Entfernungen – Nahaufnahmen zeigen Parallaxe zwischen den Bändern.
+sind nach Gl. 6 davon unabhängig. Der Ebenenviewer nutzt die HMatrix ohne
+zusätzliche Feinausrichtung; der 4-Band-Export kann Resttranslationen per
+Phasenkorrelation korrigieren (siehe unten). Eine allgemeine ECC-/Merkmals-
+ausrichtung ist nicht implementiert. Die HMatrix gilt für große Entfernungen –
+Nahaufnahmen zeigen Parallaxe zwischen den Bändern.
 
 ## Funktionen
 
@@ -112,15 +114,26 @@ Nach dem Vorbild von [mirrormapper/m3m-image-stacking](https://github.com/mirror
   Auflösung berechnet), nur bei klarem Korrelationsmaximum (≥ 8 σ) und
   Versatz ≤ 30 px. Ermittelte Versätze stehen im TIFF (`RESIDUAL_SHIFTS`) und
   im Antwort-Header `X-M3M-Residual-Shifts`.
-- **Georeferenz** (im Original nicht vorhanden): bei Nadir-Aufnahmen eine
+- **Georeferenz** (im Original nicht vorhanden): nur bei exakt senkrechter
+  Kamera (Pitch −90°, numerische Toleranz 0,000001°) eine
   näherungsweise affine Transformation (EPSG:4326) aus Position, Gimbal und
   kalibrierter Brennweite über ebenem Gelände – zur Orientierung in QGIS,
-  kein Orthomosaik. Sonst ohne Georeferenz.
+  kein Orthomosaik. Geneigte Aufnahmen, auch innerhalb der für Karten-
+  Footprints erlaubten ±15°, bleiben ohne Transformation und ohne CRS-Tags
+  exportierbar; GPS und eine Begründung bleiben in den Metadaten.
+  Grund: Ihr perspektivisches Viereck kann nicht durch eine affine
+  Transformation abgebildet werden. Eine echte projektive Entzerrung für
+  diesen Export ist noch nicht implementiert. Auch bei −90° bleiben Gelände,
+  Höhenbezug und nicht berücksichtigter Gimbal-Roll Genauigkeitsgrenzen.
 - Format: gekacheltes TIFF (256 px), Deflate, Bandnamen und Tags
   (`BAND_ORDER`, `PRODUCT`, `CORRECTIONS`, `DJI_CAPTURE_UUID`, GPS) in
   `GDAL_METADATA`; mit GDAL 3.x/rasterio geprüft.
 - Ohne OpenCV/rasterio/GDAL (numpy + zlib); Entzerrung und Verschiebung
   blockweise – Speicherspitze für volle Auflösung ca. 0,5 GB.
+- Web-Export, Band-Dekodierung, Stacking-CLI und Thermal SDK teilen sich
+  eine prozessübergreifende Rechensperre im privaten Workspace, siehe
+  [Medien-Sync](media-auto-sync.md). Bei belegter Sperre wartet die
+  Multispektral-API bis zu 60 s und antwortet dann mit 503 und `Retry-After`.
 - Oberfläche: Abschnitt „4-Band-GeoTIFF für QGIS“ im Multispektral-Tab.
 - API: `GET /api/v1/multispectral/captures/{uuid}/stack.tif?product=reflectance|dn&scale=1|2|4&refine=true&georef=true`
 - Lokale Ordner (wie `m3m-stack`):
