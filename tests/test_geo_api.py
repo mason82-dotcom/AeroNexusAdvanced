@@ -135,3 +135,41 @@ def test_terrain_stl_auth_and_binary_shape(api):
         content=b"not tiff").status_code==422
     assert client.post("/api/v1/studio/terrain/geotiff",headers=HEADERS,
         content=b"II*\x00"+b"\0"*(8*1024*1024)).status_code==413
+
+
+def test_geotiff_api_exposes_only_verified_optional_wgs84_metadata(api,monkeypatch):
+    import importlib
+    from aeronexus.terrain_preview import TerrainGrid
+    api_module=importlib.import_module("aeronexus.app")
+    client,_=api
+    grid=TerrainGrid(heights_m=[[100,101],[102,103]],x_step_m=5,y_step_m=8)
+
+    def sample_wgs84(content,*,geo_info):
+        assert content.startswith(b"II*\\x00")
+        geo_info.update({"crs":"EPSG:4326","reference":"sample-centres",
+            "west_lon":8.5,"north_lat":49.2,
+            "lon_step_deg":0.0001,"lat_step_deg":-0.0001,
+            "vertical_reference":"unspecified"})
+        return grid
+
+    monkeypatch.setattr(api_module,"geotiff_preview",sample_wgs84)
+    data=b"II*\\x00"+b"fake-in-memory-only"
+    assert client.post("/api/v1/studio/terrain/geotiff",content=data).status_code==401
+    response=client.post("/api/v1/studio/terrain/geotiff",
+                         headers=HEADERS,content=data)
+    assert response.status_code==200,response.text
+    result=response.json()
+    assert result["geo"]["crs"]=="EPSG:4326"
+    assert result["geo"]["vertical_reference"]=="unspecified"
+    assert result["grid"]==grid.model_dump()
+    assert response.headers["cache-control"]=="no-store"
+
+    def sample_projected(content,*,geo_info):
+        assert not geo_info
+        return grid
+
+    monkeypatch.setattr(api_module,"geotiff_preview",sample_projected)
+    response=client.post("/api/v1/studio/terrain/geotiff",
+                         headers=HEADERS,content=data)
+    assert response.status_code==200
+    assert response.json()["geo"] is None
