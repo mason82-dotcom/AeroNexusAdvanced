@@ -79,7 +79,7 @@ def test_fleet_view_only_cloud_devices_without_serials():
              {"provider": "flighthub2-public-v2", "kind": "aircraft", "name": "FH", "device_id": "X"}]
     fleet = fleet_view(views, {"state": "subscribed", "last_message_at": "t"})
     assert [(d["kind"], d["name"], d["online"]) for d in fleet["devices"]] == [
-        ("controller", "Remote controller", False), ("aircraft", "M3E", True)]
+        ("controller", "Remote controller", None), ("aircraft", "M3E", True)]
     assert "SECRET" not in repr(fleet)
 
 
