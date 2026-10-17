@@ -309,6 +309,15 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button id="refresh-media">Aktualisieren</button></div></div>
 <div class="gallery" id="gallery"><div class="empty">Lokale Medienbibliothek wird geladen…</div></div>
 <div class="button-row"><button id="more-media" hidden>Weitere Medien anzeigen</button></div>
+<hr>
+<div class="page-head">
+  <div><h2>DJI-Medien aus MinIO</h2><p class="muted">Lesender, separater Objektkatalog · keine Kopien oder Löschfunktion</p></div>
+  <div class="filters"><input type="search" id="dji-media-search" placeholder="DJI-Dateinamen suchen…">
+  <button id="refresh-dji-media">DJI-Katalog laden</button></div>
+</div>
+<p class="note" id="dji-media-status" role="status">Noch keine MinIO-Medien geladen.</p>
+<div class="gallery" id="dji-media-gallery"></div>
+<div class="button-row"><button id="more-dji-media" hidden>Weitere DJI-Medien anzeigen</button></div>
 <footer>Vorschaubilder werden mit deinem Token geladen und nur als temporäre Browser-Objekte angezeigt. Kein externer Mediendienst.</footer>
 </div>
 </section>
@@ -873,7 +882,7 @@ async function loadWorkspace(){
     notice("Missionsspeicher nicht verfügbar: "+msg,true);
     statusMessage("Missionsspeicherfehler: "+msg,true);
   }
-  await Promise.allSettled([loadMedia(),loadFleet(),loadGeoObjects()]);
+  await Promise.allSettled([loadMedia(),loadDjiMedia(),loadFleet(),loadGeoObjects()]);
 }
 function revokeMedia(){mediaUrls.forEach(url=>URL.revokeObjectURL(url));mediaUrls=[];}
 function closePreview(){const dlg=$("media-dialog");if(dlg.open)dlg.close();$("preview-content").replaceChildren();if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}}
@@ -887,6 +896,67 @@ async function uploadMedia(){
   }
   $("media-file").value="";$("media-notice").textContent=files.length+" Datei(en) gespeichert";
   await loadMedia();
+}
+let djiMediaItems=[],djiMediaTotal=0,djiMediaOffset=0;
+async function loadDjiMedia(reset=true){
+  if(reset){djiMediaOffset=0;djiMediaItems=[];}
+  const search=$("dji-media-search").value.trim();
+  const params=new URLSearchParams({q:search,limit:"40",offset:String(djiMediaOffset)});
+  const result=await api("/api/v1/studio/dji-media?"+params.toString());
+  const data=await result.json();
+  djiMediaItems.push(...data.media);djiMediaTotal=data.total;
+  djiMediaOffset+=data.media.length;
+  const stamp=data.last_scanned_at?new Date(data.last_scanned_at).toLocaleString("de-DE"):"noch nie";
+  $("dji-media-status").textContent=
+    djiMediaTotal+" DJI-Medien indiziert · letzter vollständiger Scan: "+stamp+
+    ". Neue Uploads werden erst nach erneutem Pi-Scan sichtbar.";
+  renderDjiMedia();
+}
+function renderDjiMedia(){
+  const grid=$("dji-media-gallery");grid.replaceChildren();
+  $("more-dji-media").hidden=djiMediaItems.length>=djiMediaTotal;
+  if(!djiMediaItems.length){
+    cardText(grid,"div","empty","Keine indizierten DJI-Medien vorhanden.");
+    return;
+  }
+  for(const m of djiMediaItems){
+    const card=cardText(grid,"article","media-card");
+    cardText(card,"div","media-cover",m.mime.startsWith("image/")?"DJI · Foto":"DJI · Video/Datei");
+    cardText(card,"div","media-name",m.name);
+    const stamp=m.modified_at?new Date(m.modified_at).toLocaleString("de-DE"):"ohne Zeitstempel";
+    cardText(card,"div","note",m.mime+" · "+(m.size_bytes/1048576).toFixed(1)+" MiB · "+stamp);
+    const buttons=cardText(card,"div","button-row");
+    if(m.previewable){
+      const preview=cardText(buttons,"button","","Ansehen");
+      preview.addEventListener("click",()=>previewDjiMedia(m).catch(
+        err=>$("dji-media-status").textContent=errorMessage(err)));
+    }
+    const save=cardText(buttons,"button","","Herunterladen");
+    save.addEventListener("click",()=>downloadDjiMedia(m).catch(
+      err=>$("dji-media-status").textContent=errorMessage(err)));
+  }
+}
+async function previewDjiMedia(m){
+  closePreview();
+  const result=await api("/api/v1/studio/dji-media/"+m.id+"/file");
+  previewUrl=URL.createObjectURL(await result.blob());
+  $("preview-name").textContent=m.name;
+  const image=els("img");image.alt=m.name;image.src=previewUrl;
+  $("preview-content").appendChild(image);$("media-dialog").showModal();
+}
+async function downloadDjiMedia(m){
+  const url="/api/v1/studio/dji-media/"+m.id+"/file?download=true";
+  // Large media is streamed by the server. In direct trusted-LAN mode,
+  // navigate instead of allocating huge videos in JavaScript memory.
+  if(m.size_bytes>128*1048576){
+    const a=els("a");a.href=url;a.download=m.name;
+    document.body.appendChild(a);a.click();a.remove();return;
+  }
+  const result=await api(url);
+  const temp=URL.createObjectURL(await result.blob());
+  const a=els("a");a.href=temp;a.download=m.name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(temp),5000);
 }
 async function loadMedia(){
   const r=await api("/api/v1/studio/media");knownMedia=(await r.json()).media;displayMedia=20;await renderMedia();
@@ -1803,6 +1873,12 @@ function wire(){
   $("connect-events").addEventListener("click",connectStudioEvents);
   $("upload-media").addEventListener("click",()=>uploadMedia().catch(err=>$("media-notice").textContent=err.message));
   $("refresh-media").addEventListener("click",()=>loadMedia().catch(err=>$("media-notice").textContent=err.message));
+  $("refresh-dji-media").addEventListener("click",()=>loadDjiMedia(true).catch(
+    err=>$("dji-media-status").textContent=errorMessage(err)));
+  $("dji-media-search").addEventListener("change",()=>loadDjiMedia(true).catch(
+    err=>$("dji-media-status").textContent=errorMessage(err)));
+  $("more-dji-media").addEventListener("click",()=>loadDjiMedia(false).catch(
+    err=>$("dji-media-status").textContent=errorMessage(err)));
   $("media-search").addEventListener("input",()=>{displayMedia=20;renderMedia().catch(()=>{});});
   $("more-media").addEventListener("click",()=>{displayMedia+=20;renderMedia().catch(()=>{});});
   $("preview-close").addEventListener("click",closePreview);$("media-dialog").addEventListener("close",closePreview);
