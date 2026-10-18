@@ -84,6 +84,75 @@ def test_ephemeral_alias_correlates_same_unknown_from_multiple_archives():
     assert report["flight_compatibility_verified"] is False
 
 
+def param_archive(*, unknown_tag=False, nonstandard_ns=False):
+    raw = archive("privateActionNeverExpose", version="1.0.6")
+    source = b"<wpml:actionActuatorFuncParam>"
+    extra = (b"<wpml:gimbalPitchRotateAngle>TOP-SECRET-VALUE</wpml:gimbalPitchRotateAngle>"
+             b"<wpml:focusX>DO-NOT-LEAK</wpml:focusX>")
+    if unknown_tag:
+        extra += b"<wpml:vendorSecretTag>classified</wpml:vendorSecretTag>"
+    if nonstandard_ns:
+        extra += b"<foreign xmlns='urn:unsafe'>hidden-text</foreign>"
+    target = source + extra
+    result = BytesIO()
+    with ZipFile(BytesIO(raw)) as src, ZipFile(result, "w") as dst:
+        for path in src.namelist():
+            data = src.read(path)
+            if path == "wpmz/waylines.wpml":
+                assert source in data
+                data = data.replace(source, target, 1)
+            dst.writestr(path, data)
+    return result.getvalue()
+
+
+def test_optional_parameter_hints_classify_only_static_fields_without_values():
+    data = param_archive(unknown_tag=True, nonstandard_ns=True)
+    report = av._aggregate_action_records([(1, data)], parameter_hints=True)
+    entry = report["anonymous_types"][0]
+    assert entry["id"] == "A01"
+    assert entry["occurrences"] == 1
+    assert entry["parameter_container_counts"] == {"present": 1}
+    assert entry["parameter_category_counts"] == {
+        "focus": 1, "gimbal": 1, "media_naming": 1,
+        "payload": 1, "unclassified_fields_present": 1}
+    encoded = json.dumps(report)
+    for secret in ("TOP-SECRET-VALUE", "DO-NOT-LEAK", "classified",
+                   "hidden-text", "privateActionNeverExpose", "vendorSecretTag"):
+        assert secret not in encoded
+    assert report["full_content_verified"] is False
+    assert report["flight_compatibility_verified"] is False
+
+
+def test_parameter_hints_off_keeps_existing_response_shape():
+    report = av._aggregate_action_records([(1, param_archive())])
+    entry = report["anonymous_types"][0]
+    assert "parameter_container_counts" not in entry
+    assert "parameter_category_counts" not in entry
+
+
+def test_parameter_hints_include_absent_start_action_container():
+    report = av._aggregate_action_records(
+        [(1, archive("privateCode", with_start=True))], parameter_hints=True)
+    entry = report["anonymous_types"][0]
+    assert entry["parameter_container_counts"] == {"absent": 1, "present": 1}
+    assert entry["parameter_category_counts"] == {"media_naming": 1, "payload": 1}
+
+
+def test_parameter_field_fanout_fails_closed():
+    raw = archive("privateCode")
+    extra = b"".join(b"<wpml:x/>" for _ in range(av.MAX_PARAM_FIELDS_PER_ACTION + 1))
+    result = BytesIO()
+    with ZipFile(BytesIO(raw)) as src, ZipFile(result, "w") as dst:
+        for path in src.namelist():
+            data = src.read(path)
+            if path == "wpmz/waylines.wpml":
+                data = data.replace(b"<wpml:actionActuatorFuncParam>",
+                                    b"<wpml:actionActuatorFuncParam>" + extra)
+            dst.writestr(path, data)
+    with pytest.raises(LocalWaylineError, match="invalid_archive"):
+        av._archive_action_records(result.getvalue())
+
+
 def test_recognized_actuator_is_not_aliased():
     report = av._aggregate_action_records([(1, archive())])
     assert report["unknown_action_total"] == 0
