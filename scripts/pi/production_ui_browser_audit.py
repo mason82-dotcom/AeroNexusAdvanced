@@ -66,6 +66,7 @@ class Result:
     api_ok: int = 0
     overflow_px: int = 0
     tile_ok: int = 0
+    api_non200: int = 0
 
 
 def allow_request(url: str, method: str, base: str, *, tiles: bool = False) -> str:
@@ -260,8 +261,11 @@ def audit_page(browser, client: ReadOnlyClient, module: str, path: str,
     def response_received(response):
         kind = allow_request(response.url, response.request.method, client.base,
                              tiles=allow_tiles)
-        if kind == "api" and response.status == 200:
-            counters["api_ok"] += 1
+        if kind == "api":
+            if response.status == 200:
+                counters["api_ok"] += 1
+            else:
+                counters["api_non200"] += 1
         if kind == "leaflet" and response.status == 200:
             counters["leaflet_ok"] += 1
         if kind == "tile" and response.status == 200:
@@ -294,7 +298,8 @@ def audit_page(browser, client: ReadOnlyClient, module: str, path: str,
         # Leaflet assets are real where CDN is reachable; maps/tiles are optional.
         return Result(module, viewport, "PASS",
                       "real HTTPS browser, GET data, layout, safe clicks",
-                      counters["api_ok"], overflow, counters["tile_ok"])
+                      counters["api_ok"], overflow, counters["tile_ok"],
+                      counters["api_non200"])
     except Exception:
         return Result(module, viewport, "FAIL",
                       "browser load/layout error", counters["api_ok"])
@@ -348,7 +353,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     for result in results:
         print(f"{result.status:4}  {result.module:15} {result.viewport:7} "
-              f"API-200={result.api_ok} tiles-200={result.tile_ok} "
+              f"API-200={result.api_ok} API-non200={result.api_non200} "
+              f"tiles-200={result.tile_ok} "
               f"overflow={result.overflow_px}px | {result.reason}")
     passed = sum(x.status == "PASS" for x in results)
     print(f"Total: {passed}/{len(results)} real HTTPS browser cases PASS")

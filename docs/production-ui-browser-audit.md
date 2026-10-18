@@ -12,12 +12,14 @@ Das Produktivsystem und der vorhandene \`.env\`-Speicher bleiben unberührt.
 cd ~/Projekte/AeroNexusAdvanced
 git fetch origin main
 git worktree add --detach ~/Projekte/AeroNexusAdvanced-live-browser-audit origin/main
-"$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" -m pip install \
-  "playwright>=1.56,<2"
+python3 -m venv "$HOME/Projekte/AeroNexusAdvanced-browser-venv"
+"$HOME/Projekte/AeroNexusAdvanced-browser-venv/bin/python" -m pip install \
+  "playwright>=1.56,<2" "python-dotenv>=1,<2"
+# Ausschließlich ein isoliertes Prüf-venv; Produktiv-venv unverändert.
 # Browser-Paket nicht herunterladen: der vorhandene System-Chromium wird genutzt.
 cd ~/Projekte/AeroNexusAdvanced-live-browser-audit
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src \
-  "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+PYTHONDONTWRITEBYTECODE=1 \
+  "$HOME/Projekte/AeroNexusAdvanced-browser-venv/bin/python" \
   scripts/pi/production_ui_browser_audit.py \
   --instance-dir "$HOME/Projekte/AeroNexusAdvanced"
 ~~~
@@ -86,3 +88,8 @@ Browser-Authentifizierung, wohl aber der echten Frontend-Verarbeitung
 produktiver Leseantworten. Die bestehende Bearer-Zugangskennung verlässt
 niemals den Python-Prozess und wird insbesondere keinem Drittanbieter-Request
 angehängt. HTTP-Redirects werden vom Python-Client abgewiesen.
+
+`API-non200` zählt reale fehlgeschlagene GET-Antworten auf der jeweiligen
+Browserseite. Ein grüner Layout-/Interaktionsstatus bedeutet deshalb nicht,
+dass alle optionalen Datenintegrationen erfolgreich sind; solche Antworten
+sind anhand dieses Zählers separat zu untersuchen.
