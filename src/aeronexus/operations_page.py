@@ -170,7 +170,7 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <div id="map-wrap">
 <div id="operations-map" aria-label="Interaktive Projektkarte" role="application"></div>
 <div class="map-controls">
-<select id="tile-choice" aria-label="Kartenstil"><option value="satellite">Satellit (Esri)</option><option value="street">Straße (OSM)</option></select>
+<select id="tile-choice" aria-label="Kartenstil"><option value="street" selected>Straße (OSM)</option><option value="satellite">Satellit (Esri)</option></select>
 <button id="map-forst">76694 Forst</button>
 <button id="map-fit-data">Daten einpassen</button>
 <button id="map-clear">Overlays entfernen</button>
@@ -289,7 +289,7 @@ function initializeMap(){
     maxZoom:19,referrerPolicy:"strict-origin-when-cross-origin",
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
   });
-  tileLayer=mapLayers.satellite.addTo(map);
+  tileLayer=mapLayers.street.addTo(map);
   deviceLayer=L.layerGroup().addTo(map);
   routeLayer=L.layerGroup().addTo(map);
   mapLayers.street.on("tileerror",()=>{
