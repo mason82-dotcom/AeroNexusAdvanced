@@ -596,3 +596,19 @@ Routingverhalten des Entwicklungsbranchs im Prozess, nicht die
 HTTPS-/Reverse-Proxy-Konfiguration des produktiv laufenden Servers
 oder einen tatsächlichen Browser-Smoke. Ein späteres Live-Deployment
 bedarf eines gesonderten, bewussten Schritts.
+
+### HTTP-Smoke: Vollständige Inventur und sanitisiertes Fehlerverhalten
+
+Die HTTP-Abnahme akzeptiert nur eine vollständige Bibliotheksauswertung
+(`checked == total`, maximal acht Cloud-Waylines). Ein technisch
+gültiger Scan mit weniger geprüften Einträgen als gemeldet bleibt
+`incomplete_inventory` und wird im Studio **nicht** als verbunden
+dargestellt. Das begrenzte Diagnose-CLI darf dagegen ausdrücklich
+Teilbestände untersuchen.
+
+Auch bei unerwarteten Ausnahmen druckt das isolierte Pi-Skript keine
+Exception-Nachricht und keinen Python-Traceback, damit selbst
+fehlerhafte Upstream-Texte niemals als private URLs, Tokens oder
+Originalparameter in die Konsole gelangen. Dazu existieren gezielte
+Regressionstests. Ergebnis und CI gelten nur für den Entwicklungsstand;
+es wurde kein laufender Service verändert.
