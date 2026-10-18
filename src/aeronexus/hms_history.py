@@ -13,7 +13,13 @@ import os
 from pathlib import Path
 import sqlite3
 
-from .status_runtime import utc_iso
+from datetime import timezone
+
+
+def utc_iso(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("HMS receive time must be timezone-aware")
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 MAX_EVENTS = 3000
 EVENT_ACTIONS = frozenset(("appeared", "reappeared", "resolved", "updated", "observed"))
