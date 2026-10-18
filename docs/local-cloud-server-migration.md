@@ -1,6 +1,14 @@
 # Lokalen DJI-Cloud-API-Server nach AeroNexusAdvanced umziehen
 
-Status: **Migrationswerkzeug bereitgestellt; Pi-Migration noch nicht ausgeführt.**
+> **Historischer Migrationsplan (Bestandsaufnahme vom 17.10.2026).**
+> Angaben wie „Pi-Migration noch nicht ausgeführt“, gestoppte Container,
+> freie Ressourcen und die damaligen Port-/Pfadbelegungen sind **keine
+> aktuelle Zustandsprüfung**. Vor jeglicher erneuter Migration müssen der
+> reale Pi-, Docker-, MinIO- und systemd-Zustand geprüft und gesichert werden.
+> **Keinen zweiten Stack starten und keine lokalen Cloud-/MinIO-Daten überschreiben.**
+> Aktuelle Orientierung: [Projektstatus](PROJECT_STATUS.md) und [Pi-Betrieb](deploy-pi.md).
+
+Status am **17.10.2026**: Migrationswerkzeug bereitgestellt; Pi-Migration zum damaligen Prüfzeitpunkt noch nicht ausgeführt.
 Dies ist der vorher separat installierte, auf DJI Cloud API / DJI Pilot 2
 basierende **AeroNexus-Edge-Server**, *nicht* FlightHub 2 On-Premises.
 
