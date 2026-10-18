@@ -35,6 +35,9 @@ def test_staging_environment_never_inherits_dji_or_production_secrets(monkeypatc
     assert "HTTPS_PROXY" not in env
     assert env["AERONEXUS_LAN_NO_TOKEN"] == "1"
     assert env["AERONEXUS_WORKSPACE_DIR"] == str(tmp_path / "workspace")
+    assert env["HOME"] == str(tmp_path / "home")
+    assert env["HOME"] != os.environ.get("HOME")
+    assert (tmp_path / "home").stat().st_mode & 0o077 == 0
     assert env["PYTHONPATH"] == str(CHECKOUT / "src")
     assert ".env" not in env.values()
 
