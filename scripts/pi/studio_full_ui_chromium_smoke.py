@@ -155,9 +155,13 @@ async function uiRun(){
   uiClick('map-tools-toggle');
   uiCheck(document.getElementById('map-tools-toggle').getAttribute('aria-expanded')==='true',
     'map tools cannot expand');
+  const oldInfo=document.getElementById('map-info-toggle').getAttribute('aria-expanded');
   uiClick('map-info-toggle');
-  uiCheck(document.getElementById('map-info-toggle').getAttribute('aria-expanded')==='false',
-    'map info cannot collapse');
+  uiCheck(document.getElementById('map-info-toggle').getAttribute('aria-expanded')!==oldInfo,
+    'map info cannot toggle at this viewport');
+  uiClick('map-info-toggle');
+  uiCheck(document.getElementById('map-info-toggle').getAttribute('aria-expanded')===oldInfo,
+    'map info cannot restore original state');
   uiClick('map-focus-toggle');
   uiCheck(document.body.classList.contains('map-focus-active'),'map focus cannot open');
   uiClick('map-focus-toggle');
