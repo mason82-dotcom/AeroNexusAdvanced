@@ -121,6 +121,34 @@ def _xml_placement_bucket(ordinal, count):
     return ("first", "middle", "last")[min(2, 3 * ordinal // count)]
 
 
+def _uint16_element(parent, tag):
+    """Internal bounded index only. Never expose indices, waypoints or values."""
+    items = parent.findall(tag)
+    if len(items) != 1 or items[0].text is None:
+        return None
+    raw = items[0].text.strip()
+    if not raw or len(raw) > 5 or not raw.isascii() or not raw.isdecimal():
+        return None
+    value = int(raw)
+    return value if 0 <= value <= 65535 else None
+
+
+def _group_xml_span_relation(group, waypoint, prefix):
+    """Classify source XML indices only; not actual aircraft execution spans."""
+    start = _uint16_element(group, prefix + "actionGroupStartIndex")
+    end = _uint16_element(group, prefix + "actionGroupEndIndex")
+    if start is None or end is None:
+        return "missing_or_invalid_span"
+    if end < start:
+        return "reversed_span"
+    anchor = _uint16_element(waypoint, prefix + "index")
+    if anchor is None:
+        return "unresolved_placemark_index"
+    if start == anchor:
+        return "single_at_anchor" if start == end else "range_starts_at_anchor"
+    return "single_elsewhere" if start == end else "range_starts_elsewhere"
+
+
 def _archive_action_records(kmz):
     """Read allowlisted namespace and executable Folder action groups only.
 
@@ -153,7 +181,7 @@ def _archive_action_records(kmz):
                 seen_actions += 1
                 records.append(("start", trigger, _text_or_missing(
                     action.find(W + "actionActuatorFunc")), _action_param_hints(action, W),
-                    "start_group"))
+                    "start_group", "start_group_not_applicable"))
         placemarks = folder.findall(K + "Placemark")
         for position, waypoint in enumerate(placemarks):
             waypoints += 1
@@ -169,7 +197,8 @@ def _archive_action_records(kmz):
                     seen_actions += 1
                     records.append(("waypoint", trigger, _text_or_missing(
                         action.find(W + "actionActuatorFunc")), _action_param_hints(action, W),
-                        _xml_placement_bucket(position, len(placemarks))))
+                        _xml_placement_bucket(position, len(placemarks)),
+                        _group_xml_span_relation(group, waypoint, W)))
         if seen_actions > MAX_ACTIONS:
             raise LocalWaylineError("invalid_archive")
         records_by_route.append(records)
@@ -177,12 +206,15 @@ def _archive_action_records(kmz):
 
 
 def _aggregate_action_records(archives, *, parameter_hints=False,
-                              field_aliases=False, position_buckets=False):
+                              field_aliases=False, position_buckets=False,
+                              span_audit=False):
     """Aggregate only anonymous enums, field occurrence counts and opt-in XML position buckets."""
     if field_aliases and not parameter_hints:
         raise ValueError("field aliases require parameter hints")
     if position_buckets and not field_aliases:
         raise ValueError("position buckets require field aliases")
+    if span_audit and not field_aliases:
+        raise ValueError("span audit requires field aliases")
     aliases = {}  # Raw strings confined to this stack frame and never serialized.
     # Per-invocation names only. Neither mapping is serialized, hashed or persisted.
     field_names_to_aliases = {}
@@ -194,14 +226,16 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
         route_counts = []
         route_field_multiplicities = []
         route_field_position_buckets = []
+        route_field_span_statuses = []
         unknown_total = 0
         known_total = 0
         for route in routes:
             unknown_by_alias = Counter()
             field_multiplicity_by_alias = {}
             field_positions_by_alias = {}
+            field_spans_by_alias = {}
             recognized = Counter()
-            for location, trigger, raw_name, hints, xml_bucket in route:
+            for location, trigger, raw_name, hints, xml_bucket, xml_span in route:
                 if raw_name in DOCUMENTED_ACTION_TYPES:
                     recognized[raw_name] += 1
                     known_total += 1
@@ -270,6 +304,11 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                                 if xml_bucket not in field_positions_by_alias[fid]:
                                     field_positions_by_alias[fid][xml_bucket] = Counter()
                                 field_positions_by_alias[fid][xml_bucket][str(count)] += 1
+                            if span_audit:
+                                if fid not in field_spans_by_alias:
+                                    field_spans_by_alias[fid] = Counter()
+                                # Per action, not per occurrence of a repeated field.
+                                field_spans_by_alias[fid][xml_span] += 1
             route_counts.append(dict(sorted(unknown_by_alias.items())))
             if field_aliases:
                 route_field_multiplicities.append({
@@ -284,6 +323,11 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                     }
                     for fid, buckets in sorted(field_positions_by_alias.items())
                 })
+            if span_audit:
+                route_field_span_statuses.append({
+                    fid: dict(sorted(statuses.items()))
+                    for fid, statuses in sorted(field_spans_by_alias.items())
+                })
         result_item = {
             "index": index,
             "state": "connected",
@@ -297,6 +341,8 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
             result_item["unknown_field_multiplicity_by_route"] = route_field_multiplicities
         if position_buckets:
             result_item["unknown_field_xml_placement_by_route"] = route_field_position_buckets
+        if span_audit:
+            result_item["unknown_field_xml_span_by_route"] = route_field_span_statuses
         results.append(result_item)
     safe_totals = []
     for alias in aliases.values():
@@ -340,7 +386,7 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
 
 async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False,
                                      field_aliases=False, position_buckets=False,
-                                     inventory_reader=None,
+                                     span_audit=False, inventory_reader=None,
                                      kmz_reader=None, credentials_loader=None):
     if type(limit) is not int or not 1 <= limit <= 8:
         raise ValueError("invalid limit")
@@ -370,7 +416,7 @@ async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False,
     try:
         report = _aggregate_action_records(
             seen, parameter_hints=parameter_hints, field_aliases=field_aliases,
-            position_buckets=position_buckets)
+            position_buckets=position_buckets, span_audit=span_audit)
     except (LocalWaylineError, ValueError, KeyError, TypeError):
         return {"inventory_state": "unsupported_geometry", "results": results}
     # Index is intentionally only the index in the verified inventory.
@@ -403,15 +449,20 @@ def main():
                         help="Unbekannte DJI-Feldnamen nur als flüchtige P01/P02-Aliase korrelieren")
     parser.add_argument("--position-buckets", action="store_true",
                         help="Grobe XML-Verankerung (erstes/mittleres/letztes Routendrittel)")
+    parser.add_argument("--span-audit", action="store_true",
+                        help="Nur Status der XML-actionGroup-Start-/End-Indizes zählen")
     args = parser.parse_args()
     if args.field_aliases and not args.parameter_hints:
         parser.error("--field-aliases erfordert --parameter-hints")
     if args.position_buckets and not args.field_aliases:
         parser.error("--position-buckets erfordert --parameter-hints --field-aliases")
+    if args.span_audit and not args.field_aliases:
+        parser.error("--span-audit erfordert --parameter-hints --field-aliases")
     try:
         report = asyncio.run(diagnose_action_vocabulary(
             limit=args.limit, parameter_hints=args.parameter_hints,
-            field_aliases=args.field_aliases, position_buckets=args.position_buckets))
+            field_aliases=args.field_aliases, position_buckets=args.position_buckets,
+            span_audit=args.span_audit))
     except KeyboardInterrupt:
         return 130
     print(json.dumps(report, ensure_ascii=False, indent=2))
