@@ -397,6 +397,34 @@ pro Geräteklasse nachgewiesen werden. Hierfür liefert der unabhängige
 Observer nur **fest kodierte, sichere kanonische Feldnamen** sowie
 aggregierte Zeitdifferenzen; keine dynamischen DJI-Pfade und keine Werte.
 
+### Produktive HTTPS-Feldprobe: RC-Livestream-State (19.10.2026)
+
+Im **laufenden AeroNexusAdvanced-Dienst** zeigt die bestehende geschützte
+`/api/v1/status/devices`-Schnittstelle aktuell die folgenden State-Feldpfade:
+
+| Klasse | Feld | Feldfrische | Quellzeit minus Empfangszeit |
+|---|---|---|---:|
+| Fluggerät | keine State-Felder in diesem Snapshot | – | – |
+| Controller | `cloud_details.live_capacity.available_videos` | `stale` | +1,162 s |
+| Controller | `cloud_details.live_capacity.simultaneous_videos` | `stale` | +1,162 s |
+
+Die Ausgabe des Diagnoseprogramms bezeichnet `source_age_seconds - age_seconds`
+als 'DJI-Quellverzögerung' und meldet `−1,162 s`. Daraus folgt
+**Quellzeit minus Empfangszeit = +1,162 s**, nicht negative Netzwerklatenz.
+Die kleinen Unterschiede zwischen Zeitbasen rechtfertigen noch keine
+Änderung der Frischegrenze (`stale_after_seconds=45`).
+
+Die beiden RC-Livestreamkapazitäts-Felder sind somit nicht nur theoretisch
+abgebildet, sondern in der **Produktiv-API mit Herkunftskanal `state`**
+nachgewiesen. `stale` betrifft die einzelne ereignisgesteuerte
+Eigenschaft, nicht zwangsläufig die frischen periodischen OSD-Felder.
+Aus dem Fehlen von Fluggerät-State-Feldern in einem einzelnen Snapshot
+folgt kein nachgewiesener Decoderfehler. Die Feld-Zeitstempel bleiben
+innerhalb eines Prozesslaufs bei bloßem Altern erhalten; falls ein
+früher bereits vorhandener Feldpfad verschwindet, Prozess-/Worker-Neustarts
+und Geräteinventar-Neuaufbau gesondert prüfen. Keine DJI-Steuerbefehle
+zur künstlichen State-Erzeugung auslösen.
+
 ## Verbindliche Hardwareabnahme (noch offen)
 
 1. **RC Plus 2 allein eingeschaltet:** tatsächlicher RC-OSD-Eingang,
