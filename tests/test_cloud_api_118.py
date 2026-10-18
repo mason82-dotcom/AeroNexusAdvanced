@@ -372,3 +372,149 @@ def test_invalid_control_source_and_payload_control_fail_closed():
                 {'payloads': [{'control_source': 23}]}):
         with pytest.raises(ValueError):
             normalize_osd(DeviceType.AIRCRAFT, {'mode_code': 3, **raw})
+
+
+def test_rc_plus2_video_source_capability_is_aggregated_without_identifiers(feed):
+    assert push(feed, {'capacity_percent': 80}, device=RC)
+    feed[1][0] += timedelta(seconds=1)
+    wire = {'available_video_number': 3, 'coexist_video_number_max': 1,
+            'device_list': [
+                {'sn': 'PRIVATE-AIRCRAFT-SN', 'available_video_number': 3,
+                 'coexist_video_number_max': 1, 'camera_list': [
+                     {'camera_index': '89-0-0', 'available_video_number': 3,
+                      'video_list': [
+                          {'video_index': 'PRIVATE-WIDE-STREAM', 'video_type': 'wide',
+                           'switchable_video_types': ['wide', 'zoom', 'ir']},
+                          {'video_index': 'PRIVATE-THERMAL-STREAM', 'video_type': 'ir',
+                           'switchable_video_types': ['ir', 'zoom']},
+                          {'video_index': 'PRIVATE-OTHER-STREAM', 'video_type': 'user_defined',
+                           'switchable_video_types': ['unknown_private_enum']},
+                      ]},
+                     {'camera_index': '88-0-0', 'video_list': []},
+                 ]},
+                {'sn': 'SECOND-PRIVATE-SN', 'camera_list': []},
+            ]}
+    assert push(feed, {'live_capacity': wire}, device=RC, channel='state')
+    rc = view(feed, RC)
+    capability = rc['telemetry']['cloud_details']['live_capacity']
+    assert capability == {
+        'available_videos': 3, 'simultaneous_videos': 1,
+        'source_devices_count': 2, 'source_cameras_count': 2,
+        'source_streams_count': 3, 'video_types': ['ir', 'other', 'wide'],
+        'switchable_video_types': ['ir', 'other', 'wide', 'zoom'],
+    }
+    assert validate_details(rc['last_known_telemetry']['cloud_details']) == rc['last_known_telemetry']['cloud_details']
+    for path in ('source_devices_count', 'video_types', 'switchable_video_types'):
+        assert rc['field_status']['cloud_details.live_capacity.' + path]['channel'] == 'state'
+    serialized = json.dumps(rc)
+    assert all(secret not in serialized for secret in (
+        'PRIVATE-AIRCRAFT-SN', 'SECOND-PRIVATE-SN', 'PRIVATE-WIDE-STREAM',
+        'PRIVATE-THERMAL-STREAM', 'PRIVATE-OTHER-STREAM', 'unknown_private_enum',
+    ))
+
+
+def test_rc_video_source_partial_structure_does_not_invent_counts(feed):
+    assert push(feed, {'capacity_percent': 85}, device=RC)
+    feed[1][0] += timedelta(seconds=1)
+    assert push(feed, {'live_capacity': {'device_list': [
+        {'sn': 'PRIVATE-SN', 'camera_list': [
+            {'camera_index': '89-0-0', 'video_list': [
+                {'video_index': 'normal-0', 'video_type': 'normal'},
+            ]},
+            {'camera_index': '88-0-0'},
+        ]},
+        {'sn': 'PRIVATE-SN-2'},
+    ]}}, device=RC, channel='state')
+    d = view(feed, RC)['telemetry']['cloud_details']['live_capacity']
+    assert d['source_devices_count'] == 2
+    assert d['source_cameras_count'] is None
+    assert d['source_streams_count'] is None
+    assert d['video_types'] is None
+    assert d['switchable_video_types'] is None
+
+
+def test_rc_video_source_missing_lens_fields_cannot_claim_complete_types(feed):
+    assert push(feed, {'capacity_percent': 80}, device=RC)
+    feed[1][0] += timedelta(seconds=1)
+    assert push(feed, {'live_capacity': {'device_list': [
+        {'camera_list': [{'video_list': [
+            {'video_type': 'zoom', 'switchable_video_types': ['wide', 'zoom']},
+            {'switchable_video_types': ['ir']},
+        ]}]},
+    ]}}, device=RC, channel='state')
+    d = view(feed, RC)['telemetry']['cloud_details']['live_capacity']
+    assert d['source_devices_count'] == 1
+    assert d['source_cameras_count'] == 1
+    assert d['source_streams_count'] == 2
+    assert d['video_types'] is None
+    assert d['switchable_video_types'] == ['ir', 'wide', 'zoom']
+
+
+def test_partial_new_rc_video_capability_clears_old_aggregate_not_other_state(feed):
+    assert push(feed, {'capacity_percent': 80}, device=RC)
+    feed[1][0] += timedelta(seconds=1)
+    assert push(feed, {'live_capacity': {'available_video_number': 2,
+        'device_list': [{'camera_list': [{'video_list': [
+            {'video_type': 'normal', 'switchable_video_types': ['normal']}
+        ]}]}]}}, device=RC, channel='state')
+    feed[1][0] += timedelta(seconds=1)
+    assert push(feed, {'live_capacity': {'device_list': [
+        {'sn': 'NEW-PRIVATE-SN'},
+    ]}}, device=RC, channel='state')
+    d = view(feed, RC)['telemetry']['cloud_details']['live_capacity']
+    assert d['available_videos'] == 2
+    assert d['source_devices_count'] == 1
+    assert d['source_cameras_count'] is None
+    assert d['source_streams_count'] is None
+    assert d['video_types'] is None
+    assert d['switchable_video_types'] is None
+
+
+def test_rc_video_source_state_expires_independently_of_new_osd(feed):
+    assert push(feed, {'capacity_percent': 80}, device=RC)
+    feed[1][0] += timedelta(seconds=1)
+    assert push(feed, {'live_capacity': {'device_list': []}}, device=RC,
+                channel='state')
+    feed[1][0] += timedelta(minutes=10)
+    assert push(feed, {'capacity_percent': 79}, device=RC)
+    rc = view(feed, RC)
+    assert rc['freshness'] == 'fresh'
+    assert rc['telemetry']['battery_percent'] == 79
+    assert rc['telemetry']['cloud_details']['live_capacity']['source_devices_count'] is None
+    assert rc['last_known_telemetry']['cloud_details']['live_capacity']['source_devices_count'] == 0
+    assert rc['field_status']['cloud_details.live_capacity.source_devices_count']['freshness'] == 'stale'
+
+
+@pytest.mark.parametrize('invalid', [
+    {'device_list': {}},
+    {'device_list': [{'camera_list': {}}]},
+    {'device_list': [{}] * 17},
+    {'device_list': [{'camera_list': [{}] * 17}]},
+    {'device_list': [{'camera_list': [{'video_list': [{}] * 33}]}]},
+    {'device_list': [{'camera_list': [{'camera_index': '../invalid', 'video_list': []}]}]},
+    {'device_list': [{'camera_list': [{'video_list': [
+        {'video_type': '<script>'}]}]}]},
+    {'device_list': [{'camera_list': [{'video_list': [
+        {'video_type': 42}]}]}]},
+    {'device_list': [{'camera_list': [{'video_list': [
+        {'switchable_video_types': 'ir'}]}]}]},
+    {'device_list': [{'sn': 'INJECT\\nSECRET'}]},
+    {'device_list': [{'camera_list': [{'video_list': [
+        {'video_index': 'newline\\nSECRET'}]}]}]},
+])
+def test_rc_video_source_malformed_schema_is_rejected_atomically(feed, invalid):
+    assert push(feed, {'capacity_percent': 80}, device=RC)
+    previous = view(feed, RC)['last_known_telemetry']
+    assert not push(feed, {'capacity_percent': 1, 'live_capacity': invalid},
+                    device=RC, channel='state')
+    assert view(feed, RC)['last_known_telemetry'] == previous
+
+
+def test_rc_video_source_private_canonical_fields_cannot_be_injected():
+    with pytest.raises(ValueError):
+        validate_details({'live_capacity': {'device_list': [{'sn': 'PRIVATE'}]}})
+    with pytest.raises(ValueError):
+        validate_details({'live_capacity': {'source_devices_count': 2,
+                                            'video_types': ['PRIVATE-STRING']}})
+    with pytest.raises(ValueError):
+        validate_details({'live_capacity': {'video_types': ['wide', 'wide']}})
