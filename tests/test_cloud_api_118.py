@@ -498,9 +498,9 @@ def test_rc_video_source_state_expires_independently_of_new_osd(feed):
         {'video_type': 42}]}]}]},
     {'device_list': [{'camera_list': [{'video_list': [
         {'switchable_video_types': 'ir'}]}]}]},
-    {'device_list': [{'sn': 'INJECT\\nSECRET'}]},
+    {'device_list': [{'sn': 'INJECT' + chr(10) + 'SECRET'}]},
     {'device_list': [{'camera_list': [{'video_list': [
-        {'video_index': 'newline\\nSECRET'}]}]}]},
+        {'video_index': 'newline' + chr(10) + 'SECRET'}]}]}]},
 ])
 def test_rc_video_source_malformed_schema_is_rejected_atomically(feed, invalid):
     assert push(feed, {'capacity_percent': 80}, device=RC)
