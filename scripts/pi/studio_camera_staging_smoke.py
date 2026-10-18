@@ -19,6 +19,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -174,9 +175,19 @@ def validate_result(data: dict) -> tuple[int, float, dict]:
 
 def run_browser(origin: str, screenshot: Path, require_tiles: bool):
     from playwright.sync_api import sync_playwright
-    chromium = os.environ.get("AERONEXUS_CHROMIUM_BIN", "/usr/bin/chromium")
-    if not Path(chromium).is_file():
+    configured = os.environ.get("AERONEXUS_CHROMIUM_BIN", "").strip()
+    chromium = shutil.which(configured) if configured else next(
+        (path for name in ("chromium", "chromium-browser", "google-chrome",
+                          "google-chrome-stable")
+         if (path := shutil.which(name))), None)
+    if chromium is None:
         raise StagingSmokeError("Chromium executable missing")
+    # Use the SHA256-verified Leaflet files fetched by the existing offline
+    # harness when available. Browser requests retain their CDN origin and
+    # its CSP checks, but are fulfilled from this local asset cache.
+    assets = Path(os.environ.get("AERONEXUS_LEAFLET_TEST_ASSETS", "")).expanduser()
+    has_assets = bool(os.environ.get("AERONEXUS_LEAFLET_TEST_ASSETS")) and all(
+        (assets / file).is_file() for file in ("leaflet.js", "leaflet.css"))
     blocked = []
     seen_preview = []
     with sync_playwright() as playwright:
@@ -188,7 +199,16 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool):
             def filtered(route):
                 req = route.request
                 if browser_request_allowed(req.method, req.url, origin):
-                    route.continue_()
+                    if (has_assets and req.method == "GET" and
+                            req.url == "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"):
+                        route.fulfill(path=str(assets / "leaflet.js"),
+                                      content_type="application/javascript")
+                    elif (has_assets and req.method == "GET" and
+                          req.url == "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"):
+                        route.fulfill(path=str(assets / "leaflet.css"),
+                                      content_type="text/css")
+                    else:
+                        route.continue_()
                 else:
                     blocked.append((req.method, req.url.split("?", 1)[0]))
                     route.abort()
