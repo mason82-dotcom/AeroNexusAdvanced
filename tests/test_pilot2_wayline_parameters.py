@@ -165,6 +165,73 @@ def test_opt_in_reader_requires_complete_inventory_and_never_returns_ids():
     assert refused["inventory_state"] == "incomplete_inventory" and seen == []
 
 
+def test_structure_preflight_reports_namespace_mismatches_without_sensitive_values():
+    standard = pm.classify_wpml_structure(raw_kmz())
+    assert standard["root_namespace"] == "standard"
+    assert standard["mission_config_namespace"] == "standard"
+    assert standard["strict_parser_gate"] == "structurally_compatible"
+    assert standard["direct_folder_count"] == 1
+    assert standard["placemark_count"] == 2
+
+    nonstandard = modified_kmz(
+        b"http://www.dji.com/wpmz/1.0.2", b"http://www.dji.com/wpmz/1.0.9")
+    classification = pm.classify_wpml_structure(nonstandard)
+    assert classification["strict_parser_gate"] == "mission_config_namespace_or_missing"
+    assert classification["mission_config_namespace"] == "nonstandard"
+    assert classification["placemark_count"] == 2
+    assert classification["full_content_verified"] is False
+    data = json.dumps(classification)
+    assert "49.12" not in data
+    assert "Private survey" not in data
+    assert WORKSPACE not in data
+
+
+def test_structure_preflight_also_identifies_nonstandard_kml_namespace():
+    with ZipFile(BytesIO(raw_kmz())) as original:
+        result = BytesIO()
+        with ZipFile(result, "w") as target:
+            for name in original.namelist():
+                data = original.read(name)
+                if name.endswith("waylines.wpml"):
+                    data = data.replace(b"http://www.opengis.net/kml/2.2", b"urn:nonstandard-kml")
+                target.writestr(name, data)
+    info = pm.classify_wpml_structure(result.getvalue())
+    assert info["root_namespace"] == "nonstandard"
+    assert info["strict_parser_gate"] == "root_namespace"
+    assert info["folder_count"] == 1
+    assert info["point_count"] == 2
+
+
+def test_structure_command_skips_mission_access(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["audit", "--structure-only", "--limit", "8"])
+    def fail(_):
+        raise AssertionError("must not access local Studio mission")
+    monkeypatch.setattr(pm, "read_local_mission", fail)
+    async def fake(*, limit):
+        assert limit == 8
+        return {"inventory_state": "connected", "checked": 1,
+                "results": [{"index": 1, "state": "connected",
+                             "strict_parser_gate": "root_namespace"}]}
+    monkeypatch.setattr(pm, "diagnose_structure", fake)
+    assert pm.main() == 0
+    assert json.loads(capsys.readouterr().out)["checked"] == 1
+
+
+def test_structure_reader_requires_complete_inventory_without_kmz_fetch():
+    seen = []
+    async def incomplete(_):
+        return {"state": "connected", "workspace_id": WORKSPACE,
+                "pagination_complete": False, "waylines": [{"wayline_id": WAYLINE}]}
+    async def downloader(_, route):
+        seen.append(route)
+        return raw_kmz()
+    result = asyncio.run(pm.diagnose_structure(
+        inventory_reader=incomplete, kmz_reader=downloader,
+        credentials_loader=lambda _: CREDS))
+    assert result == {"inventory_state": "incomplete_inventory", "results": []}
+    assert seen == []
+
+
 def test_command_outputs_no_ids_coords_or_names(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["audit", "--mission", WORKSPACE])
     monkeypatch.setattr(pm, "read_local_mission", lambda _: mission())
