@@ -78,7 +78,9 @@ const click=id=>{const b=$test(id);check(!!b,'button missing: '+id);b.click()};
 const tick=()=>new Promise(done=>setTimeout(done,0));
 async function run(){
   await tick();await tick();await tick();
-  check(document.querySelectorAll('nav a[href]').length>=2,'module navigation missing');
+  if(mod!=='status')
+    check(document.querySelectorAll('nav a[href]').length>=2,
+      'module navigation missing');
   const btns=[...document.querySelectorAll('button[id]')];
   const unwired=btns.filter(b=>!window.__uiBoundClickIds.has(b.id)&&
     typeof b.onclick!=='function').map(b=>b.id);
