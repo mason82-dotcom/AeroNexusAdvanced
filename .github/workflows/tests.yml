@@ -13,4 +13,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e '.[test,mqtt,minio,multispectral,raster,ui-browser]'
+      - name: Fetch verified Leaflet 1.9.4 for offline UI smoke
+        run: |
+          python scripts/pi/fetch_leaflet_test_assets.py --output "$RUNNER_TEMP/aeronexus-leaflet"
+          echo "AERONEXUS_LEAFLET_TEST_ASSETS=$RUNNER_TEMP/aeronexus-leaflet" >> "$GITHUB_ENV"
       - run: pytest -q
