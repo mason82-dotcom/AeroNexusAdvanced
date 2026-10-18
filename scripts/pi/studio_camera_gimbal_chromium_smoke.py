@@ -229,6 +229,7 @@ def run_smoke(browser=None):
             path.write_text(html, encoding="utf-8")
             command = [
                 executable, "--headless=new", "--disable-gpu",
+                "--no-sandbox", "--disable-dev-shm-usage",
                 "--disable-background-networking", "--disable-component-update",
                 "--disable-extensions", "--disable-sync", "--no-first-run",
                 "--no-default-browser-check", "--no-proxy-server",
