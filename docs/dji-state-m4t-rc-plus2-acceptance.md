@@ -122,6 +122,37 @@ Die Ausgabe enthält `outcome` und getrennte Zähler/Feldnamen – keine
 konkreten Fluggeräte-IDs oder Livewerte. `not_observed` heißt lediglich,
 dass das Feld im Beobachtungsfenster nicht gesehen wurde.
 
+## Pi-Livenachweis: State-Verarbeitung auf beiden Geräten (18.10.2026)
+
+Vom Betreiber auf dem aktiven Pi berichtet, nach ACL-Erweiterung und bewusstem
+State-Opt-in:
+
+| Nachweis | Live-Befund |
+|---|---|
+| `live_feed.state` | `subscribed` |
+| `live_feed.state_topic_enabled` | `true` |
+| Globale Zähler unmittelbar nach Neustart | `accepted=12, rejected=0, ignored=7, outdated=0` |
+| DJI-Cloud-API-Inventar | 1 Fluggerät, 1 Controller |
+| Fluggerät / `field_status` | 46 OSD-Felder, **1 State-Feld** |
+| Controller / `field_status` | 16 OSD-Felder, **1 State-Feld** |
+| Namentlich bestätigtes State-Feld am Controller | `cloud_details.cloud_control_authorization_count` |
+
+Die `field_status[].channel=state`-Ursprungsmarkierung wird ausschließlich beim
+MQTT-Ingest erzeugt; somit ist die **lokale Verarbeitung eines State-Felds
+je Gerät** nachgewiesen, nicht nur ein erfolgreiches Broker-Subscribe. Diese
+Zählung betrifft **gespeicherte Feldpfade**, nicht empfangene MQTT-Nachrichten.
+Der Name des einen State-Felds am Fluggerät ist bisher noch nicht ermittelt.
+Die sieben ignorierten Pakete sind ohne kanalgetrennte Messung nicht erklärbar;
+insbesondere sind sie nicht mit fehlerhaften State-Paketen gleichzusetzen.
+
+**Noch nicht abgenommen:** Feldwerte/Einheiten gegenüber DJI, die tatsächliche
+M4T-/RC-Plus-2-Modellidentität aus dem Protokoll, State-Paketdeltas während
+eines definierten Zeitfensters, die Aktualitäts- und Liveness-Negativtests
+sowie weitere reale State-Eigenschaften. Die vollständig hardwareverifizierte
+Protokollabnahme bleibt offen. Für eine gefahrlose Feldprüfung ausschließlich
+bekannte Feldpfade samt `channel` und `freshness` aus der bestehenden HTTPS-API
+anzeigen; keine Seriennummern, Positionen oder Rohpayloads ausgeben.
+
 ## Verbindliche Hardwareabnahme (noch offen)
 
 1. **RC Plus 2 allein eingeschaltet:** tatsächlicher RC-OSD-Eingang,
