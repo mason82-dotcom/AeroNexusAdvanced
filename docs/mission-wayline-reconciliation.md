@@ -116,9 +116,11 @@ gleicher Name wird niemals als verifizierter Inhalt dargestellt. Lokale
 Millisekunden- und FlightHub-Sekunden-Zeitstempel werden korrekt in Berliner
 Zeit angezeigt. Unbekannte geometrische Template-Codes bleiben sichtbar.
 
-Die Ansicht liest nur Metadaten. Keine Routenänderung, Übernahme in den Editor,
-Kartenvorschau, KMZ-Übertragung oder Flugausführung. Ein offener Entwurf bleibt
-unverändert. Daten aus nicht lesbaren Quellen werden nicht als erfolgreich
+Die Bibliothek liest zunächst nur Metadaten. Auf expliziten Klick kann für
+inventarisierte lokale Pilot-2-Waylines eine streng begrenzte, rein lesende
+KMZ-Geometrievorschau auf einer separaten Kartenebene geladen werden.
+Keine Routenänderung, Übernahme in den Editor, KMZ-Übertragung zur Drohne oder
+Flugausführung. Ein offener Entwurf bleibt unverändert. Daten aus nicht lesbaren Quellen werden nicht als erfolgreich
 leer ausgegeben. Fehler/Timeouts entfernen den alten Anzeigestand und erlauben
 erneutes Laden. Suchbegriffe und Filter werden nicht in URLs oder persistenten
 Browser-Speicher geschrieben.
@@ -259,3 +261,209 @@ der erweiterten Geräteauswahl und Pi-/Pilot-2-Abnahme stehen aus.
 Lokaler Adapter zusätzlich mit HTTP-Mocks geprüft: GET-/Workspace-Begrenzung,
 Pagination, Fehler, Limits, Cache, Tokenwechsel, Auth-Schutz und Dateirechte.
 Die echte lokale Anmeldung und der Pi-Routenbestand sind noch nicht abgenommen.
+
+
+## Schreibgeschützte Cloud-KMZ-Vorschau
+
+Nur bereits gelistete Wayline-UUIDs aus einem vollständig geladenen
+lokalen Pilot-2-Inventar sind auswählbar. Der GET-Endpunkt
+/api/v1/local-cloud/waylines/{wayline_id}/preview prüft den bisherigen
+Viewer-Zugriff, die Sitzung und den Workspace.
+
+DJI GET /wayline/api/v1/workspaces/{workspace_id}/waylines/{id}/url
+liefert einen signierten 302-Speicherlink. Der Server folgt der
+Weiterleitung ausdrücklich nicht: Es werden ausschließlich HTTP-Links
+für einen privaten/Loopback-Host auf Port 9000 und das konfigurierte
+MinIO-Bucket akzeptiert. Das tatsächliche Ziel bleibt
+127.0.0.1:9000; zur AWS-Signaturprüfung bleibt der ursprüngliche
+Host-Header erhalten. Das DJI-Token wird nicht an MinIO gesendet.
+
+Maximal 4 MiB komprimierte KMZ-Daten, 20 ZIP-Mitglieder, 2 MiB pro
+Mitglied, 1000 Koordinaten und 32 GeoJSON-Geometrien. Die Vorschau
+extrahiert nur WGS84-Koordinaten aus wpmz/waylines.wpml, alternativ
+aus wpmz/template.kml. Keine XML-Metadaten, DJI-Kommandos,
+Flugaktionen, signierten URLs oder KMZ-Rohdaten im Browser.
+
+Die separate Leaflet-Kartenebene bleibt nicht-interaktiv. Solange
+sie sichtbar ist, führen Kartenklicks nicht zu neuen Missions- oder
+Geo-Punkten. "Cloud-Vorschau schließen" leert die Ebene. Es gibt
+keine automatische Bearbeitung, Speicherung oder Flugfreigabe.
+
+Wichtig: Das lokale Backend muss MinIO signierte Links zur
+gewünschten Wayline liefern. Andere Storage-Origins werden bewusst
+verweigert, nicht automatisch freigeschaltet. Der Pi-Liveabruf
+muss separat bestätigt werden.
+
+
+## Datenschutzschonender Live-Test auf dem Raspberry Pi
+
+Das zusätzliche Kommando ist ausschließlich lesend und verwendet die bereits
+privat gespeicherte Session. Es prüft zunächst die vollständige paginierte
+Wayline-Liste und anschließend **standardmäßig nur die erste** gefundene Route.
+Die Ausgabe nennt ausschließlich den laufenden Index, einen abstrakten
+Fehlerzustand sowie bei erfolgreichem Abruf Geometrie-/Punktanzahl und Dateiquelle.
+Route-Namen, -UUIDs, Token, S3-URLs und Roh-KMZ werden weder ausgegeben noch
+auf die Festplatte geschrieben.
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+set -a
+source .env
+set +a
+# Alte systemd-/Shell-Importpfade aus Fremd-Checkouts ausdrücklich überschreiben:
+PYTHONPATH="$PWD/src" .venv/bin/python -m aeronexus.pilot2_wayline_preview --limit 1
+```
+
+Nach erfolgreichem Einzeltest können mit `--limit 8` bis zu acht inventarisierte
+Routen geprüft werden. Bei nicht vollständigem Inventar oder fehlender Sitzung
+wird kein KMZ-Dateiabruf ausgelöst. Mögliche Statuswerte sind etwa
+`connected`, `storage_origin_rejected`, `storage_unavailable`,
+`invalid_archive`, `unsupported_geometry` und `unavailable`.
+`storage_origin_rejected` wird nicht durch Abschalten der URL-Prüfung
+umgangen.
+
+**Pi-Liveabnahme:** Der Nutzer hat alle acht Wayline-KMZ über die lesende
+Diagnose erfolgreich geprüft (`connected` bei 8/8). Aus den acht
+`waylines.wpml`-Dateien wurden insgesamt 13 Geometrien und 750
+Koordinatenvorkommen extrahiert. Der Download über den lokalen DJI-Service
+und MinIO ist damit für diesen Bestand bestätigt. Eine Browserprüfung der
+Gesamtkarte bleibt separat erforderlich.
+
+## Gemeinsame Kartenübersicht von bis zu acht Pilot-2-Waylines
+
+Im Mission Studio unter **Cloud-Routen** bietet die explizite Schaltfläche
+„Alle lokalen Routen auf Karte (max. 8)“ eine gemeinsame GeoJSON-Vorschau.
+Der Button wird erst nach vollständigem lokalem Pilot-2-Inventar aktiviert.
+Es werden ausschließlich Einträge mit Quelle `pilot2-local-cloud` ausgewählt,
+höchstens acht unterschiedliche Wayline-IDs aus der aktuellen Bibliothek.
+FlightHub-Routen werden nicht für lokale DJI-KMZ-Downloads ausgegeben.
+
+Jede Route wird erst nach Klick über den bestehenden, autorisierten und
+streng begrenzten `GET /api/v1/local-cloud/waylines/{wayline_id}/preview`
+angefordert. Ein neues Cloud- oder MinIO-Downloadverfahren gibt es nicht.
+Die Abfragen erfolgen sequenziell, mit Abbruchmöglichkeit und begrenztem
+Zeitbudget pro Anfrage. Fehler einer Route hindern nicht die Darstellung
+der bereits erfolgreichen Routen; die Oberfläche kennzeichnet Teilerfolge.
+
+Für jede erfolgreich gelesene Route zeigt das Kartenpanel Name, eigene
+Farbe, Punktzahl und Geometrieanzahl. Checkboxen blenden nur den jeweiligen
+schreibgeschützten Leaflet-Layer ein oder aus, „Zoom“ zentriert eine Route,
+und „Alle sichtbaren Routen zentrieren“ passt den Kartenausschnitt an.
+„Schließen“ bricht offene Requests ab, entfernt alle Vorschau-Layer und
+ermöglicht anschließend wieder Kartenbearbeitung. Einzel- und
+Mehrfachvorschau sind gegenseitig exklusiv.
+
+Routennamen werden ausschließlich über DOM-Textknoten eingefügt,
+GeoJSON-Elemente bleiben `interactive:false`; keine Routendaten
+werden in editierbare Missionen oder den WPML-Export übernommen.
+Die KMZ-Vorschau gibt ausdrücklich keine Flugfreigabe und liest keine
+DJI-Flugaktionen aus. Die Funktion wurde automatisiert getestet;
+eine reale Browserprüfung auf dem Pi ist zusätzlich erforderlich.
+
+## Geometrischer Routenvergleich im gemeinsamen Kartenpanel
+
+Das Panel zeigt zusätzlich je erfolgreicher Wayline die Anzahl der
+Linien und Liniensegmente sowie eine *näherungsweise horizontale*
+WGS84-Linienlänge. Die Distanz ergibt sich aus Haversine-Großkreisbögen
+zwischen aufeinanderfolgenden Koordinaten innerhalb jeder
+`LineString`-Geometrie (Erdradius 6.371.008,8 m). Es wird ausdrücklich
+**keine** Strecke zwischen unterschiedlichen WPML-Ordnern ergänzt.
+Polygonumfänge und isolierte Punkte werden nicht in diese Zahl
+hineingerechnet. Überlappungen zwischen verschiedenen Routen werden
+in der Gesamtsumme nicht herausgerechnet.
+
+Zur Orientierung zeigt ein weiß gefüllter Kreis den Beginn, ein farbig
+gefüllter Kreis das Ende einer dargestellten Liniengeometrie. Bei
+mehreren Linien innerhalb einer Wayline gibt es entsprechend mehrere
+Start-/Endmarkierungen. Diese Punkte sind *keine* autorisierten
+Start-, Lande-, RTH- oder sonstigen Steuerpunkte. Die angezeigte
+Linienlänge ignoriert Höhenänderungen, Flugkurven und DJI-Aktionen und
+stellt **keine** planungs- oder flugsicherheitsrelevante Berechnung dar.
+
+## Mobile Leaflet-Zentrierung (Oktober 2026)
+
+Nach der Rückkehr von der Wayline-Bibliothek zur Karte wird die
+sichtbare Containergröße synchron neu gemessen (`invalidateSize` ohne Pan),
+und der KMZ-Kartenausschnitt erst nach zwei `requestAnimationFrame`-Zyklen
+berechnet. Dadurch kann `fitBounds` nicht mehr mit der alten Nullgröße
+des zuvor ausgeblendeten Leaflet-Containers ausgeführt werden. Alte
+Vorschauanforderungen können keine nachfolgend gewählte Route zentrieren.
+Der neue Kartenknopf „Cloud-Vorschau zentrieren“ wiederholt dieselbe
+Größenprüfung und Ausrichtung. Linien werden mit höherem Kontrast über
+der Satellitenkarte gezeichnet. Bestehende Missionen bleiben unverändert.
+
+Eine Weltansicht trotz dieser Korrektur kann auch durch sehr weit
+auseinanderliegende, aber syntaktisch gültige WPML-Koordinaten entstehen;
+dies ist anhand des konkreten KMZ-Geometrieumfangs separat zu prüfen.
+
+## Mobile Kartenansicht und einklappbare Bedienfelder
+
+Auf schmalen Browseransichten (bis 700 Pixel CSS-Breite) ist die
+Kartenwerkzeugleiste zunächst eingeklappt: „Werkzeuge“ öffnet beziehungsweise
+schließt die sekundären Kartenaktionen, während der Kartenfokus und eine
+verfügbare Cloud-Routenzentrierung sichtbar bleiben. Am Desktop bleiben die
+gewohnten Kartenwerkzeuge eingeblendet.
+
+„Kartenfokus“ bringt den Kartenbereich über eine fest positionierte Ansicht
+auf die verfügbare Gerätehöhe. Die normale Browsernavigation bleibt nutzbar;
+die App fordert ausdrücklich **keinen** Browser- oder System-Vollbildzugriff an.
+„Kartenfokus beenden“ stellt die normale geteilte Oberfläche wieder her,
+ohne den Missionseditor oder den Cloud-Layer zurückzusetzen. Leaflet
+misst nach jeder Umschaltung den Kartencontainer erneut.
+
+Die bei mehreren Waylines angezeigte Legende startet auf schmalen Bildschirmen
+minimiert. „Routen anzeigen“ blendet die bestehenden, einzeln ein- und
+ausblendbaren Routen auf. Route-Name, Farbe, Punktzahl und Geometrie-Status
+werden unverändert verwendet. Der Kartentext ist mobil auf eine Zeile
+begrenzt und kann über „Werkzeuge“ → „Hinweis zeigen“ erweitert werden.
+
+Dies sind ausschließlich Browseransichtsänderungen: keine neuen DJI-API-
+Aufrufe, keine Speicherung von Cloud-KMZ-Dateien, keine Missionsänderungen
+und keine Flugfreigabe. Visuelle Live-Abnahme auf Android steht noch aus.
+
+## Mobiler Cloud-Status: einklappbarer Hinweis oberhalb der Kartenquellen
+
+Nach bestätigter Kartenfokus-Live-Abnahme auf einem Android-Smartphone
+wurde die Statusanzeige am unteren Kartenrand korrigiert. Die bisherige
+CSS-Zeilenkürzung konnte eine zweizeilige, abgeschnittene Warnbox direkt
+über der Leaflet-Attribution erzeugen.
+
+Die neue schmale Status-Schaltfläche zeigt etwa „Cloud-Vorschau: Kapelle1 ·
+Details“, während der vollständige Wortlaut in einem separaten DOM-Knoten
+erhalten bleibt. Ein Tippen auf die Schaltfläche öffnet die Details;
+„Weniger“ klappt sie wieder ein. Hinweis und Detailanzeige liegen
+mindestens 39 CSS-Pixel zuzüglich Safe-Area-Abstand oberhalb des
+Kartenfußes. Es werden keine Browser-Hover-Aktionen benötigt.
+Sowohl normale Hinweise als auch Warnungen verwenden dieselbe
+Statusverwaltung mit `textContent` statt `innerHTML`, sodass
+Wayline-Namen weder HTML ausführen noch auf die Karte gezeichnet werden.
+
+Die Änderungen betreffen ausschließlich die mobile Browseroberfläche.
+DJI-Downloads, Flight-Commands, lokale Missionen und Cloud-KMZ bleiben
+unverändert. Die Darstellung muss auf dem realen Smartphone geprüft werden.
+
+## Direkter Wechsel zur Acht-Routen-Karte (Mobil)
+
+Nach erfolgreicher Live-Abnahme der einzelnen Cloud-Waylines kann das
+Kartenpanel die lokale Gesamtübersicht direkt starten: Wenn das
+`pilot2-local-cloud`-Inventar vollständig und verbunden ist, blendet
+die Kartenwerkzeugleiste die Aktion **„Alle Cloud-Routen (N)“** ein,
+wobei N auf höchstens acht begrenzt ist. Der Klick führt über dieselbe
+bereits abgesicherte `openCloudOverview`-Funktion wie der Bibliotheksbutton.
+Im geöffneten Zustand wechselt die Aktion zu **„Übersicht schließen“**.
+Bei nicht verfügbarem oder unvollständigem Inventar ist die Aktion
+ausgeblendet. Die Einzelvorschau wird beim Start der Gesamtübersicht
+zur Vermeidung doppelter Overlays entfernt.
+
+Auch die Gesamtübersicht nutzt die mobile Größenprüfung
+`fitWaylineMapBounds` statt einer sofortigen Leaflet-`fitBounds`-Operation.
+Damit werden Kartenausschnitte erst nach dem Sichtbarwerden und Messen
+des Kartencontainers zentriert. Spätere asynchrone Rückmeldungen
+geschlossener Übersichten können keine neue Kartenposition auslösen.
+
+Während des sequenziellen, nur durch Benutzerklick gestarteten Ladens
+zeigt das Panel den Namen der aktuell angeforderten Route. Die acht
+schreibgeschützten Einzel-GETs, die Zugriffsprüfung, die maximalen
+Dateigrößen und die vollständige Trennung vom Missionseditor
+bleiben unverändert. Die gemeinsame Anzeige auf dem Android-Browser
+steht noch zur Live-Abnahme aus.

@@ -4,6 +4,7 @@ DJI flight operations are not exposed. Detailed telemetry is inaccessible
 unless an independent dashboard bearer token is configured.
 """
 import asyncio
+import httpx
 from io import BytesIO
 from urllib.parse import unquote
 from contextlib import asynccontextmanager
@@ -61,7 +62,10 @@ from .studio_events import serve_studio_events
 from .lan_access import lan_host, lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
 from .mission_reconciliation import compare_missions
-from .local_waylines import LocalWaylineReader
+from .local_waylines import LocalWaylineReader, load_credentials, credentials_path
+from .pilot2_wayline_preview import read_preview
+from .pilot2_readonly import Pilot2ReadOnlyReader
+from .pilot2_action_summary import Pilot2ActionSummaryReader
 from .local_waylines import Credentials, LocalWaylineError
 from .local_session import LocalSessionHandoff, handoff_origin
 from .mission_csv import MAX_CSV_BYTES, MissionCsvError, preview_csv
@@ -77,6 +81,8 @@ async def lifespan(app: FastAPI):
     api2_settings = CloudApi2Settings.from_env()
     app.state.cloud_api2_bridge = CloudApi2Bridge(api2_settings) if api2_settings else None
     app.state.local_waylines = LocalWaylineReader()
+    app.state.local_pilot_reader = Pilot2ReadOnlyReader()
+    app.state.pilot2_action_summary = Pilot2ActionSummaryReader(app.state.local_waylines)
     app.state.local_session_handoff = LocalSessionHandoff()
     app.state.provider_configured = {
         Provider.public_v2: poll_settings is not None and poll_settings.config.kind == ProviderKind.PUBLIC_V2,
@@ -450,6 +456,74 @@ async def local_cloud_waylines(request: Request, response: Response,
         "pagination_complete": result.get("pagination_complete"),
         "updated_at": result.get("updated_at"),
     }
+
+
+@app.get("/api/v1/studio/pilot2/action-summary")
+async def studio_pilot2_action_summary(request: Request, response: Response,
+                                       authorization: str | None = Header(default=None)) -> dict:
+    """Authenticated, manually requested, bounded anonymous WPML metadata only."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    return await app.state.pilot2_action_summary.read()
+
+
+@app.get("/api/v1/local-cloud/waylines/{wayline_id}/preview")
+async def local_cloud_wayline_preview(wayline_id: str, request: Request, response: Response,
+                                      authorization: str | None = Header(default=None)) -> dict:
+    """Preview an inventoried local cloud KMZ; returns only bounded GeoJSON."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    try:
+        from uuid import UUID
+        canonical = str(UUID(wayline_id))
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(status_code=404, detail="Wayline not found") from None
+    inventory = await app.state.local_waylines.read()
+    if inventory["state"] != "connected":
+        return {"state": inventory["state"], "features": []}
+    if not inventory.get("pagination_complete"):
+        return {"state": "incomplete_inventory", "features": []}
+    available = {route["wayline_id"]: route for route in inventory["waylines"]}
+    if canonical not in available:
+        raise HTTPException(status_code=404, detail="Wayline not found")
+    try:
+        credentials = load_credentials(credentials_path())
+        if credentials is None or credentials.workspace_id != inventory["workspace_id"]:
+            return {"state": "authentication_required", "features": []}
+        preview = await asyncio.wait_for(read_preview(credentials, canonical), timeout=22)
+    except LocalWaylineError as exc:
+        return {"state": str(exc), "features": []}
+    except (httpx.HTTPError, OSError, TimeoutError):
+        return {"state": "unavailable", "features": []}
+    return {"state": "connected", "wayline_id": canonical,
+            "name": available[canonical]["name"], **preview}
+
+
+@app.get("/api/v1/local-cloud/map-elements")
+async def local_cloud_map_elements(request: Request, response: Response,
+                                   authorization: str | None = Header(default=None)) -> dict:
+    """Validated read-only Pilot 2 WGS84 map elements from the local workspace."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    return await app.state.local_pilot_reader.map_elements()
+
+
+@app.get("/api/v1/local-cloud/topology")
+async def local_cloud_topology(request: Request, response: Response,
+                               authorization: str | None = Header(default=None)) -> dict:
+    """Read-only RC/aircraft relationships, without upstream personal details."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    return await app.state.local_pilot_reader.device_topology()
+
+
+@app.get("/api/v1/local-cloud/diagnostics")
+async def local_cloud_diagnostics(request: Request, response: Response,
+                                  authorization: str | None = Header(default=None)) -> dict:
+    """Safe Pilot 2 GET probe: HTTP and DJI business codes, never body content."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    return await app.state.local_pilot_reader.diagnostics()
 
 
 @app.get("/api/v1/flighthub/catalog")

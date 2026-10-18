@@ -1,0 +1,384 @@
+"""Read-only Pilot 2 WPML parameter audit regression and security tests."""
+import asyncio
+from io import BytesIO
+import json
+import sys
+from zipfile import ZipFile
+
+from aeronexus import pilot2_wayline_parameters as pm
+from aeronexus.local_waylines import Credentials
+from aeronexus.pilot2_wayline_preview import parse_preview_kmz
+from aeronexus.wpml_export import WaypointMission, export_kmz
+from aeronexus.pilot2_wayline_compare import compare_geometry
+
+
+WORKSPACE = "12345678-1234-4234-8234-123456789012"
+WAYLINE = "00000000-0000-0000-0000-000000000011"
+CREDS = Credentials(WORKSPACE, "test-secret-token-123456789")
+
+
+def mission(**kwargs):
+    data = {"name": "Private survey", "drone_model": "matrice4t",
+            "speed_mps": 5.0, "altitude_m": 50.0,
+            "waypoints": [
+                {"latitude": 49.12, "longitude": 8.5, "take_photo": True},
+                {"latitude": 49.13, "longitude": 8.6},
+            ]}
+    data.update(kwargs)
+    return WaypointMission.model_validate(data)
+
+
+def raw_kmz(m=None):
+    return export_kmz(m or mission(), timestamp_ms=1730000000000)
+
+
+def modified_kmz(old, new, kmz=None):
+    result = BytesIO()
+    with ZipFile(BytesIO(kmz or raw_kmz())) as original, ZipFile(result, "w") as target:
+        for name in original.namelist():
+            data = original.read(name)
+            if name.endswith("waylines.wpml"):
+                assert old in data
+                data = data.replace(old, new)
+            target.writestr(name, data)
+    return result.getvalue()
+
+
+def report(mission_obj, data, meta="0-99-1"):
+    cloud = {"device_model_key": meta}
+    geometry = compare_geometry(mission_obj, cloud, parse_preview_kmz(data))
+    return pm.compare_parameters(mission_obj, pm.parse_parameter_audit(data), geometry, meta)
+
+
+def test_generated_wpml_fields_match_but_never_complete_content():
+    r = report(mission(), raw_kmz())
+    assert r["route_count"] == 1
+    assert r["route_point_counts"] == [2]
+    assert r["height_modes"] == ["relativeToStartPoint"]
+    assert r["wpml_model_key"] == "0-99-1"
+    assert r["cloud_metadata_wpml_agree"] is True
+    assert r["photo_action_count"] == 1
+    assert r["other_action_count"] == 0
+    assert r["geometry_result"] == "coordinates_equal"
+    assert r["parameter_state"] == "supported_fields_equal"
+    assert r["parameter_matches"]["waypointHeights"] is True
+    assert r["parameter_matches"]["takePhotoPositions"] is True
+    assert r["full_content_verified"] is False
+    assert r["flight_compatibility_verified"] is False
+    encoded = json.dumps(r)
+    assert not any(x in encoded for x in ("49.12", "8.5,", "Private survey", WAYLINE, CREDS.access_token))
+
+
+def test_exact_dji_wpml_106_readonly_supported_but_never_certified_equal():
+    modern = modified_kmz(
+        b"http://www.dji.com/wpmz/1.0.2",
+        b"http://www.dji.com/wpmz/1.0.6")
+    info = pm.classify_wpml_structure(modern)
+    assert info["recognized_wpml_schema_version"] == "1.0.6"
+    assert info["read_only_schema_supported"] is True
+    assert info["strict_header_compatible"] is False
+    audit = pm.parse_parameter_audit(modern)
+    assert audit["wpml_schema_version"] == "1.0.6"
+    assert audit["wpml_model_key"] == "0-99-1"
+    assert len(audit["routes"]) == 1
+    assert len(audit["routes"][0]["waypoints"]) == 2
+    result = report(mission(), modern)
+    assert result["geometry_result"] == "coordinates_equal"
+    assert result["wpml_schema_semantics_verified"] is False
+    assert result["parameter_state"] == "not_comparable"
+    assert result["parameter_matches"] == {}
+    assert result["full_content_verified"] is False
+
+
+def test_unknown_wpml_version_and_spoofed_namespace_still_fail_closed():
+    import pytest
+    from aeronexus.local_waylines import LocalWaylineError
+    for namespace in (b"http://www.dji.com/wpmz/1.0.9",
+                      b"http://malicious.example/wpmz/1.0.6"):
+        transformed = modified_kmz(
+            b"http://www.dji.com/wpmz/1.0.2", namespace)
+        info = pm.classify_wpml_structure(transformed)
+        assert info["recognized_wpml_schema_version"] == "unknown"
+        assert info["read_only_schema_supported"] is False
+        with pytest.raises(LocalWaylineError, match="unsupported_geometry"):
+            pm.parse_parameter_audit(transformed)
+
+
+def test_undocumented_altitude_frame_is_never_compared_numerically():
+    kmz = modified_kmz(b"<wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode>",
+                       b"<wpml:executeHeightMode>WGS84</wpml:executeHeightMode>")
+    r = report(mission(), kmz)
+    assert r["parameter_matches"]["executeHeightMode"] is False
+    assert r["parameter_matches"]["waypointHeights"] is None
+    assert r["parameter_state"] == "differences_detected"
+
+
+def test_parameter_differences_visible_only_after_exact_single_route_match():
+    kmz = modified_kmz(b"<wpml:waypointSpeed>5</wpml:waypointSpeed>",
+                       b"<wpml:waypointSpeed>8</wpml:waypointSpeed>")
+    r = report(mission(), kmz)
+    assert r["geometry_result"] == "coordinates_equal"
+    assert r["parameter_matches"]["waypointSpeeds"] is False
+    assert r["parameter_state"] == "differences_detected"
+    other = report(mission(waypoints=[
+        {"latitude": 49.14, "longitude": 8.5},
+        {"latitude": 49.13, "longitude": 8.6},
+    ]), kmz)
+    assert other["geometry_result"] == "coordinates_different"
+    assert other["parameter_state"] == "not_comparable"
+    assert other["parameter_matches"] == {}
+
+
+def test_model_metadata_and_embedded_wpml_can_disagree():
+    r = report(mission(), raw_kmz(), meta="0-77-2")
+    assert r["cloud_metadata_wpml_agree"] is False
+    assert r["wpml_model_match"] is True
+    assert r["geometry_result"] == "model_conflict"
+    assert r["parameter_state"] == "not_comparable"
+
+
+def test_embedded_drone_model_conflict_blocks_parameter_equal_claim():
+    kmz = modified_kmz(b"<wpml:droneEnumValue>99</wpml:droneEnumValue>",
+                       b"<wpml:droneEnumValue>77</wpml:droneEnumValue>")
+    r = report(mission(), kmz)
+    assert r["geometry_result"] == "coordinates_equal"
+    assert r["wpml_model_match"] is False
+    assert r["cloud_metadata_wpml_agree"] is False
+    assert r["parameter_state"] == "not_comparable"
+    assert r["parameter_matches"] == {}
+
+
+def test_documented_action_types_are_counted_but_never_executed():
+    changed = modified_kmz(
+        b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
+        b"<wpml:actionActuatorFunc>orientedShoot</wpml:actionActuatorFunc>",
+    )
+    result = report(mission(), changed)
+    assert result["action_type_counts"] == {"orientedShoot": 1}
+    assert result["unrecognized_action_count"] == 0
+    assert result["photo_action_count"] == 0
+    assert result["other_action_count"] == 1
+    assert result["parameter_matches"]["takePhotoPositions"] is None
+    assert result["full_content_verified"] is False
+
+
+def test_unrecognized_action_payload_is_never_returned():
+    action = "sensitive-user-defined-action"
+    changed = modified_kmz(
+        b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
+        ("<wpml:actionActuatorFunc>" + action +
+         "</wpml:actionActuatorFunc>").encode(),
+    )
+    result = report(mission(), changed)
+    assert result["unrecognized_action_count"] == 1
+    assert result["action_type_counts"] == {}
+    assert action not in json.dumps(result)
+    assert result["parameter_matches"]["takePhotoPositions"] is None
+
+
+def test_start_group_action_types_are_counted_separately():
+    extra = (b"<Folder><wpml:startActionGroup><wpml:action>"
+             b"<wpml:actionActuatorFunc>startRecord</wpml:actionActuatorFunc>"
+             b"</wpml:action></wpml:startActionGroup>")
+    data = modified_kmz(b"<Folder>", extra)
+    result = report(mission(), data)
+    assert result["start_action_type_counts"] == {"startRecord": 1}
+    assert result["start_action_count"] == 1
+    assert result["unrecognized_start_action_count"] == 0
+    assert result["action_type_counts"] == {"takePhoto": 1}
+    assert result["route_start_actions_present"] is True
+    assert result["parameter_matches"]["takePhotoPositions"] is None
+    assert result["full_content_verified"] is False
+
+
+def test_wpml_106_action_summary_does_not_claim_semantic_validation():
+    data = modified_kmz(b"http://www.dji.com/wpmz/1.0.2",
+                        b"http://www.dji.com/wpmz/1.0.6")
+    result = report(mission(), data)
+    assert result["action_type_counts"] == {"takePhoto": 1}
+    assert result["wpml_schema_version"] == "1.0.6"
+    assert result["wpml_schema_semantics_verified"] is False
+    assert result["parameter_state"] == "not_comparable"
+    assert result["full_content_verified"] is False
+
+
+def test_unknown_action_shape_groups_never_echo_values():
+    result = pm._unknown_profiles(
+        ["vendorCustomAction", "vendorCustomAction", "123456",
+         "camera-action/sensitive", None, "takePhoto"],
+        pm.DOCUMENTED_ACTION_TYPES)
+    assert result == {
+        "distinct_count": 4,
+        "shape_counts": {
+            "missing": 1, "identifier": 2, "numeric": 1, "other": 1,
+        },
+    }
+    encoded = json.dumps(result)
+    assert "vendorCustomAction" not in encoded
+    assert "camera-action/sensitive" not in encoded
+
+
+def test_waypoint_trigger_types_counted_without_exposing_unknown_values():
+    content = modified_kmz(
+        b"<wpml:actionTriggerType>reachPoint</wpml:actionTriggerType>",
+        b"<wpml:actionTriggerType>multipleDistance</wpml:actionTriggerType>")
+    result = report(mission(), content)
+    assert result["action_trigger_counts"] == {"multipleDistance": 1}
+    assert result["unknown_action_trigger_count"] == 0
+    assert result["waypoint_action_group_count"] == 1
+    assert result["full_content_verified"] is False
+    unknown = modified_kmz(
+        b"<wpml:actionTriggerType>reachPoint</wpml:actionTriggerType>",
+        b"<wpml:actionTriggerType>privateTriggerSecret</wpml:actionTriggerType>")
+    output = report(mission(), unknown)
+    assert output["action_trigger_counts"] == {}
+    assert output["unknown_action_trigger_count"] == 1
+    assert "privateTriggerSecret" not in json.dumps(output)
+
+
+def test_unknown_enum_shape_counts_across_multiple_routes():
+    unknown = modified_kmz(
+        b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
+        b"<wpml:actionActuatorFunc>newMappingAction</wpml:actionActuatorFunc>")
+    info = report(mission(), unknown)
+    assert info["unknown_action_distinct_by_route"] == [1]
+    assert info["unknown_action_shapes_by_route"] == [
+        {"missing": 0, "identifier": 1, "numeric": 0, "other": 0}]
+    assert info["unknown_start_action_distinct_by_route"] == [0]
+    assert info["unknown_action_trigger_count"] == 0
+    assert "newMappingAction" not in json.dumps(info)
+    assert info["full_content_verified"] is False
+
+
+def test_unknown_actions_never_report_camera_match():
+    kmz = modified_kmz(b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
+                       b"<wpml:actionActuatorFunc>rotateYaw</wpml:actionActuatorFunc>")
+    r = report(mission(), kmz)
+    assert r["other_action_count"] == 1
+    assert r["parameter_matches"]["takePhotoPositions"] is None
+    assert r["full_content_verified"] is False
+
+
+def test_missing_fields_always_remain_incomplete():
+    kmz = modified_kmz(b"<wpml:globalRTHHeight>60</wpml:globalRTHHeight>", b"")
+    r = report(mission(), kmz)
+    assert r["parameter_matches"]["globalRTHHeight"] is None
+    assert r["parameter_state"] == "incomplete_fields"
+
+
+def test_corrupt_xml_or_missing_wpml_archive_fail_closed():
+    from aeronexus.local_waylines import LocalWaylineError
+    import pytest
+    with pytest.raises(LocalWaylineError, match="invalid_archive"):
+        pm.parse_parameter_audit(b"invalid")
+    with pytest.raises(LocalWaylineError, match="invalid_archive"):
+        pm.parse_parameter_audit(
+            modified_kmz(b"<wpml:waypointSpeed>", b"<!DOCTYPE kml><wpml:waypointSpeed>"))
+
+
+def test_opt_in_reader_requires_complete_inventory_and_never_returns_ids():
+    seen = []
+    async def inventory(_):
+        return {"state": "connected", "workspace_id": WORKSPACE,
+                "pagination_complete": True, "reported_total": 1,
+                "waylines": [{"wayline_id": WAYLINE, "device_model_key": "0-99-1"}]}
+    async def downloader(_, ident):
+        seen.append(ident)
+        return raw_kmz()
+    loader = lambda _: CREDS
+    out = asyncio.run(pm.diagnose_parameters(
+        mission(), inventory_reader=inventory, kmz_reader=downloader,
+        credentials_loader=loader))
+    assert out["inventory_state"] == "connected"
+    assert out["results"][0]["parameter_state"] == "supported_fields_equal"
+    assert seen == [WAYLINE]
+    assert WAYLINE not in json.dumps(out)
+    seen.clear()
+    async def partial(_):
+        return {**(await inventory(_)), "pagination_complete": False}
+    refused = asyncio.run(pm.diagnose_parameters(
+        mission(), inventory_reader=partial, kmz_reader=downloader,
+        credentials_loader=loader))
+    assert refused["inventory_state"] == "incomplete_inventory" and seen == []
+
+
+def test_structure_preflight_reports_namespace_mismatches_without_sensitive_values():
+    standard = pm.classify_wpml_structure(raw_kmz())
+    assert standard["root_namespace"] == "standard"
+    assert standard["mission_config_namespace"] == "standard"
+    assert standard["strict_parser_gate"] == "structurally_compatible"
+    assert standard["direct_folder_count"] == 1
+    assert standard["placemark_count"] == 2
+
+    nonstandard = modified_kmz(
+        b"http://www.dji.com/wpmz/1.0.2", b"http://www.dji.com/wpmz/1.0.9")
+    classification = pm.classify_wpml_structure(nonstandard)
+    assert classification["strict_parser_gate"] == "mission_config_namespace_or_missing"
+    assert classification["mission_config_namespace"] == "nonstandard"
+    assert classification["placemark_count"] == 2
+    assert classification["full_content_verified"] is False
+    data = json.dumps(classification)
+    assert "49.12" not in data
+    assert "Private survey" not in data
+    assert WORKSPACE not in data
+
+
+def test_structure_preflight_also_identifies_nonstandard_kml_namespace():
+    with ZipFile(BytesIO(raw_kmz())) as original:
+        result = BytesIO()
+        with ZipFile(result, "w") as target:
+            for name in original.namelist():
+                data = original.read(name)
+                if name.endswith("waylines.wpml"):
+                    data = data.replace(b"http://www.opengis.net/kml/2.2", b"urn:nonstandard-kml")
+                target.writestr(name, data)
+    info = pm.classify_wpml_structure(result.getvalue())
+    assert info["root_namespace"] == "nonstandard"
+    assert info["strict_parser_gate"] == "root_namespace"
+    assert info["folder_count"] == 1
+    assert info["point_count"] == 2
+
+
+def test_structure_command_skips_mission_access(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["audit", "--structure-only", "--limit", "8"])
+    def fail(_):
+        raise AssertionError("must not access local Studio mission")
+    monkeypatch.setattr(pm, "read_local_mission", fail)
+    async def fake(*, limit):
+        assert limit == 8
+        return {"inventory_state": "connected", "checked": 1,
+                "results": [{"index": 1, "state": "connected",
+                             "strict_parser_gate": "root_namespace"}]}
+    monkeypatch.setattr(pm, "diagnose_structure", fake)
+    assert pm.main() == 0
+    assert json.loads(capsys.readouterr().out)["checked"] == 1
+
+
+def test_structure_reader_requires_complete_inventory_without_kmz_fetch():
+    seen = []
+    async def incomplete(_):
+        return {"state": "connected", "workspace_id": WORKSPACE,
+                "pagination_complete": False, "waylines": [{"wayline_id": WAYLINE}]}
+    async def downloader(_, route):
+        seen.append(route)
+        return raw_kmz()
+    result = asyncio.run(pm.diagnose_structure(
+        inventory_reader=incomplete, kmz_reader=downloader,
+        credentials_loader=lambda _: CREDS))
+    assert result == {"inventory_state": "incomplete_inventory", "results": []}
+    assert seen == []
+
+
+def test_command_outputs_no_ids_coords_or_names(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["audit", "--mission", WORKSPACE])
+    monkeypatch.setattr(pm, "read_local_mission", lambda _: mission())
+    async def fake(_mission, *, limit):
+        assert limit == 8
+        return {"inventory_state": "connected", "results": [
+            {"index": 1, "state": "connected", "parameter_state": "not_comparable"}]}
+    monkeypatch.setattr(pm, "diagnose_parameters", fake)
+    assert pm.main() == 0
+    text = capsys.readouterr().out
+    assert WORKSPACE not in text
+    assert "Private survey" not in text
+    assert CREDS.access_token not in text

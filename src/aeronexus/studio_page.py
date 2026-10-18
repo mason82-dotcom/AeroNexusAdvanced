@@ -52,12 +52,57 @@ hr{border:0;border-top:1px solid #2b4159;margin:17px 0}
 .wayline-card h2{margin:0 0 12px;font-size:16px}.wayline-card p{margin:7px 0;line-height:1.5}
 .wayline-tools{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.wayline-tools label{flex:1;min-width:160px}
 #wayline-state{min-height:68px}#wayline-range{min-height:20px}#wayline-page{align-self:center}
+#cloud-overview-panel{position:absolute;z-index:510;right:12px;top:75px;width:min(365px,calc(100% - 24px));max-height:min(70vh,640px);overflow:auto;background:#102238ee;border:1px solid #54758e;border-radius:12px;padding:12px;box-shadow:0 8px 28px #0008}
+#cloud-overview-panel[hidden]{display:none}
+#cloud-overview-panel .cloud-head{display:flex;gap:7px;align-items:center;justify-content:space-between}
+#cloud-overview-panel .cloud-head button{padding:6px 8px}
+#cloud-overview-list{display:grid;gap:8px;margin-top:9px}
+.cloud-route-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 8px;padding:9px;background:#1b3348;border:1px solid #456078;border-radius:9px}
+.cloud-route-row label{display:flex;flex-direction:row;gap:7px;align-items:center;margin:0;min-width:0;color:#f2f7ff}
+.cloud-route-row label input{width:auto;flex:0 0 auto}
+.cloud-route-row label span{min-width:0;overflow-wrap:anywhere}
+.cloud-route-row .swatch{width:12px;height:12px;flex:0 0 12px;border-radius:3px;border:1px solid #a6b6c6}
+.cloud-route-row .cloud-route-detail{grid-column:1/-1;font-size:11px;color:#bad2e4;overflow-wrap:anywhere}
+.cloud-route-row .cloud-route-metrics{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px;font-size:12px;color:#d7ecff}
+.cloud-route-row .cloud-route-metrics span{background:#23445e;border-radius:5px;padding:3px 7px}
+.cloud-route-row button{align-self:center;padding:6px 8px}
+@media(max-width:600px){#cloud-overview-panel{top:110px;max-height:52vh}}
 .badge{border-radius:999px;border:1px solid #3c5875;color:#a9cbea;padding:3px 8px;font-size:11px}
 #map{height:100%;min-height:600px;background:#192837}
 .map-bar{position:absolute;z-index:500;top:16px;left:16px;right:16px;display:flex;gap:7px;align-items:center;flex-wrap:wrap;pointer-events:none}
 .map-bar>*{pointer-events:auto;box-shadow:0 5px 20px #0006}.map-bar button,.map-bar select{background:#162b44;border:1px solid #466a8c}
 .map-bar select{width:auto;max-width:160px}
-.map-info{position:absolute;z-index:500;bottom:34px;left:12px;max-width:min(480px,80%);padding:9px 12px;border-radius:9px;background:#101d2ce8;color:#dceaff;font-size:12px;pointer-events:none}
+.map-bar [hidden]{display:none!important}
+.map-bar .map-primary{font-weight:650}
+#map-info[data-minimized="true"]{max-width:min(340px,calc(100% - 24px))}
+#map-info[data-minimized="true"] #map-info-detail{display:none}
+#map-info-chip{display:block;width:100%;max-width:100%;padding:0;border:0;background:transparent;color:inherit;box-shadow:none;font:inherit;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5;cursor:pointer}
+#map-info-chip:hover{background:transparent}
+#map-info-detail{display:block;max-height:31dvh;overflow-y:auto;margin-top:6px;line-height:1.45;overflow-wrap:anywhere}
+#map-info-detail[hidden]{display:none}
+#map-info:not([data-minimized="true"]){max-width:min(460px,calc(100% - 20px))}
+@media(min-width:701px){#map-info-chip{display:none}}
+#cloud-overview-panel[data-minimized="true"] #cloud-overview-list,
+#cloud-overview-panel[data-minimized="true"] .cloud-overview-help{display:none}
+body.map-focus-active{overflow:hidden}
+body.map-focus-active .content{position:fixed;inset:0;z-index:1500;height:100dvh;min-height:0;width:100%;background:var(--bg)}
+body.map-focus-active #map-pane{height:100%}
+body.map-focus-active #map{height:100%;min-height:0}
+@media(min-width:701px){#map-tools-toggle{display:none}}
+@media(max-width:700px){
+  .map-bar{top:9px;left:9px;right:9px;gap:6px}
+  .map-bar button,.map-bar select{font-size:12px;padding:8px 10px;min-height:38px}
+  .map-bar[data-compact="true"] .map-extra{display:none}
+  .map-bar #wayline-preview-fit{max-width:48vw}
+  #cloud-overview-panel{top:auto;right:9px;bottom:90px;width:min(355px,calc(100% - 18px));max-height:50dvh}
+  #cloud-overview-panel[data-minimized="true"]{max-height:140px}
+  .map-info{left:9px;bottom:calc(39px + env(safe-area-inset-bottom));max-width:calc(100% - 18px);font-size:12px;padding:8px 10px}
+  #map-info[data-minimized="true"]{max-width:min(320px,calc(100% - 18px))}
+  body.map-focus-active .map-bar{top:calc(9px + env(safe-area-inset-top))}
+  body.map-focus-active #cloud-overview-panel{bottom:calc(75px + env(safe-area-inset-bottom))}
+  body.map-focus-active .map-info{bottom:calc(39px + env(safe-area-inset-bottom))}
+}
+.map-info{position:absolute;z-index:500;bottom:calc(39px + env(safe-area-inset-bottom));left:12px;max-width:min(480px,80%);padding:9px 12px;border-radius:9px;background:#101d2ce8;color:#dceaff;font-size:12px;pointer-events:auto;box-shadow:0 3px 16px #0007}
 .map-info.warning{border:1px solid #a87548;color:#ffe3b0;background:#34251de8}
 .point-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 7px;border-radius:9px;border:1px solid #314961;margin:7px 0;background:#16263d}
 .point-row.selected{border-color:#53acf3;background:#1b3954}
@@ -143,7 +188,7 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 .analysis-warning:empty{display:none}
 footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 @media(max-width:1000px){.layout{grid-template-columns:320px minmax(0,1fr)}header{gap:9px}.auth{min-width:250px}}
-@media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}header{padding:11px}.map-bar{top:8px;left:8px;right:8px}}
+@media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}header{padding:11px}}
 </style>
 </head>
 <body>
@@ -261,7 +306,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <p class="note">Vorhandene Flugrouten aus der lokalen Pilot-2-Cloud und dem geladenen FlightHub-Katalog.</p>
 <p>Die Liste ist schreibgeschützt. Der offene Studio-Entwurf bleibt unverändert.</p>
 <p class="note">Gleiche Namen sind nur Hinweise. Eine Übereinstimmung des Routeninhalts ist noch nicht geprüft.</p>
-<p class="note">Flächen- und Geometrierouten können hier noch nicht auf der Karte geöffnet oder bearbeitet werden.</p>
+<p class="note">Lokale Pilot-2-KMZ lassen sich bei unterstützter Geometrie schreibgeschützt auf der Karte betrachten. Keine Bearbeitung und keine Flugfreigabe.</p>
 </aside>
 <aside class="side" id="media-panel" hidden>
 <h1>Medienimport</h1><p class="note">Bilder und Videos werden ausschließlich im privaten Pi-Arbeitsbereich gespeichert. Maximal 25 MiB je Datei.</p>
@@ -297,11 +342,29 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <main class="content">
 <section class="pane active" id="map-pane">
 <div id="map" role="application" aria-label="Interaktive Missionskarte"></div>
-<div class="map-bar">
-<select id="map-layer" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
-<button id="map-zoom-in">+</button><button id="map-zoom-out">−</button><button id="map-home" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button><button id="map-fit">Mission zentrieren</button>
+<div class="map-bar" id="map-toolbar" data-compact="true">
+<button id="map-focus-toggle" type="button" class="map-primary" aria-pressed="false">Kartenfokus</button>
+<button id="map-tools-toggle" type="button" class="map-primary" aria-expanded="false" aria-controls="map-tools-details">Werkzeuge</button>
+<button id="wayline-preview-fit" hidden type="button" class="map-primary">Route zentrieren</button>
+<button id="cloud-overview-map-open" hidden type="button" class="map-primary" aria-pressed="false">Alle Cloud-Routen</button>
+<div id="map-tools-details" class="map-extra" style="display:contents">
+<select id="map-layer" class="map-extra" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
+<button id="pilot2-map-toggle" class="map-extra" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button>
+<button id="wayline-preview-clear" hidden class="map-extra">Cloud-Vorschau schließen</button>
+<button id="map-zoom-in" class="map-extra">+</button><button id="map-zoom-out" class="map-extra">−</button>
+<button id="map-home" class="map-extra" title="Karte auf 76694 Forst (Baden) zurücksetzen">76694 Forst</button>
+<button id="map-fit" class="map-extra">Mission zentrieren</button>
+<button id="map-info-toggle" class="map-extra" type="button" aria-expanded="false" aria-controls="map-info">Hinweis zeigen</button>
 </div>
-<div class="map-info" id="map-info" role="status" aria-live="polite">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</div>
+</div>
+<section id="cloud-overview-panel" role="region" aria-label="Cloud-Waylines auf der Karte" hidden>
+  <div class="cloud-head"><strong>Cloud-Routen · nur lesen</strong><button id="cloud-overview-expand" type="button" aria-expanded="false" aria-controls="cloud-overview-list">Routen anzeigen</button><button id="cloud-overview-close" type="button">Schließen</button></div>
+  <p class="note" id="cloud-overview-status" role="status" aria-live="polite">Keine Cloud-Routen geladen.</p>
+  <button id="cloud-overview-fit" type="button" disabled>Alle sichtbaren Routen zentrieren</button>
+  <div id="cloud-overview-list" aria-label="Routen ein- oder ausblenden"></div>
+  <p class="note cloud-overview-help">Linienlänge = horizontale WGS84-Segmentstrecke, keine Flugdistanz. Weiße Kreise: Linienanfang, farbige Kreise: Linienende. Keine Flugfreigabe oder Missionsänderung.</p>
+</section>
+<div class="map-info" id="map-info" role="status" aria-live="polite" data-minimized="false"><button id="map-info-chip" type="button" aria-expanded="false" aria-controls="map-info-detail">Karte · Hinweis anzeigen</button><span id="map-info-detail">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</span></div>
 </section>
 <section class="pane" id="terrain-pane">
 <div class="terrain-stage">
@@ -357,7 +420,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </section>
 <section class="pane" id="waylines-pane">
 <div class="pane-inner">
-<div class="page-head"><div><h1>Wayline-Bibliothek</h1><p class="muted">Cloud-Routen und Abgleich mit gespeicherten Studio-Missionen</p></div><button id="refresh-waylines">Routen aktualisieren</button></div>
+<div class="page-head"><div><h1>Wayline-Bibliothek</h1><p class="muted">Cloud-Routen und Abgleich mit gespeicherten Studio-Missionen</p></div><div class="button-row"><button id="wayline-overview-open" disabled>Alle lokalen Routen auf Karte (max. 8)</button><button id="refresh-waylines">Routen aktualisieren</button></div></div>
 <div class="wayline-tools">
 <label for="wayline-search">Routenname suchen<input id="wayline-search" type="search" autocomplete="off"></label>
 <button id="clear-wayline-search" disabled>Suche löschen</button>
@@ -367,12 +430,21 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <p id="wayline-range" class="note" role="status" aria-live="polite"></p>
 <div id="wayline-grid" class="wayline-grid" role="region" aria-label="Cloud-Routen"></div>
 <div class="button-row"><button id="wayline-prev" disabled>Vorherige Seite</button><span id="wayline-page">Seite 1</span><button id="wayline-next" disabled>Nächste Seite</button></div>
+<section id="pilot2-action-summary" class="wayline-tools" aria-labelledby="pilot2-action-title" style="display:block;margin-top:22px">
+  <div class="page-head"><div><h2 id="pilot2-action-title">Pilot-2-WPML-Diagnose (nur lesen)</h2><p class="muted">Anonyme Aktionszählung aus bis zu acht Cloud-Waylines. Kein Import, keine Ausführung und keine Flugfreigabe.</p></div>
+  <button id="pilot2-action-load">Aktionsdiagnose laden</button></div>
+  <p id="pilot2-action-status" class="status" role="status" aria-live="polite">Nur nach Klick: keine automatischen KMZ-Abrufe.</p>
+  <div id="pilot2-action-results" class="wayline-grid" role="region" aria-label="Anonyme DJI-Aktionsdiagnose"></div>
+</section>
 </div>
 </section>
 <section class="pane" id="fleet-pane">
 <div class="pane-inner">
 <div class="page-head"><div><h1>Flottenstatus</h1><p class="muted">Matrice 4T und weitere DJI-Geräte · Echtzeitstatus aus FlightHub 2</p></div></div>
 <div id="fleet-grid" class="fleet-grid"><div class="empty">Lokale Flottendaten werden geladen…</div></div>
+<div class="page-head" style="margin-top:24px"><div><h2>Direkte Pilot-2-Gerätetopologie</h2><p class="muted">Drohnen, Fernsteuerungen und Zuordnung aus der lokalen Cloud · nur lesen</p></div><button id="pilot2-topology-refresh">Pilot-2-Geräte laden</button></div>
+<div id="pilot2-topology-state" class="status" role="status" aria-live="polite">Daten werden nur nach Klick geladen.</div>
+<div id="pilot2-topology-grid" class="fleet-grid"></div>
 </div>
 </section>
 </main>
@@ -419,7 +491,10 @@ let editHistory=[],editIndex=-1,editGroup=null,cleanSnapshot=null;
 // Loading other saved missions does not modify this default for the next page load.
 const HOME_VIEW=Object.freeze({label:"76694 Forst (Baden)",latitude:49.1533,longitude:8.58417,zoom:15});
 const SATELLITE_TILE_URL="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-let map=null,lines=null,waypointsLayer=null,deviceLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
+let map=null,lines=null,waypointsLayer=null,deviceLayer=null,pilot2MapLayer=null,geoLayer=null,surveyLayer=null,photoLayer=null,terrainFootprintLayer=null,mapTile=null,mapTiles={},streetTileErrors=0;
+let pilot2LayerVisible=false,pilot2LayerRequest=0,waylinePreviewLayer=null,waylinePreviewRequest=0,waylinePreviewBounds=null;
+let cloudOverviewLayer=null,cloudOverviewGeneration=0,cloudOverviewController=null,cloudOverviewRoutes=[];
+const CLOUD_OVERVIEW_COLORS=["#ffb74d","#60b5ff","#82d39a","#df9eff","#ff7993","#66d8d5","#f3dc6d","#b8abff"];
 let geoObjects=[],geoDraft=[],geoDraw=false,geoEditingId=null,terrainGrid=null,terrainGeo=null,terrainLoadSerial=0,terrainProfile=null,studioSocket=null,studioFleetLoading=false;
 function notice(text,error=false){$("notice").textContent=text;$("notice").className="status"+(error?" error":"");}
 function statusMessage(text,error=false){
@@ -633,7 +708,12 @@ function getMap(){
   waypointsLayer=L.layerGroup().addTo(map);deviceLayer=L.layerGroup().addTo(map);
   geoLayer=L.layerGroup().addTo(map);surveyLayer=L.layerGroup().addTo(map);photoLayer=L.layerGroup().addTo(map);
   terrainFootprintLayer=L.layerGroup().addTo(map);
+  pilot2MapLayer=L.layerGroup(); // Off by default. Never mutates editable mission layers.
+  waylinePreviewLayer=L.layerGroup(); // Read-only cloud preview, separate from mission.
+  cloudOverviewLayer=L.layerGroup(); // Independently toggleable read-only cloud routes.
   map.on("click",event=>{
+    if((waylinePreviewLayer&&map.hasLayer(waylinePreviewLayer))||
+       (cloudOverviewLayer&&map.hasLayer(cloudOverviewLayer)))return; // no edits during either preview
     if(geoDraw){
       const lat=+event.latlng.lat.toFixed(7),lon=+(((((event.latlng.lng+540)%360)+360)%360)-180).toFixed(7);
       if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon))return;
@@ -649,10 +729,27 @@ function getMap(){
     selected=mission.waypoints.length-1;redraw();historyRecord();
   });
 }
-function mapWarning(text){
+function mapStatusSummary(text){
+  const message=String(text);
+  const routePrefix="Schreibgeschützte Cloud-Vorschau: ";
+  if(message.startsWith(routePrefix)){
+    const name=message.slice(routePrefix.length).split(" · ")[0];
+    return "Cloud-Vorschau: "+name;
+  }
+  if(message.includes("Cloud-Waylines in der Kartenübersicht"))return message.split(".")[0];
+  return message.split(".")[0];
+}
+function mapInfoMessage(text,warning=false){
+  // Keep full accessible details without a line-clamped box over Leaflet attribution.
+  const message=String(text);
   const banner=$("map-info");
-  banner.textContent=text;
-  banner.classList.add("warning");
+  $("map-info-detail").textContent=message;
+  $("map-info-chip").textContent="ℹ "+mapStatusSummary(message)+
+    (banner.dataset.minimized==="true"?" · Details":" · Weniger");
+  banner.classList.toggle("warning",warning);
+}
+function mapWarning(text){
+  mapInfoMessage(text,true);
 }
 function setMapLayer(kind){
   if(!map||!mapTiles[kind])return;
@@ -660,11 +757,58 @@ function setMapLayer(kind){
   streetTileErrors=0;
   mapTile=mapTiles[kind].addTo(map);
   $("map-layer").value=kind;
-  const banner=$("map-info");
-  banner.classList.remove("warning");
-  banner.textContent=kind==="satellite"
+  mapInfoMessage(kind==="satellite"
     ?"Startpunkt: 76694 Forst (Baden) · Satellitenbilder © Esri und Datenanbieter. Es werden ausschließlich sichtbare Kartenkacheln geladen."
-    :"Startpunkt: 76694 Forst (Baden) · Straßenkarte © OpenStreetMap-Mitwirkende. Nur die Seitenherkunft wird an den Kartenserver übertragen.";
+    :"Startpunkt: 76694 Forst (Baden) · Straßenkarte © OpenStreetMap-Mitwirkende. Nur die Seitenherkunft wird an den Kartenserver übertragen.",false);
+}
+async function togglePilot2MapLayer(){
+  if(!map||!pilot2MapLayer)throw new Error("Karte nicht verfügbar");
+  pilot2LayerVisible=!pilot2LayerVisible;
+  const request=++pilot2LayerRequest;
+  const button=$("pilot2-map-toggle");
+  button.setAttribute("aria-pressed",String(pilot2LayerVisible));
+  button.textContent=pilot2LayerVisible?"Pilot-2-Layer ausblenden":"Pilot-2-Layer einblenden";
+  if(!pilot2LayerVisible){
+    pilot2MapLayer.clearLayers();map.removeLayer(pilot2MapLayer);
+    mapWarning("Pilot-2-Layer ausgeblendet. Lokale Geo-Objekte und Missionen unverändert.");
+    return;
+  }
+  pilot2MapLayer.clearLayers();
+  pilot2MapLayer.addTo(map);
+  button.disabled=true;
+  try{
+    const response=await api("/api/v1/local-cloud/map-elements");
+    const data=await response.json();
+    if(request!==pilot2LayerRequest||!pilot2LayerVisible)return;
+    if(data.state!=="connected")throw new Error("Pilot-2-Layer: "+clean(data.state));
+    if(!Array.isArray(data.features))throw new Error("Ungültige Pilot-2-Kartenantwort");
+    // WGS84 GeoJSON from a bounded, validated and allowlisted server endpoint.
+    // Noninteractive: clicking Pilot marks must never add mission waypoints.
+    for(const feature of data.features){
+      if(!feature||!feature.geometry)continue;
+      L.geoJSON({type:"Feature",geometry:feature.geometry,properties:{}},{
+        interactive:false,
+        pointToLayer:(_feature,latlng)=>L.circleMarker(latlng,{radius:7,interactive:false})
+      }).addTo(pilot2MapLayer);
+    }
+    const groups=Array.isArray(data.groups)?data.groups:[];
+    const emptyGroups=groups.filter(group=>group.source_elements===0).length;
+    const emptyMessage=data.features.length===0&&Number(data.skipped_unsupported)===0
+      ?" Keine Kartengeometrien gemeldet.":"";
+    mapWarning("Pilot-2-Kartenebene: "+groups.length+" Gruppen, "+data.features.length+
+      " Objekte (nur lesen). "+emptyGroups+" leere Gruppen. "+
+      clean(data.skipped_unsupported)+" nicht unterstützte Objekte ausgelassen."+
+      emptyMessage+" Lokale Missionen bleiben unverändert.");
+  }catch(error){
+    if(request!==pilot2LayerRequest)return;
+    pilot2LayerVisible=false;
+    button.setAttribute("aria-pressed","false");
+    button.textContent="Pilot-2-Layer einblenden";
+    pilot2MapLayer.clearLayers();map.removeLayer(pilot2MapLayer);
+    mapWarning("Pilot-2-Kartenebene nicht verfügbar: "+errorMessage(error));
+  }finally{
+    if(request===pilot2LayerRequest)button.disabled=false;
+  }
 }
 function centerOnForst(){
   if(!map)return;
@@ -1060,7 +1204,8 @@ let waylineData=null,waylinePage=1,waylineSerial=0,waylineAbort=null;
 const WAYLINE_PAGE_SIZE=12;
 function waylineModel(key){
   const names={"0-77-0":"Mavic 3E","0-77-1":"Mavic 3T","0-77-2":"Mavic 3M","0-77-3":"Mavic 3TA",
-    "0-99-0":"Matrice 4E","0-99-1":"Matrice 4T"};
+    "0-99-0":"Matrice 4E","0-99-1":"Matrice 4T",
+    "2-144-0":"DJI RC Pro Enterprise","2-174-0":"DJI RC Plus 2"};
   return Object.prototype.hasOwnProperty.call(names,key)?names[key]:key||"Modell nicht übermittelt";
 }
 function waylineSource(provider){return provider==="pilot2-local-cloud"?"Lokale Pilot-2-Cloud":provider==="flighthub-public-v2"?"FlightHub":provider||"Unbekannte Quelle";}
@@ -1097,12 +1242,419 @@ function renderWaylines(){
     for(const value of [waylineModel(route.device_model_key),waylineType(route),waylineSource(route.provider),
       "Projekt / Workspace: "+clean(route.workspace_id||route.project_id),"Geändert: "+waylineTime(route),waylineCheck(route)])
       card.appendChild(els("p","",value));
+    if(route.provider==="pilot2-local-cloud"&&route.wayline_id){
+      const button=els("button","","Vorschau auf Karte (nur lesen)");
+      button.onclick=()=>previewCloudWayline(route,button);
+      card.appendChild(button);
+    }
     grid.appendChild(card);
   }
   if(waylineData&&!routes.length)grid.appendChild(els("p","empty",query||source!=="all"?"Keine Route passt zur Suche oder Quelle.":"Im aktuellen Datenstand sind keine Cloud-Routen enthalten. Quellenstatus oben beachten."));
   $("wayline-range").textContent=waylineData?(routes.length?`${start+1}–${Math.min(start+WAYLINE_PAGE_SIZE,routes.length)} von ${routes.length} Routen im geladenen Datenstand`:"0 Routen im gewählten Ausschnitt"):"";
   $("wayline-page").textContent=waylineData?`Seite ${waylinePage} von ${pages}`:"Seite –";
   $("wayline-prev").disabled=!waylineData||waylinePage<=1;$("wayline-next").disabled=!waylineData||waylinePage>=pages;
+  $("wayline-overview-open").disabled=!(waylineData?.local_pilot?.state==="connected"&&
+    waylineData.local_pilot.pagination_complete===true&&
+    waylineData.waylines.some(route=>route.provider==="pilot2-local-cloud"));
+  syncCloudOverviewShortcut();
+}
+// Leaflet must measure the newly revealed map on mobile before computing fit zoom.
+function fitWaylineMapBounds(bounds,isCurrent){
+  if(!bounds||!bounds.isValid())return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(!isCurrent()||!map||!$("map-pane").classList.contains("active"))return;
+    map.invalidateSize({pan:false});
+    const container=map.getContainer();
+    if(!container||container.clientWidth<60||container.clientHeight<60)return;
+    map.fitBounds(bounds.pad(.18),{maxZoom:17,animate:false});
+  }));
+}
+function centerCloudWaylinePreview(){
+  fitWaylineMapBounds(waylinePreviewBounds,()=>waylinePreviewBounds!==null&&
+    waylinePreviewLayer!==null&&map.hasLayer(waylinePreviewLayer));
+}
+function clearCloudWaylinePreview(){
+  ++waylinePreviewRequest;
+  waylinePreviewBounds=null;
+  $("wayline-preview-fit").hidden=true;
+  if(waylinePreviewLayer){waylinePreviewLayer.clearLayers();if(map)map.removeLayer(waylinePreviewLayer);}
+  $("wayline-preview-clear").hidden=true;
+  if(map)mapWarning("Cloud-Wayline-Vorschau ausgeblendet. Keine Missionsdaten verändert.");
+}
+async function previewCloudWayline(route,button){
+  closeCloudOverview(true);
+  const request=++waylinePreviewRequest;
+  waylinePreviewBounds=null;
+  $("wayline-preview-fit").hidden=true;
+  if(waylinePreviewLayer){waylinePreviewLayer.clearLayers();if(map)map.removeLayer(waylinePreviewLayer);}
+  $("wayline-preview-clear").hidden=true;
+  button.disabled=true;
+  $("wayline-state").className="status";
+  $("wayline-state").textContent="KMZ-Vorschau wird schreibgeschützt gelesen…";
+  try{
+    const response=await api("/api/v1/local-cloud/waylines/"+
+      encodeURIComponent(route.wayline_id)+"/preview");
+    const data=await response.json();
+    if(request!==waylinePreviewRequest)return;
+    if(data.state!=="connected")throw new Error("Vorschau nicht verfügbar: "+clean(data.state));
+    if(!Array.isArray(data.features)||!data.features.length)throw new Error("Keine darstellbare KMZ-Geometrie");
+    switchTab("map-pane");getMap();
+    if(!map||!waylinePreviewLayer)throw new Error("Karte nicht verfügbar");
+    waylinePreviewLayer.clearLayers();waylinePreviewLayer.addTo(map);
+    for(const item of data.features){
+      if(!item||!item.geometry)continue;
+      L.geoJSON({type:"Feature",geometry:item.geometry,properties:{}},{
+        interactive:false,
+        style:()=>({color:"#ffb74d",weight:5,opacity:1}),
+        pointToLayer:(_item,latlng)=>L.circleMarker(latlng,{
+          radius:7,color:"#ffb74d",fillColor:"#fff",fillOpacity:1,interactive:false})
+      }).addTo(waylinePreviewLayer);
+    }
+    $("wayline-preview-clear").hidden=false;
+    const bounds=waylinePreviewLayer.getLayers().flatMap(layer=>
+      typeof layer.getBounds==="function"?[layer.getBounds()]:[]);
+    if(bounds.length){
+      const merged=L.latLngBounds([]);
+      for(const bound of bounds)if(bound.isValid())merged.extend(bound);
+      if(merged.isValid()){
+        waylinePreviewBounds=merged;
+        $("wayline-preview-fit").hidden=false;
+        fitWaylineMapBounds(merged,()=>request===waylinePreviewRequest&&
+          waylinePreviewBounds===merged&&map.hasLayer(waylinePreviewLayer));
+      }
+    }
+    mapWarning("Schreibgeschützte Cloud-Vorschau: "+clean(data.name)+" · "+
+      data.features.length+" Geometrie(n) aus "+clean(data.source)+
+      ". Keine Bearbeitung, keine Flugfreigabe.");
+  }catch(error){
+    if(request!==waylinePreviewRequest)return;
+    $("wayline-state").className="status error";
+    $("wayline-state").textContent=errorMessage(error)+
+      " · Cloud-KMZ bleibt unverändert. Kein Import in den Editor.";
+  }finally{
+    button.disabled=false;
+  }
+}
+
+
+function cloudOverviewLineStats(features){
+  // Never join separate WPML folders or count polygon boundaries as flight paths.
+  // Horizontal great-circle distance between neighboring points only.
+  const rad=Math.PI/180,earth=6371008.8;
+  let metres=0,segments=0,lines=0;
+  const endpoints=[];
+  const valid=point=>Array.isArray(point)&&point.length>=2&&
+    Number.isFinite(point[0])&&Number.isFinite(point[1])&&
+    Math.abs(point[0])<=180&&Math.abs(point[1])<=90;
+  for(const feature of features){
+    const geom=feature?.geometry;
+    if(geom?.type!=="LineString"||!Array.isArray(geom.coordinates))continue;
+    const coords=geom.coordinates;
+    if(coords.length<2||coords.length>1000||!coords.every(valid))continue;
+    lines++;
+    endpoints.push([coords[0],coords[coords.length-1]]);
+    for(let i=1;i<coords.length;i++){
+      const a=coords[i-1],b=coords[i];
+      const dLat=(b[1]-a[1])*rad,dLon=(b[0]-a[0])*rad;
+      const h=Math.sin(dLat/2)**2+Math.cos(a[1]*rad)*Math.cos(b[1]*rad)*Math.sin(dLon/2)**2;
+      metres+=2*earth*Math.asin(Math.sqrt(Math.min(1,Math.max(0,h))));
+      segments++;
+    }
+  }
+  return {distanceMeters:lines?metres:null,segmentCount:segments,lineCount:lines,endpoints};
+}
+function cloudOverviewFormatDistance(distance){
+  if(!Number.isFinite(distance)||distance<0)return "keine Linienlänge";
+  if(distance>=1000)return (distance/1000).toLocaleString("de-DE",{maximumFractionDigits:2})+" km";
+  return Math.round(distance)+" m";
+}
+function syncCloudOverviewShortcut(){
+  const button=$("cloud-overview-map-open");
+  const inventory=waylineData?.local_pilot;
+  const routes=(waylineData?.waylines||[]).filter(route=>
+    route.provider==="pilot2-local-cloud"&&route.wayline_id);
+  const available=inventory?.state==="connected"&&inventory.pagination_complete===true&&routes.length>0;
+  button.hidden=!available;
+  if(!available)return;
+  const showing=!$("cloud-overview-panel").hidden;
+  button.setAttribute("aria-pressed",String(showing));
+  button.textContent=showing?"Übersicht schließen":"Alle Cloud-Routen ("+Math.min(8,routes.length)+")";
+}
+function setCloudOverviewMinimized(minimized){
+  const panel=$("cloud-overview-panel"),button=$("cloud-overview-expand");
+  panel.dataset.minimized=String(minimized);
+  button.setAttribute("aria-expanded",String(!minimized));
+  button.textContent=minimized?"Routen anzeigen":"Routen verbergen";
+}
+function setMapToolsExpanded(expanded){
+  const toolbar=$("map-toolbar"),button=$("map-tools-toggle");
+  toolbar.dataset.compact=String(!expanded);
+  button.setAttribute("aria-expanded",String(expanded));
+  button.textContent=expanded?"Weniger":"Werkzeuge";
+}
+function setMapInfoExpanded(expanded){
+  $("map-info").dataset.minimized=String(!expanded);
+  $("map-info-detail").hidden=!expanded;
+  $("map-info-chip").setAttribute("aria-expanded",String(expanded));
+  $("map-info-chip").textContent="ℹ "+mapStatusSummary($("map-info-detail").textContent)+
+    (expanded?" · Weniger":" · Details");
+  $("map-info-toggle").setAttribute("aria-expanded",String(expanded));
+  $("map-info-toggle").textContent=expanded?"Hinweis kürzen":"Hinweis zeigen";
+}
+function refreshMobileMapSize(){
+  if(!map)return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(map)map.invalidateSize({pan:false});
+  }));
+}
+function setMapFocus(enabled){
+  document.body.classList.toggle("map-focus-active",enabled);
+  const button=$("map-focus-toggle");
+  button.setAttribute("aria-pressed",String(enabled));
+  button.textContent=enabled?"Kartenfokus beenden":"Kartenfokus";
+  if(enabled&&$("map-pane").classList.contains("active")===false)switchTab("map-pane");
+  refreshMobileMapSize();
+}
+function closeCloudOverview(quiet=false){
+  ++cloudOverviewGeneration;
+  if(cloudOverviewController)cloudOverviewController.abort();
+  cloudOverviewController=null;
+  cloudOverviewRoutes=[];
+  if(cloudOverviewLayer){
+    cloudOverviewLayer.clearLayers();
+    if(map)map.removeLayer(cloudOverviewLayer);
+  }
+  $("cloud-overview-list").replaceChildren();
+  $("cloud-overview-panel").hidden=true;
+  $("cloud-overview-fit").disabled=true;
+  syncCloudOverviewShortcut();
+  setCloudOverviewMinimized(true);
+  if(!quiet&&map)mapWarning("Cloud-Routenübersicht geschlossen. Missionen unverändert.");
+}
+function fitCloudRoutes(entry=null){
+  if(!map)return;
+  const items=entry?[entry]:cloudOverviewRoutes.filter(route=>route.visible&&route.layer);
+  const valid=items.map(route=>route.layer?.getBounds()).filter(bounds=>bounds&&bounds.isValid());
+  if(!valid.length)return;
+  const bounds=L.latLngBounds([]);
+  for(const item of valid)bounds.extend(item);
+  // Share the mobile map-size guard with single KMZ previews. No stale fit after closing.
+  if(bounds.isValid()){
+    const generation=cloudOverviewGeneration;
+    fitWaylineMapBounds(bounds,()=>generation===cloudOverviewGeneration&&
+      cloudOverviewLayer!==null&&map.hasLayer(cloudOverviewLayer)&&
+      (!entry||entry.visible));
+  }
+}
+function renderCloudOverview(){
+  const list=$("cloud-overview-list");list.replaceChildren();
+  let loaded=0,failed=0,visible=0,points=0,totalLength=0,measured=0;
+  const loading=cloudOverviewRoutes.find(route=>route.state==="loading");
+  for(const entry of cloudOverviewRoutes){
+    if(entry.state==="connected"){
+      loaded++;points+=entry.pointCount;if(entry.visible)visible++;
+      if(Number.isFinite(entry.distanceMeters)){totalLength+=entry.distanceMeters;measured++;}
+    }
+    else if(entry.state!=="loading")failed++;
+    const card=els("div","cloud-route-row");
+    const label=els("label");
+    const checkbox=els("input");checkbox.type="checkbox";
+    checkbox.checked=entry.visible;checkbox.disabled=entry.state!=="connected";
+    checkbox.onchange=()=>{
+      entry.visible=checkbox.checked;
+      if(entry.visible)cloudOverviewLayer.addLayer(entry.layer);
+      else cloudOverviewLayer.removeLayer(entry.layer);
+      renderCloudOverview();
+    };
+    label.appendChild(checkbox);
+    const color=els("span","swatch");color.style.backgroundColor=entry.color;
+    color.setAttribute("aria-hidden","true");label.appendChild(color);
+    label.appendChild(els("span","",entry.name));
+    card.appendChild(label);
+    const zoom=els("button","","Zoom");
+    zoom.type="button";zoom.disabled=entry.state!=="connected";
+    zoom.onclick=()=>{
+      if(!entry.visible){entry.visible=true;cloudOverviewLayer.addLayer(entry.layer);}
+      fitCloudRoutes(entry);renderCloudOverview();
+    };
+    card.appendChild(zoom);
+    const detail=entry.state==="connected"
+      ?entry.pointCount+" Punkte · "+entry.featureCount+" Geometrien"
+      :entry.state==="loading"?"KMZ wird geladen…":"Nicht verfügbar: "+entry.state;
+    card.appendChild(els("div","cloud-route-detail",detail));
+    if(entry.state==="connected"){
+      const metrics=els("div","cloud-route-metrics");
+      metrics.appendChild(els("span","",entry.lineCount+" Linien · "+entry.segmentCount+" Segmente"));
+      metrics.appendChild(els("span","","Horizontale Linienlänge: "+
+        cloudOverviewFormatDistance(entry.distanceMeters)));
+      card.appendChild(metrics);
+    }
+    list.appendChild(card);
+  }
+  $("cloud-overview-fit").disabled=visible===0;
+  $("cloud-overview-status").textContent=loaded+"/"+cloudOverviewRoutes.length+
+    " Routen gelesen · "+visible+" sichtbar · "+points+" Punkte gelesen"+
+    (measured?" · Σ Linienlängen: "+cloudOverviewFormatDistance(totalLength):"")+
+    (failed?" · "+failed+" nicht verfügbar":"")+
+    (loading?" · Lade: "+loading.name:"")+".";
+}
+async function openCloudOverview(){
+  // No automatic requests: use only a verified, fully enumerated local inventory.
+  const pilot=waylineData?.local_pilot;
+  if(pilot?.state!=="connected"||pilot.pagination_complete!==true){
+    $("wayline-state").className="status error";
+    $("wayline-state").textContent="Vollständiger Pilot-2-Bestand erforderlich. Routen aktualisieren.";
+    return;
+  }
+  const seen=new Set();
+  const routes=waylineData.waylines.filter(route=>{
+    if(route.provider!=="pilot2-local-cloud"||!route.wayline_id||seen.has(route.wayline_id))return false;
+    seen.add(route.wayline_id);return true;
+  }).slice(0,8);
+  if(!routes.length)return;
+  closeCloudOverview(true);
+  clearCloudWaylinePreview();
+  switchTab("map-pane");getMap();
+  if(!map||!cloudOverviewLayer){
+    $("wayline-state").className="status error";
+    $("wayline-state").textContent="Kartenbibliothek nicht verfügbar.";
+    return;
+  }
+  const generation=++cloudOverviewGeneration;
+  const controller=new AbortController();
+  cloudOverviewController=controller;
+  cloudOverviewRoutes=routes.map((route,index)=>({
+    id:route.wayline_id,name:route.name||"Unbenannte Route",
+    color:CLOUD_OVERVIEW_COLORS[index],state:"loading",
+    pointCount:0,featureCount:0,distanceMeters:null,lineCount:0,segmentCount:0,visible:false,layer:null
+  }));
+  cloudOverviewLayer.clearLayers();cloudOverviewLayer.addTo(map);
+  $("cloud-overview-panel").hidden=false;
+  syncCloudOverviewShortcut();
+  setCloudOverviewMinimized(typeof window!=="undefined"&&window.matchMedia("(max-width:700px)").matches);
+  renderCloudOverview();
+  for(const entry of cloudOverviewRoutes){
+    if(generation!==cloudOverviewGeneration||controller.signal.aborted)break;
+    const timer=setTimeout(()=>controller.abort(),26000);
+    try{
+      const response=await api("/api/v1/local-cloud/waylines/"+
+        encodeURIComponent(entry.id)+"/preview",{signal:controller.signal});
+      const data=await response.json();
+      if(generation!==cloudOverviewGeneration||controller.signal.aborted)break;
+      if(data.state!=="connected")throw new Error(clean(data.state));
+      if(!Array.isArray(data.features)||!data.features.length||data.features.length>32)
+        throw new Error("Keine darstellbare Geometrie");
+      const stats=cloudOverviewLineStats(data.features);
+      const layer=L.featureGroup();
+      for(const feature of data.features){
+        if(!feature||!feature.geometry)throw new Error("Ungültige Kartengeometrie");
+        L.geoJSON({type:"Feature",geometry:feature.geometry,properties:{}},{
+          interactive:false,
+          style:()=>({color:entry.color,weight:4,opacity:.9}),
+          pointToLayer:(_feature,latlng)=>L.circleMarker(latlng,{
+            color:entry.color,fillColor:entry.color,radius:6,interactive:false})
+        }).addTo(layer);
+      }
+      // Endpoint symbols describe WPML geometry segments, NOT takeoff or landing.
+      for(const [start,end] of stats.endpoints){
+        L.circleMarker([start[1],start[0]],{radius:5,color:entry.color,
+          fillColor:"#ffffff",fillOpacity:1,weight:2,interactive:false}).addTo(layer);
+        L.circleMarker([end[1],end[0]],{radius:7,color:entry.color,
+          fillColor:entry.color,fillOpacity:1,weight:2,interactive:false}).addTo(layer);
+      }
+      entry.distanceMeters=stats.distanceMeters;
+      entry.segmentCount=stats.segmentCount;
+      entry.lineCount=stats.lineCount;
+      entry.layer=layer;
+      entry.pointCount=Number.isInteger(data.point_count)?data.point_count:0;
+      entry.featureCount=data.features.length;
+      entry.state="connected";entry.visible=true;
+      cloudOverviewLayer.addLayer(layer);
+    }catch(error){
+      if(generation!==cloudOverviewGeneration)break;
+      entry.state=controller.signal.aborted?"aborted":errorMessage(error);
+    }finally{
+      clearTimeout(timer);
+      if(generation===cloudOverviewGeneration)renderCloudOverview();
+    }
+  }
+  if(generation!==cloudOverviewGeneration)return;
+  cloudOverviewController=null;
+  const count=cloudOverviewRoutes.filter(route=>route.state==="connected").length;
+  if(count)fitCloudRoutes();
+  $("cloud-overview-status").textContent+=controller.signal.aborted
+    ?" Abruf abgebrochen oder Zeitlimit erreicht.":" Ansicht ausschließlich schreibgeschützt.";
+  mapWarning(count+"/"+routes.length+" Cloud-Waylines in der Kartenübersicht verfügbar. "+
+    "Routen einzeln schaltbar; keine Flugfreigabe.");
+}
+
+let pilot2ActionController=null,pilot2ActionRequest=0;
+function clearPilot2ActionSummary(){
+  ++pilot2ActionRequest;
+  pilot2ActionController?.abort();
+  pilot2ActionController=null;
+  $("pilot2-action-load").disabled=false;
+  $("pilot2-action-results").replaceChildren();
+  $("pilot2-action-status").className="status";
+  $("pilot2-action-status").textContent="Nur nach Klick: keine automatischen KMZ-Abrufe.";
+}
+async function loadPilot2ActionSummary(){
+  const button=$("pilot2-action-load");
+  const status=$("pilot2-action-status");
+  const list=$("pilot2-action-results");
+  if(button.disabled)return;
+  const serial=++pilot2ActionRequest;
+  const controller=new AbortController();
+  pilot2ActionController=controller;
+  const timer=setTimeout(()=>controller.abort(),95000);
+  button.disabled=true;list.replaceChildren();
+  status.className="status";status.textContent="Anonyme WPML-Aktionsdiagnose wird lesend abgerufen…";
+  try{
+    const response=await api("/api/v1/studio/pilot2/action-summary",{signal:controller.signal});
+    const data=await response.json();
+    // A tab switch may cancel the scan after HTTP headers were received.
+    if(serial!==pilot2ActionRequest||controller.signal.aborted)return;
+    if(data?.state!=="connected"){
+      status.className="status error";
+      status.textContent="Pilot-2-Diagnose nicht verfügbar ("+clean(data?.state)+"). Es wurden keine Flugaktionen ausgeführt.";
+      return;
+    }
+    if(data.read_only!==true||data.flight_compatibility_verified!==false||
+       data.wpml_semantics_verified!==false||data.full_content_verified!==false||
+       !Array.isArray(data.anonymous_types)||!Array.isArray(data.waylines)||
+       !Number.isInteger(data.checked)||data.checked<1||data.checked>8||
+       data.total!==data.checked||data.waylines.length!==data.checked||
+       !Number.isSafeInteger(data.recognized_actions)||data.recognized_actions<0||
+       !Number.isSafeInteger(data.unknown_actions)||data.unknown_actions<0){
+      throw new Error("Diagnoseformat unvollständig oder nicht schreibgeschützt.");
+    }
+    const count=Number(data.checked)||0;
+    status.className="status";
+    status.textContent=count+" Waylines geprüft · "+clean(data.recognized_actions)+
+      " Aktionen in der bekannten Typenliste und "+clean(data.unknown_actions)+
+      " nicht zugeordnete Aktionsvorkommen. WPML-Semantik und Flugkompatibilität nicht bestätigt.";
+    for(const entry of data.anonymous_types.slice(0,128)){
+      const card=els("article","wayline-card");
+      cardText(card,"h2","",clean(entry.alias));
+      cardText(card,"p","",clean(entry.occurrences)+" Vorkommen · "+clean(entry.file_count)+" Cloud-Dateien");
+      const triggers=entry.triggers&&typeof entry.triggers==="object"
+        ?Object.entries(entry.triggers).map(([key,val])=>key+": "+val).join(" · "):"–";
+      cardText(card,"p","muted","Auslöser: "+triggers);
+      list.appendChild(card);
+    }
+    cardText(list,"p","note","Nur anonymisierte Zähler. Kein unbearbeitetes WPML, keine Koordinaten, keine Übertragbarkeits- oder Flugfreigabe.");
+  }catch(err){
+    if(serial!==pilot2ActionRequest)return;
+    status.className="status error";
+    status.textContent=controller.signal.aborted
+      ?"Diagnose-Zeitlimit erreicht.":errorMessage(err);
+  }finally{
+    clearTimeout(timer);
+    if(serial===pilot2ActionRequest){
+      button.disabled=false;
+      pilot2ActionController=null;
+    }
+  }
 }
 function waylineSourceState(data){
   const state=data.local_pilot?.state||"not_configured";
@@ -1133,6 +1685,8 @@ async function loadWaylines(){
   }finally{clearTimeout(timer);if(serial===waylineSerial){$("refresh-waylines").disabled=false;$("wayline-grid").setAttribute("aria-busy","false");waylineAbort=null;}}
 }
 function switchTab(id){
+  if(id!=="waylines-pane")clearPilot2ActionSummary();
+  if(id!=="map-pane"&&id!=="geo-pane"&&document.body.classList.contains("map-focus-active"))setMapFocus(false);
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
   ["mission-panel","geo-panel","media-panel","fleet-panel","wayline-panel"].forEach((key,i)=>{
@@ -1141,7 +1695,11 @@ function switchTab(id){
   });
   const mapVisible=(id==="map-pane"||id==="geo-pane");
   $("map-pane").classList.toggle("active",mapVisible);
-  if(mapVisible&&map)setTimeout(()=>map.invalidateSize(),80);
+  if(mapVisible&&map){
+    // Recompute the visible map size before any new route fit; never pan on resize.
+    map.invalidateSize({pan:false});
+    setTimeout(()=>map?.invalidateSize({pan:false}),80);
+  }
   if(id==="waylines-pane"&&!waylineData&&!waylineAbort)loadWaylines();
 }
 async function loadWorkspace(){
@@ -1300,6 +1858,48 @@ async function loadFleet(){
     }
   }
   return data.devices;
+}
+async function loadPilot2Topology(){
+  const status=$("pilot2-topology-state"),grid=$("pilot2-topology-grid"),button=$("pilot2-topology-refresh");
+  button.disabled=true;grid.replaceChildren();
+  status.className="status";status.textContent="Lokale Pilot-2-Topologie wird abgefragt…";
+  try{
+    const response=await api("/api/v1/local-cloud/topology");
+    const data=await response.json();
+    if(data.state!=="connected")throw new Error("Pilot-2-Geräte: "+clean(data.state));
+    if(!Array.isArray(data.devices)||!Array.isArray(data.links))throw new Error("Ungültige Geräte-Topologie");
+    const online=data.devices.filter(device=>device.online===true).length;
+    const offline=data.devices.filter(device=>device.online===false).length;
+    const unknown=data.devices.length-online-offline;
+    status.className="status"+(offline===0&&unknown===0?" good":"");
+    status.textContent=data.devices.length+" Geräte: "+online+" online, "+offline+
+      " offline, "+unknown+" unbekannt · "+data.links.length+
+      " Zuordnungen · Stand: "+clean(data.updated_at)+
+      " · Cloud-Momentaufnahme, keine automatische Flugsteuerung";
+    for(const item of data.devices){
+      const card=cardText(grid,"article","wayline-card");
+      cardText(card,"h2","",item.callsign||"DJI-Gerät");
+      cardText(card,"p","",item.role==="aircraft"?"Fluggerät":"Fernsteuerung");
+      const modelLabel=waylineModel(item.device_model_key);
+      cardText(card,"p","",clean(item.serial_number)+" · "+modelLabel+
+        (item.device_model_key&&modelLabel!==item.device_model_key?" ("+item.device_model_key+")":""));
+      cardText(card,"p","",item.online===true?"Online":item.online===false?"Offline":"Online-Status unbekannt");
+      const related=data.links.filter(link=>item.role==="aircraft"
+        ?link.aircraft_sn===item.serial_number
+        :link.controller_sn===item.serial_number);
+      const counterpartRole=item.role==="aircraft"?"controller":"aircraft";
+      const names=related.map(link=>{
+        const serial=counterpartRole==="controller"?link.controller_sn:link.aircraft_sn;
+        const match=data.devices.find(device=>device.role===counterpartRole&&device.serial_number===serial);
+        return match?.callsign||match?.device_model_key||serial;
+      });
+      cardText(card,"p","note",names.length?"Zugeordnet: "+names.join(", "):"Keine Zuordnung gemeldet");
+    }
+    if(!data.devices.length)cardText(grid,"div","empty","Keine Geräte in der lokalen Pilot-2-Topologie gemeldet.");
+  }catch(err){
+    grid.replaceChildren();status.className="status error";
+    status.textContent=errorMessage(err)+" · Prüfung der Sitzung und lokalen Cloud erforderlich.";
+  }finally{button.disabled=false;}
 }
 async function showFleetOnMap(){
   const devices=await loadFleet();
@@ -2066,6 +2666,28 @@ function wire(){
   });
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
   $("refresh-waylines").addEventListener("click",loadWaylines);
+  $("pilot2-action-load").addEventListener("click",()=>loadPilot2ActionSummary());
+  $("wayline-overview-open").addEventListener("click",()=>openCloudOverview().catch(err=>{
+    $("wayline-state").className="status error";$("wayline-state").textContent=errorMessage(err);
+  }));
+  $("cloud-overview-map-open").addEventListener("click",()=>{
+    if(!$("cloud-overview-panel").hidden){closeCloudOverview();return;}
+    openCloudOverview().catch(err=>mapWarning("Cloud-Übersicht: "+errorMessage(err)));
+  });
+  $("cloud-overview-close").addEventListener("click",()=>closeCloudOverview());
+  $("cloud-overview-expand").addEventListener("click",()=>setCloudOverviewMinimized(
+    $("cloud-overview-panel").dataset.minimized!=="true"));
+  $("map-tools-toggle").addEventListener("click",()=>setMapToolsExpanded(
+    $("map-toolbar").dataset.compact==="true"));
+  $("map-info-toggle").addEventListener("click",()=>setMapInfoExpanded(
+    $("map-info").dataset.minimized==="true"));
+  $("map-info-chip").addEventListener("click",()=>setMapInfoExpanded(
+    $("map-info").dataset.minimized==="true"));
+  $("map-focus-toggle").addEventListener("click",()=>setMapFocus(
+    !document.body.classList.contains("map-focus-active")));
+  setMapInfoExpanded(!window.matchMedia("(max-width:700px)").matches);
+  setMapToolsExpanded(false);
+  $("cloud-overview-fit").addEventListener("click",()=>fitCloudRoutes());
   $("wayline-search").addEventListener("input",()=>{waylinePage=1;renderWaylines();});
   $("wayline-source").addEventListener("change",()=>{waylinePage=1;renderWaylines();});
   $("clear-wayline-search").addEventListener("click",()=>{$("wayline-search").value="";waylinePage=1;renderWaylines();$("wayline-search").focus();});
@@ -2096,6 +2718,9 @@ function wire(){
   $("map-zoom-in").addEventListener("click",()=>map?.zoomIn());$("map-zoom-out").addEventListener("click",()=>map?.zoomOut());
   $("map-layer").addEventListener("change",e=>setMapLayer(e.target.value));
   $("map-home").addEventListener("click",centerOnForst);
+  $("wayline-preview-clear").addEventListener("click",clearCloudWaylinePreview);
+  $("wayline-preview-fit").addEventListener("click",centerCloudWaylinePreview);
+  $("pilot2-map-toggle").addEventListener("click",()=>togglePilot2MapLayer().catch(err=>mapWarning(errorMessage(err))));
   $("apply-point").addEventListener("click",()=>{
     const p=mission.waypoints[selected];if(!p)return;
     const lat=Number($("point-lat").value),lon=Number($("point-lon").value);
@@ -2171,6 +2796,7 @@ function wire(){
   $("more-media").addEventListener("click",()=>{displayMedia+=20;renderMedia().catch(()=>{});});
   $("preview-close").addEventListener("click",closePreview);$("media-dialog").addEventListener("close",closePreview);
   $("refresh-fleet").addEventListener("click",()=>loadFleet().catch(err=>$("fleet-notice").textContent=err.message));
+  $("pilot2-topology-refresh").addEventListener("click",loadPilot2Topology);
   $("show-fleet-map").addEventListener("click",()=>showFleetOnMap().catch(err=>notice(err.message,true)));
   getMap();redraw();historyReset();
 }
