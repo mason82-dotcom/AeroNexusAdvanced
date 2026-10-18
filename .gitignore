@@ -3,8 +3,35 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .env
+# Private env variants are never committed; only the public template is tracked.
+.env.*
+!.env.example
 *.egg-info/
 logs/
+*.log
+*.pid
+
+# Local development, testing, packaging and browser artifacts.
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+node_modules/
+playwright-report/
+test-results/
+.idea/
+.vscode/
+.DS_Store
+
+# Local application state, SQLite sidecars and journals.
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
 config/pki/
 
 # DJI local Cloud API server migration: private passwords, licenses, databases,
