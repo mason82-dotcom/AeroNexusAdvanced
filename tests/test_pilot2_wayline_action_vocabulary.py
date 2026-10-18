@@ -167,6 +167,66 @@ def test_official_additional_fields_are_presence_only_and_never_leak_values():
     assert result["flight_compatibility_verified"] is False
 
 
+def with_substituted_action(data, old, new):
+    dest = BytesIO()
+    with ZipFile(BytesIO(data)) as src, ZipFile(dest, "w") as out:
+        for path in src.namelist():
+            content = src.read(path)
+            if path == "wpmz/waylines.wpml":
+                assert old.encode() in content
+                content = content.replace(old.encode(), new.encode())
+            out.writestr(path, content)
+    return dest.getvalue()
+
+
+def test_field_aliases_correlate_unknown_tag_across_two_unknown_actions():
+    a = param_archive(unknown_tag=True, nonstandard_ns=True)
+    b = with_substituted_action(
+        param_archive(unknown_tag=True), "privateActionNeverExpose",
+        "privateActionDifferent")
+    report = av._aggregate_action_records(
+        [(1, a), (2, b)], parameter_hints=True, field_aliases=True)
+    assert report["anonymous_types"][0]["unknown_field_alias_counts"] == {"P01": 1}
+    assert report["anonymous_types"][1]["unknown_field_alias_counts"] == {"P01": 1}
+    assert report["anonymous_types"][0]["foreign_namespace_field_count"] == 1
+    assert report["anonymous_types"][1]["foreign_namespace_field_count"] == 0
+    assert report["unknown_field_aliases"] == [{
+        "id": "P01", "occurrences": 2,
+        "file_count": 2, "action_aliases": ["A01", "A02"],
+    }]
+    assert report["field_alias_scope"] == "single_invocation_only"
+    encoded = json.dumps(report)
+    for secret in (
+        "vendorSecretTag", "TOP-SECRET-VALUE", "NEVER-EXPOSE-ABC789",
+        "privateActionNeverExpose", "privateActionDifferent",
+        "urn:unsafe", "hidden-text",
+    ):
+        assert secret not in encoded
+    assert report["full_content_verified"] is False
+
+
+def test_field_aliases_require_explicit_parameter_hints():
+    with pytest.raises(ValueError, match="require parameter hints"):
+        av._aggregate_action_records(
+            [(1, param_archive(unknown_tag=True))], field_aliases=True)
+
+
+def test_field_alias_limit_fails_closed(monkeypatch):
+    monkeypatch.setattr(av, "MAX_FIELD_ALIASES", 0)
+    with pytest.raises(LocalWaylineError, match="unsupported_geometry"):
+        av._aggregate_action_records(
+            [(1, param_archive(unknown_tag=True))],
+            parameter_hints=True, field_aliases=True)
+
+
+def test_without_field_aliases_no_private_field_correlation_output():
+    report = av._aggregate_action_records(
+        [(1, param_archive(unknown_tag=True))], parameter_hints=True)
+    assert "unknown_field_aliases" not in report
+    assert "field_alias_scope" not in report
+    assert "unknown_field_alias_counts" not in report["anonymous_types"][0]
+
+
 def test_parameter_hints_off_keeps_existing_response_shape():
     report = av._aggregate_action_records([(1, param_archive())])
     entry = report["anonymous_types"][0]
