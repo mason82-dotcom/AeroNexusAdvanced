@@ -16,6 +16,8 @@ Lokales DJI-Daten- und Auswertungsportal auf Basis von Python/FastAPI für einen
 | `/multispectral` | Mavic-3M-Bänder, Indizes, Verarbeitung und Export | Ergebnisse hängen von Eingangsqualität, Kalibrierung und installierten Abhängigkeiten ab |
 | `/results` | Raster-/GeoTIFF-/COG-Katalog und Kartenkacheln | Abhängigkeit von optionalen Raster-/GDAL-Komponenten |
 
+Der auf GitHub integrierte HMS-Verlauf aus PR #65 speichert normalisierte HMS-Zustandswechsel in einer privaten, begrenzten SQLite-Chronik und stellt dafür eine geschützte Lese-API bereit. Ein produktiver Pi-Rollout ist damit noch nicht bestätigt.
+
 Details: [Live-Cockpit](docs/live-telemetry-cockpit.md), [Missions- und Wayline-Abgleich](docs/mission-wayline-reconciliation.md), [DJI-HMS](docs/dji-cloudapi-hms.md), [MinIO-Medien](docs/phase-21-dji-minio-media.md).
 
 ## Datenquellen und Sicherheitsgrenzen
