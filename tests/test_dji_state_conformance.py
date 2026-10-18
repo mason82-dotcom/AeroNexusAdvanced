@@ -28,6 +28,22 @@ def test_distance_limit_is_read_only_normalized_and_validated():
     assert "must-not-appear" not in json.dumps(data)
 
 
+def test_additional_aircraft_safety_codes_are_kept_separate():
+    raw = {
+        "distance_limit_status": {"state": 0, "is_near_distance_limit": 1},
+        "rth_altitude": 100, "rc_lost_action": 2,
+    }
+    data = normalize_details("aircraft", raw)
+    assert data["distance_limit"] == {"state_code": 0, "near_limit": True}
+    assert data["rth_altitude_m"] == 100
+    assert data["rc_lost_action_code"] == 2
+    assert validate_details(data) == data
+    with pytest.raises(ValueError):
+        normalize_details("aircraft", {"rth_altitude": 501})
+    with pytest.raises(ValueError):
+        normalize_details("aircraft", {"rc_lost_action": 3})
+
+
 @pytest.mark.parametrize("value", [14, 8001, 18.5, True, "x"])
 def test_distance_limit_out_of_range_rejected(value):
     with pytest.raises(ValueError):
