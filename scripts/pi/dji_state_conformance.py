@@ -35,6 +35,7 @@ EXPECTED = {
             "cloud_details.firmware_version",
             "cloud_details.firmware_compatible_status_code",
             "cloud_details.firmware_upgrade_status_code",
+            "cloud_details.rth_mode_code",  # observed on real Matrice 4T
             "cloud_details.low_battery_warning_percent",
             "cloud_details.critical_battery_warning_percent",
             "cloud_details.payload_control",
