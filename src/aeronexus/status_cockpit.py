@@ -146,6 +146,7 @@ COCKPIT_HTML = r"""
 COCKPIT_JS = r"""
 /* Protected status endpoint -> local-only UI. No DJI control actions. */
 let cockpitRows=[],cockpitChosen="",cockpitError=null;
+let cockpitOptionsSignature=null;
 const cockpitHistory=new Map();
 const cockpitMaxSamples=60;
 function cockpitKey(d){return JSON.stringify([d.provider,d.project_id,d.device_id]);}
@@ -564,19 +565,23 @@ function cockpitSelectRows(rows){
   const ordered=[...cockpitRows].sort((a,b)=>
     (a.kind==="aircraft"?0:1)-(b.kind==="aircraft"?0:1)
     ||String(a.name||"").localeCompare(String(b.name||""),"de"));
-  select.replaceChildren();
-  for(const dev of ordered){
-    const opt=document.createElement("option");
-    opt.value=cockpitKey(dev);
-    opt.textContent=(dev.kind==="aircraft"?"Drohne · ":"RC · ")+
-      (dev.name||"Unbenannt")+" · "+dev.provider;
-    select.appendChild(opt);
+  const signature=JSON.stringify(ordered.map(d=>[cockpitKey(d),d.name,d.kind]));
+  if(signature!==cockpitOptionsSignature){
+    select.replaceChildren();
+    for(const dev of ordered){
+      const opt=document.createElement("option");
+      opt.value=cockpitKey(dev);
+      opt.textContent=(dev.kind==="aircraft"?"Drohne · ":"RC · ")+
+        (dev.name||"Unbenannt")+" · "+dev.provider;
+      select.appendChild(opt);
+    }
+    if(!ordered.length){
+      const opt=document.createElement("option");opt.value="";opt.textContent="Keine Geräte verfügbar";
+      select.appendChild(opt);
+    }
+    cockpitOptionsSignature=signature;
   }
-  if(!ordered.length){
-    const opt=document.createElement("option");opt.value="";opt.textContent="Keine Geräte verfügbar";
-    select.appendChild(opt);cockpitChosen="";
-    return null;
-  }
+  if(!ordered.length){cockpitChosen="";return null;}
   cockpitChosen=ordered.some(x=>cockpitKey(x)===old)?old:cockpitKey(ordered[0]);
   select.value=cockpitChosen;
   return ordered.find(x=>cockpitKey(x)===cockpitChosen);
