@@ -63,3 +63,32 @@ PYTHONPATH=src .venv/bin/python -m pytest -q \
 Alle Tests laufen mit synthetischen, lokalen Koordinaten. Weitere
 isolierte Pi-Chromium-Tests vor einem Merge erforderlich. Während
 der Entwicklung bleibt der produktive Raspberry-Pi-Dienst unverändert.
+
+## Raspberry-Pi-Integrationstest (nur separater Staging-Server)
+
+Nach erfolgreicher CI im isolierten PR-Worktree:
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced-pr74
+export AERONEXUS_CHROMIUM_BIN=/usr/bin/chromium
+export AERONEXUS_LEAFLET_TEST_ASSETS="$HOME/.cache/aeronexusadvanced/leaflet-1.9.4"
+
+PY="$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python"
+PYTHONPATH=src "$PY" -m pytest -q \
+  tests/test_survey_turn_geometry.py \
+  tests/test_survey_turn_chromium.py \
+  tests/test_survey_route_preview.py
+
+~/Projekte/AeroNexusAdvanced-browser-venv/bin/python \
+  scripts/pi/studio_camera_staging_smoke.py \
+  --server-python "$PY" \
+  --route-preview --turn-radius 5 --require-tiles \
+  --screenshot /tmp/aeronexus-turn-geometry-staging.png
+```
+
+Browser-Staging startet eine gesonderte FastAPI-Instanz ausschließlich auf
+`127.0.0.1:18081` mit synthetischem Polygon und leerem Missionsspeicher.
+Die Screenshot-/Kachelprüfung behält die 95-%-Rasterabdeckungsgrenze.
+Die Auswertung kontrolliert echte Leaflet-SVG-Linien und alle negativen
+Freigabestatus: Flug, Gelände, Hindernisse, Akku und RTH.
+Der produktive Port 8000 und DJI-Sitzungen werden nicht verändert.
