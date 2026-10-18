@@ -49,16 +49,18 @@ async function runRealLeafletSurvey(){
     'Leaflet DOM panes were not created');
   rCheck(getComputedStyle(document.querySelector('#map')).position==='relative',
     'Leaflet stylesheet not applied');
-  const original=mapTiles.satellite;
-  rCheck(map.hasLayer(original),'Satellite tile layer not present at startup');
-  setMapLayer('street');
-  rCheck(map.hasLayer(mapTiles.street)&&!map.hasLayer(original),
-    'Street map switch did not replace satellite layer');
+  const original=mapTiles.street;
+  rCheck(map.hasLayer(original),'OSM street tile layer not present at startup');
   rCheck(document.getElementById('map-layer').value==='street',
-    'Street map selection not reflected in UI');
+    'Street map is not the default in UI');
   setMapLayer('satellite');
-  rCheck(map.hasLayer(original)&&!map.hasLayer(mapTiles.street),
-    'Satellite map restore did not work');
+  rCheck(map.hasLayer(mapTiles.satellite)&&!map.hasLayer(original),
+    'Satellite map switch did not replace the street layer');
+  rCheck(document.getElementById('map-layer').value==='satellite',
+    'Satellite selection not reflected in UI');
+  setMapLayer('street');
+  rCheck(map.hasLayer(original)&&!map.hasLayer(mapTiles.satellite),
+    'Street map restore did not work');
 
   // Dispatch actual DOM click events to the real Leaflet map container.
   document.querySelector('nav button[data-tab="geo-pane"]').click();
