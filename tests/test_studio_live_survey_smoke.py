@@ -102,7 +102,8 @@ def test_api_get_and_preview_methods_only(monkeypatch):
 
     class Opener:
         def open(self, req, timeout):
-            events.append((req.get_method(), req.full_url, req.data))
+            events.append((req.get_method(), req.full_url, req.data,
+                           req.get_header("Origin")))
             if req.full_url.endswith("/health"):
                 return FakeResponse(b'{"status":"ok"}')
             if req.full_url.endswith("/studio"):
@@ -126,6 +127,8 @@ def test_api_get_and_preview_methods_only(monkeypatch):
         "polygon": chosen["object"], "spacing_m": 20, "bearing_deg": 0})
     assert smoke.validate_preview(response, chosen["object"])[0] == 4
     assert [x[0] for x in events] == ["GET", "GET", "GET", "POST"]
+    # Browser-equivalent CSRF protection: GET needs no Origin, preview POST does.
+    assert [x[3] for x in events] == [None, None, None, smoke.ORIGIN]
 
 
 def test_required_cli_ca_and_parameter_validation():
