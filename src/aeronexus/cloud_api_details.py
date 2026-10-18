@@ -144,6 +144,16 @@ AIRCRAFT = {
     'activation_time': ('activation_time_s', COUNT),
     'firmware_upgrade_status': ('firmware_upgrade_status_code', CODE),
     'compatible_status': ('firmware_compatible_status_code', CODE),
+    # DJI Pilot-to-Cloud aircraft properties: read-only projection, including
+    # writable-on-device settings observed on OSD/state. Never publish changes.
+    'wpmz_version': ('wayline_library_version', text),
+    'rth_altitude': ('return_home_altitude_m', number(0, 3000)),
+    'rc_lost_action': ('rc_signal_lost_action_code', number(0, 2, integer=True)),
+    'exit_wayline_when_rc_lost': ('wayline_rc_lost_action_code', number(0, 1, integer=True)),
+    'rid_state': ('remote_id_ok', switch),
+    'commander_mode_lost_action': ('commander_lost_action_code', number(0, 1, integer=True)),
+    'current_commander_flight_mode': ('commander_flight_mode_code', number(0, 1, integer=True)),
+    'commander_flight_height': ('commander_flight_height_m', number(0, 3000)),
 }
 COMMON = {'firmware_version': ('firmware_version', text)}
 BATTERY = {
@@ -157,6 +167,26 @@ PACK = {
     'loop_times': ('cycle_count', COUNT), 'high_voltage_storage_days': ('high_voltage_storage_days', COUNT),
     'type': ('type_code', CODE), 'sub_type': ('subtype_code', CODE),
     'firmware_version': ('firmware_version', text),
+}
+DISTANCE_LIMIT = {
+    'state': ('configured_code', number(0, 1, integer=True)),
+    'distance_limit': ('distance_limit_m', number(0, 8000)),
+    'is_near_distance_limit': ('near_distance_limit', switch),
+}
+# Identifiers (IMEI, EID, ICCID, phone/SIM tokens) are never copied.
+SIM_INFO = {
+    'telecom_operator': ('operator_code', number(0, 3, integer=True)),
+    'sim_type': ('sim_type_code', number(0, 2, integer=True)),
+}
+ESIM_INFO = {
+    'telecom_operator': ('operator_code', number(0, 3, integer=True)),
+    'enabled': ('enabled', switch),
+}
+DONGLE = {
+    'dongle_type': ('type_code', CODE),
+    'esim_activate_state': ('esim_activation_code', CODE),
+    'sim_card_state': ('sim_card_state_code', number(0, 1, integer=True)),
+    'sim_slot': ('sim_slot_code', number(0, 2, integer=True)),
 }
 RC = {
     'height': ('controller_height_m', number()),
@@ -258,11 +288,25 @@ def camera(data):
     return result
 
 
+def dongles(data):
+    """Copy only categorical cellular state; omit all unique SIM/hardware IDs."""
+    items = array(data, DONGLE, 8)
+    for row, source in zip(items, data):
+        if 'sim_info' in source and source['sim_info'] is not None:
+            info = mapped(source['sim_info'], SIM_INFO)
+            if info:
+                row['sim_info'] = info
+        if 'esim_infos' in source and source['esim_infos'] is not None:
+            row['esim_infos'] = array(source['esim_infos'], ESIM_INFO, 8)
+    return items
+
+
 def normalize_details(kind, data):
     aircraft = kind == 'aircraft'
     result = mapped(data, COMMON | (AIRCRAFT if aircraft else RC))
     if aircraft:
-        for wire, target, schema in [('battery', 'battery', BATTERY),
+        for wire, target, schema in [('distance_limit_status', 'distance_limit', DISTANCE_LIMIT),
+                                     ('battery', 'battery', BATTERY),
                                      ('position_state', 'position', {'quality': ('quality_code', CODE)}),
                                      ('storage', 'storage', STORAGE),
                                      ('obstacle_avoidance', 'obstacle_avoidance', OBSTACLES)]:
@@ -300,6 +344,8 @@ def normalize_details(kind, data):
                     raise ValueError('Payload control missing payload index')
             else:
                 result['payload_control'] = payload_control
+        if 'dongle_infos' in data:
+            result['dongles'] = dongles(data['dongle_infos'])
         if 'cameras' in data:
             cameras = data['cameras']
             if not isinstance(cameras, list) or len(cameras) > 16:
@@ -311,6 +357,8 @@ def normalize_details(kind, data):
         if len(models) == 1:
             result['aircraft_model_hint'] = models.pop()
     else:
+        if 'dongle_infos' in data:
+            result['dongles'] = dongles(data['dongle_infos'])
         for wire, schema in [('wireless_link', WIRELESS), ('live_capacity', CAPACITY)]:
             if wire in data and data[wire] is not None:
                 parsed = mapped(data[wire], schema)
@@ -333,6 +381,10 @@ def canonical_schema(mapping):
 DETAILS_SCHEMA = canonical_schema(COMMON | AIRCRAFT | RC) | {
  'battery': canonical_schema(BATTERY),
     'position': {'quality_code': CODE}, 'storage': canonical_schema(STORAGE),
+    'distance_limit': canonical_schema(DISTANCE_LIMIT),
+    'dongles': (canonical_schema(DONGLE) | {
+        'sim_info': canonical_schema(SIM_INFO),
+        'esim_infos': (canonical_schema(ESIM_INFO), 8)}, 8),
     'obstacle_avoidance': canonical_schema(OBSTACLES), 'battery_packs': (canonical_schema(PACK), 8),
     'maintenance': (canonical_schema(MAINTENANCE), 16), 'payloads': ('payloads', canonical_schema(PAYLOAD)),
     'payload_control': (canonical_schema(PAYLOAD_CONTROL), 16),
