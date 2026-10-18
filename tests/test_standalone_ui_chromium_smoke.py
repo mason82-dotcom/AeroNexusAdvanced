@@ -22,8 +22,9 @@ def test_entire_html_fixture_remains_read_only_and_has_dom_probe(name):
 
 
 @pytest.mark.parametrize("name", tuple(smoke.PAGES))
-def test_real_chromium_standalone_page_when_available(name):
+@pytest.mark.parametrize("viewport", [(1440, 900), (420, 860)], ids=["desktop", "mobile"])
+def test_real_chromium_standalone_page_when_available(name, viewport):
     if not smoke.browser_binary():
         pytest.skip("Chromium not installed; can run directly on Raspberry Pi")
-    result, detail = smoke.run_module(name)
+    result, detail = smoke.run_module(name, width=viewport[0], height=viewport[1])
     assert result == "pass", detail

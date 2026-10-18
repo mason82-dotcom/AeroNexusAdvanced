@@ -198,10 +198,11 @@ def run_module(name, width=1440, height=900):
 def main():
     failed = False
     for page in PAGES:
-        status, detail = run_module(page)
-        print(page + ": " + status.upper() + " (" + detail + ")")
-        if status != "pass":
-            failed = True
+        for label, width, height in (("Desktop", 1440, 900), ("Mobile", 420, 860)):
+            status, detail = run_module(page, width=width, height=height)
+            print(page + " / " + label + ": " + status.upper() + " (" + detail + ")")
+            if status != "pass":
+                failed = True
     return 1 if failed else 0
 
 

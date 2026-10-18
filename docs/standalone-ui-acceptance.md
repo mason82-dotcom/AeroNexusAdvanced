@@ -27,3 +27,5 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src \
 
 Alle sechs Module müssen PASS melden. Der Test greift auf keinen
 produktiven Dienst zu und führt keinerlei Schreiboperation aus.
+
+Getestete Viewports: Desktop 1440×900 und Mobil 420×860 für jedes Modul.
