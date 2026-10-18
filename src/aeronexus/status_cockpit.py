@@ -421,9 +421,9 @@ function cockpitRenderSafety(dev){
 function cockpitRenderHms(dev){
   const root=byId("cockpit-hms");root.replaceChildren();
   const alerts=Array.isArray(dev.health)?dev.health.slice(0,16):[];
-  if(!alerts.length){cardEl(root,"p","cockpit-empty",
-    "Keine HMS-Meldungen über diesen Datenpfad vorhanden. Das bedeutet nicht HMS-Entwarnung.");return;}
-  cardEl(root,"p","module-note","Zuletzt abgerufene HMS-Daten; Ereigniszeit und aktuelle Gültigkeit sind nicht belegt.");
+  if(!alerts.length)cardEl(root,"p","cockpit-empty",
+    "Keine aktuellen HMS-Meldungen über diesen Datenpfad. Das bedeutet nicht HMS-Entwarnung.");
+  else cardEl(root,"p","module-note","Aktueller HMS-Snapshot. MQTT-Eingangszeit ist nicht der Zeitpunkt des Fehlereintritts.");
   alerts.forEach(alert=>{
     const entry=cardEl(root,"div","hms-entry");
     const level=alert.level==="warning"?"Warnung":alert.level==="reminder"?"Hinweis":"Information";
@@ -439,6 +439,24 @@ function cockpitRenderHms(dev){
         " · Seriennummer des auslösenden Geräts nicht bestätigt.");
     if(alert.message_source==="dji-hms-catalog-en")
       cardEl(entry,"p","hms-secondary","Englischer DJI-Katalogtext (keine deutsche Übersetzung)");
+  });
+  // The backend compares complete validated snapshots; never derive HMS
+  // transitions from browser polling, which can miss intermediate states.
+  const history=Array.isArray(dev.hms_history)?dev.hms_history.slice(0,12):[];
+  cardEl(root,"h4","","HMS-Ereignishistorie · letzte "+history.length+" Änderungen");
+  cardEl(root,"p","module-note",
+    "AeroNexus-Empfangszeit in UTC; keine DJI-Flugfreigabe und keine bestätigte Fehlerbeginnzeit.");
+  if(!history.length)cardEl(root,"p","cockpit-empty","Noch keine dokumentierten HMS-Änderungen.");
+  const labels={appeared:"Aufgetreten",reappeared:"Wiederaufgetreten",
+    resolved:"Nicht mehr gemeldet",updated:"Priorität/Bereich geändert",
+    observed:"Nach Neustart erneut beobachtet"};
+  history.forEach(item=>{
+    const row=cardEl(root,"div","hms-entry");
+    row.dataset.level=item.level||"unknown";
+    cardEl(row,"b","",(labels[item.action]||"Änderung")+" · "+(item.code||"DJI HMS"));
+    cardEl(row,"p","hms-secondary",item.observed_at||"Zeit unbekannt");
+    if(item.message)cardEl(row,"p","hms-description",item.message);
+    if(item.level)cardEl(row,"p","hms-secondary","Priorität: "+item.level);
   });
 }
 function cockpitRenderDiagnostics(dev){
