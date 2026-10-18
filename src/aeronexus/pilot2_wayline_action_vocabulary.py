@@ -21,6 +21,26 @@ from .pilot2_wayline_preview import _download_kmz
 
 MAX_ENUM_LENGTH = 120
 MAX_ALIASES = 128
+# Allowlisted WPML field names from DJI's common-element documentation.
+# Existence only, NOT actual contents, semantic meaning or 1.0.6 support.
+# A field may occur in multiple action types.
+PARAMETER_FIELD_CATEGORIES = {
+    "payloadPositionIndex": "payload",
+    "payloadLensIndex": "camera_lens",
+    "useGlobalPayloadLensIndex": "camera_lens",
+    "fileSuffix": "media_naming",
+    "orientedFileSuffix": "media_naming",
+    "gimbalPitchRotateAngle": "gimbal",
+    "gimbalYawRotateAngle": "gimbal",
+    "gimbalRotateMode": "gimbal",
+    "gimbalPitchRotateEnable": "gimbal",
+    "focusX": "focus",
+    "focusY": "focus",
+    "zoomFocalLength": "zoom",
+    "hoverTime": "hover",
+    "aircraftHeading": "aircraft",
+}
+MAX_PARAM_FIELDS_PER_ACTION = 64
 
 
 def _text_or_missing(element):
@@ -30,6 +50,35 @@ def _text_or_missing(element):
     if len(value) > MAX_ENUM_LENGTH:
         raise LocalWaylineError("unsupported_geometry")
     return value or None
+
+
+def _action_param_hints(action, wpml_prefix):
+    """Classify only allowlisted XML tag names; never inspect parameter values."""
+    containers = action.findall(wpml_prefix + "actionActuatorFuncParam")
+    if not containers:
+        return ("absent", ())
+    if len(containers) != 1:
+        return ("ambiguous", ())
+    children = list(containers[0])
+    if len(children) > MAX_PARAM_FIELDS_PER_ACTION:
+        raise LocalWaylineError("invalid_archive")
+    if not children:
+        return ("empty", ())
+    categories = set()
+    unknown = False
+    for child in children:
+        if not isinstance(child.tag, str) or not child.tag.startswith(wpml_prefix):
+            unknown = True
+            continue
+        key = child.tag[len(wpml_prefix):]
+        label = PARAMETER_FIELD_CATEGORIES.get(key)
+        if label is None:
+            unknown = True
+        else:
+            categories.add(label)
+    if unknown:
+        categories.add("unclassified_fields_present")
+    return ("present", tuple(sorted(categories)))
 
 
 def _archive_action_records(kmz):
@@ -63,7 +112,7 @@ def _archive_action_records(kmz):
             for action in actions:
                 seen_actions += 1
                 records.append(("start", trigger, _text_or_missing(
-                    action.find(W + "actionActuatorFunc"))))
+                    action.find(W + "actionActuatorFunc")), _action_param_hints(action, W)))
         for waypoint in folder.findall(K + "Placemark"):
             waypoints += 1
             if waypoints > MAX_ELEMENTS:
@@ -77,14 +126,14 @@ def _archive_action_records(kmz):
                 for action in actions:
                     seen_actions += 1
                     records.append(("waypoint", trigger, _text_or_missing(
-                        action.find(W + "actionActuatorFunc"))))
+                        action.find(W + "actionActuatorFunc")), _action_param_hints(action, W)))
         if seen_actions > MAX_ACTIONS:
             raise LocalWaylineError("invalid_archive")
         records_by_route.append(records)
     return version, records_by_route
 
 
-def _aggregate_action_records(archives):
+def _aggregate_action_records(archives, *, parameter_hints=False):
     """Use per-call labels, not hashes, to correlate identical unknown enums.
 
     archives: list of (1-based inventory index, KMZ bytes) tuples. Does not
@@ -101,7 +150,7 @@ def _aggregate_action_records(archives):
         for route in routes:
             unknown_by_alias = Counter()
             recognized = Counter()
-            for location, trigger, raw_name in route:
+            for location, trigger, raw_name, hints in route:
                 if raw_name in DOCUMENTED_ACTION_TYPES:
                     recognized[raw_name] += 1
                     known_total += 1
@@ -118,12 +167,19 @@ def _aggregate_action_records(archives):
                     totals[alias] = {
                         "id": alias, "occurrences": 0, "files": set(),
                         "location_counts": Counter(), "trigger_counts": Counter(),
+                        "parameter_container_counts": Counter(),
+                        "parameter_category_counts": Counter(),
                     }
                 item = totals[alias]
                 item["occurrences"] += 1
                 item["files"].add(index)
                 item["location_counts"][location] += 1
                 item["trigger_counts"][trigger] += 1
+                if parameter_hints:
+                    container_state, categories = hints
+                    item["parameter_container_counts"][container_state] += 1
+                    for category in categories:
+                        item["parameter_category_counts"][category] += 1
             route_counts.append(dict(sorted(unknown_by_alias.items())))
         results.append({
             "index": index,
@@ -137,12 +193,18 @@ def _aggregate_action_records(archives):
     safe_totals = []
     for alias in aliases.values():
         item = totals[alias]
-        safe_totals.append({
+        entry = {
             "id": alias, "occurrences": item["occurrences"],
             "file_count": len(item["files"]),
             "location_counts": dict(sorted(item["location_counts"].items())),
             "trigger_counts": dict(sorted(item["trigger_counts"].items())),
-        })
+        }
+        if parameter_hints:
+            entry["parameter_container_counts"] = dict(
+                sorted(item["parameter_container_counts"].items()))
+            entry["parameter_category_counts"] = dict(
+                sorted(item["parameter_category_counts"].items()))
+        safe_totals.append(entry)
     return {"anonymous_types": safe_totals, "results": results,
             "unknown_action_total": sum(x["unknown_action_count"] for x in results),
             "recognized_action_total": sum(x["recognized_action_count"] for x in results),
@@ -151,7 +213,7 @@ def _aggregate_action_records(archives):
             "flight_compatibility_verified": False}
 
 
-async def diagnose_action_vocabulary(*, limit=8, inventory_reader=None,
+async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False, inventory_reader=None,
                                      kmz_reader=None, credentials_loader=None):
     if type(limit) is not int or not 1 <= limit <= 8:
         raise ValueError("invalid limit")
@@ -179,7 +241,7 @@ async def diagnose_action_vocabulary(*, limit=8, inventory_reader=None,
         except (LocalWaylineError, httpx.HTTPError, OSError, TimeoutError, ValueError, KeyError, TypeError):
             results.append({"index": index, "state": "unavailable_or_unsupported"})
     try:
-        report = _aggregate_action_records(seen)
+        report = _aggregate_action_records(seen, parameter_hints=parameter_hints)
     except (LocalWaylineError, ValueError, KeyError, TypeError):
         return {"inventory_state": "unsupported_geometry", "results": results}
     # Index is intentionally only the index in the verified inventory.
@@ -202,9 +264,12 @@ def main():
         "Opt-in local Pilot 2 action correlation; no actuator names, "
         "coordinates, UUIDs, KMZ, tokens or hashes in output. GET-only."))
     parser.add_argument("--limit", type=int, choices=range(1, 9), default=8)
+    parser.add_argument("--parameter-hints", action="store_true",
+                        help="Nur statische XML-Feldkategorien der unbekannten Aktionen zählen")
     args = parser.parse_args()
     try:
-        report = asyncio.run(diagnose_action_vocabulary(limit=args.limit))
+        report = asyncio.run(diagnose_action_vocabulary(
+            limit=args.limit, parameter_hints=args.parameter_hints))
     except KeyboardInterrupt:
         return 130
     print(json.dumps(report, ensure_ascii=False, indent=2))
