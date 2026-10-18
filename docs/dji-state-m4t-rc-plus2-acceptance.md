@@ -169,6 +169,51 @@ Protokollabnahme bleibt offen. Für eine gefahrlose Feldprüfung ausschließlich
 bekannte Feldpfade samt `channel` und `freshness` aus der bestehenden HTTPS-API
 anzeigen; keine Seriennummern, Positionen oder Rohpayloads ausgeben.
 
+## Zweiter Pi-Snapshot: OSD-Uhren plausibel, State-Felder fehlen
+
+Eine spätere API-Stichprobe zeigt bei `stale_after_seconds=45` jeweils ein
+`fresh`-Gerät und **46/46 frische OSD-Felder beim Fluggerät sowie 16/16 beim
+Controller**. Die DJI-OSD-Quellzeit ist gegenüber der Empfangszeit um
+ca. **0,41 s (Fluggerät) bzw. 0,45 s (RC) jünger** (gemessen als
+`source_age_seconds - age_seconds` = −0,41/−0,45 s). Dies spricht
+gegen einen durchgehend um ca. 22 Sekunden falsch laufenden Zeitgeber.
+Zur Zeit dieses zweiten Snapshots meldet `field_status` **0 State-Felder
+bei beiden Geräten**. Das belegt keine State-Störung: Inventar und
+Feld-Zeitstempel sind flüchtig und werden beim Prozessneustart neu aufgebaut;
+ohne neue zustandsgetriggerte Events bleiben entsprechende Felder aus.
+Ein tatsächlicher Prozessneustart zwischen den Snapshots ist noch nicht
+nachgewiesen. Die installierte Applikation stellt `live_feed.channels` noch
+nicht bereit.
+
+### Eigenständige read-only Topic-Beobachtung ohne Deployment
+
+Der neue `scripts/pi/dji_state_topic_observer.py` eröffnet eine zweite,
+temporäre MQTT-Sitzung ausschließlich mit dem schon vorhandenen dedizierten
+`aeronexus_osd`-Konto. Die Subscriber-ACL bleibt unverändert.
+Der Observer zählt nur **Nachrichten pro Topic-Kategorie** (`osd` und `state`),
+greift auf keine MQTT-Payloads zu und schreibt weder Protokolle noch
+Gerätekennungen. Der Publish-Aufruf ist zusätzlich lokal deaktiviert.
+Er bestätigt die beiden MQTT-SUBACKs und liefert ausschließlich anonyme
+Zahlen. Dafür muss der geänderte Server-Branch **nicht** deployed werden.
+
+Auf dem laufenden Pi (Produktions-Checkout bleibt unberührt):
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+git fetch origin pull/68/head
+git show FETCH_HEAD:scripts/pi/dji_state_topic_observer.py \
+  | PYTHONPATH=src .venv/bin/python - --env-file .env --seconds 120
+```
+
+Voraussetzung: `AERONEXUS_OSD_STATE_ENABLED=1`, bestehende .env mit Mode 0600,
+`paho-mqtt` und `python-dotenv` in der vorhandenen venv. Falls die
+Kanalzähler in den 120 Sekunden `state_messages: 0` zeigen, ist das
+**kein** Fehlernachweis (DJI sendet `state` nur bei Zustandsänderung).
+`state_messages > 0` bestätigt eine tatsächlich zugestellte
+MQTT-State-Nachricht am Broker unabhängig von deren Akzeptanz im Decoder.
+Das Tool muss nur bei am Boden stehendem Fluggerät verwendet werden; keine
+Flugeinstellungen zur künstlichen State-Erzeugung verändern.
+
 ## Verbindliche Hardwareabnahme (noch offen)
 
 1. **RC Plus 2 allein eingeschaltet:** tatsächlicher RC-OSD-Eingang,
