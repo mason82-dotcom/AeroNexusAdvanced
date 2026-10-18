@@ -430,6 +430,12 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <p id="wayline-range" class="note" role="status" aria-live="polite"></p>
 <div id="wayline-grid" class="wayline-grid" role="region" aria-label="Cloud-Routen"></div>
 <div class="button-row"><button id="wayline-prev" disabled>Vorherige Seite</button><span id="wayline-page">Seite 1</span><button id="wayline-next" disabled>Nächste Seite</button></div>
+<section id="pilot2-action-summary" class="wayline-tools" aria-labelledby="pilot2-action-title" style="display:block;margin-top:22px">
+  <div class="page-head"><div><h2 id="pilot2-action-title">Pilot-2-WPML-Diagnose (nur lesen)</h2><p class="muted">Anonyme Aktionszählung aus bis zu acht Cloud-Waylines. Kein Import, keine Ausführung und keine Flugfreigabe.</p></div>
+  <button id="pilot2-action-load">Aktionsdiagnose laden</button></div>
+  <p id="pilot2-action-status" class="status" role="status" aria-live="polite">Nur nach Klick: keine automatischen KMZ-Abrufe.</p>
+  <div id="pilot2-action-results" class="wayline-grid" role="region" aria-label="Anonyme DJI-Aktionsdiagnose"></div>
+</section>
 </div>
 </section>
 <section class="pane" id="fleet-pane">
@@ -1582,6 +1588,74 @@ async function openCloudOverview(){
     "Routen einzeln schaltbar; keine Flugfreigabe.");
 }
 
+let pilot2ActionController=null,pilot2ActionRequest=0;
+function clearPilot2ActionSummary(){
+  ++pilot2ActionRequest;
+  pilot2ActionController?.abort();
+  pilot2ActionController=null;
+  $("pilot2-action-load").disabled=false;
+  $("pilot2-action-results").replaceChildren();
+  $("pilot2-action-status").className="status";
+  $("pilot2-action-status").textContent="Nur nach Klick: keine automatischen KMZ-Abrufe.";
+}
+async function loadPilot2ActionSummary(){
+  const button=$("pilot2-action-load");
+  const status=$("pilot2-action-status");
+  const list=$("pilot2-action-results");
+  if(button.disabled)return;
+  const serial=++pilot2ActionRequest;
+  const controller=new AbortController();
+  pilot2ActionController=controller;
+  const timer=setTimeout(()=>controller.abort(),95000);
+  button.disabled=true;list.replaceChildren();
+  status.className="status";status.textContent="Anonyme WPML-Aktionsdiagnose wird lesend abgerufen…";
+  try{
+    const response=await api("/api/v1/studio/pilot2/action-summary",{signal:controller.signal});
+    const data=await response.json();
+    // A tab switch may cancel the scan after HTTP headers were received.
+    if(serial!==pilot2ActionRequest||controller.signal.aborted)return;
+    if(data?.state!=="connected"){
+      status.className="status error";
+      status.textContent="Pilot-2-Diagnose nicht verfügbar ("+clean(data?.state)+"). Es wurden keine Flugaktionen ausgeführt.";
+      return;
+    }
+    if(data.read_only!==true||data.flight_compatibility_verified!==false||
+       data.wpml_semantics_verified!==false||data.full_content_verified!==false||
+       !Array.isArray(data.anonymous_types)||!Array.isArray(data.waylines)||
+       !Number.isInteger(data.checked)||data.checked<1||data.checked>8||
+       data.total!==data.checked||data.waylines.length!==data.checked||
+       !Number.isSafeInteger(data.recognized_actions)||data.recognized_actions<0||
+       !Number.isSafeInteger(data.unknown_actions)||data.unknown_actions<0){
+      throw new Error("Diagnoseformat unvollständig oder nicht schreibgeschützt.");
+    }
+    const count=Number(data.checked)||0;
+    status.className="status";
+    status.textContent=count+" Waylines geprüft · "+clean(data.recognized_actions)+
+      " Aktionen in der bekannten Typenliste und "+clean(data.unknown_actions)+
+      " nicht zugeordnete Aktionsvorkommen. WPML-Semantik und Flugkompatibilität nicht bestätigt.";
+    for(const entry of data.anonymous_types.slice(0,128)){
+      const card=els("article","wayline-card");
+      cardText(card,"h2","",clean(entry.alias));
+      cardText(card,"p","",clean(entry.occurrences)+" Vorkommen · "+clean(entry.file_count)+" Cloud-Dateien");
+      const triggers=entry.triggers&&typeof entry.triggers==="object"
+        ?Object.entries(entry.triggers).map(([key,val])=>key+": "+val).join(" · "):"–";
+      cardText(card,"p","muted","Auslöser: "+triggers);
+      list.appendChild(card);
+    }
+    cardText(list,"p","note","Nur anonymisierte Zähler. Kein unbearbeitetes WPML, keine Koordinaten, keine Übertragbarkeits- oder Flugfreigabe.");
+  }catch(err){
+    if(serial!==pilot2ActionRequest)return;
+    status.className="status error";
+    status.textContent=controller.signal.aborted
+      ?"Diagnose-Zeitlimit erreicht.":errorMessage(err);
+  }finally{
+    clearTimeout(timer);
+    if(serial===pilot2ActionRequest){
+      button.disabled=false;
+      pilot2ActionController=null;
+    }
+  }
+}
 function waylineSourceState(data){
   const state=data.local_pilot?.state||"not_configured";
   const labels={not_configured:"nicht eingerichtet",awaiting_browser_session:"wartet auf vorhandene Cloud-Sitzung",configuration_error:"Konfiguration prüfen",
@@ -1611,6 +1685,7 @@ async function loadWaylines(){
   }finally{clearTimeout(timer);if(serial===waylineSerial){$("refresh-waylines").disabled=false;$("wayline-grid").setAttribute("aria-busy","false");waylineAbort=null;}}
 }
 function switchTab(id){
+  if(id!=="waylines-pane")clearPilot2ActionSummary();
   if(id!=="map-pane"&&id!=="geo-pane"&&document.body.classList.contains("map-focus-active"))setMapFocus(false);
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
@@ -2591,6 +2666,7 @@ function wire(){
   });
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
   $("refresh-waylines").addEventListener("click",loadWaylines);
+  $("pilot2-action-load").addEventListener("click",()=>loadPilot2ActionSummary());
   $("wayline-overview-open").addEventListener("click",()=>openCloudOverview().catch(err=>{
     $("wayline-state").className="status error";$("wayline-state").textContent=errorMessage(err);
   }));

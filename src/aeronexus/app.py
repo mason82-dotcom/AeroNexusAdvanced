@@ -65,6 +65,7 @@ from .mission_reconciliation import compare_missions
 from .local_waylines import LocalWaylineReader, load_credentials, credentials_path
 from .pilot2_wayline_preview import read_preview
 from .pilot2_readonly import Pilot2ReadOnlyReader
+from .pilot2_action_summary import Pilot2ActionSummaryReader
 from .local_waylines import Credentials, LocalWaylineError
 from .local_session import LocalSessionHandoff, handoff_origin
 from .mission_csv import MAX_CSV_BYTES, MissionCsvError, preview_csv
@@ -81,6 +82,7 @@ async def lifespan(app: FastAPI):
     app.state.cloud_api2_bridge = CloudApi2Bridge(api2_settings) if api2_settings else None
     app.state.local_waylines = LocalWaylineReader()
     app.state.local_pilot_reader = Pilot2ReadOnlyReader()
+    app.state.pilot2_action_summary = Pilot2ActionSummaryReader(app.state.local_waylines)
     app.state.local_session_handoff = LocalSessionHandoff()
     app.state.provider_configured = {
         Provider.public_v2: poll_settings is not None and poll_settings.config.kind == ProviderKind.PUBLIC_V2,
@@ -454,6 +456,15 @@ async def local_cloud_waylines(request: Request, response: Response,
         "pagination_complete": result.get("pagination_complete"),
         "updated_at": result.get("updated_at"),
     }
+
+
+@app.get("/api/v1/studio/pilot2/action-summary")
+async def studio_pilot2_action_summary(request: Request, response: Response,
+                                       authorization: str | None = Header(default=None)) -> dict:
+    """Authenticated, manually requested, bounded anonymous WPML metadata only."""
+    _require_viewer_access(request, authorization)
+    _no_cache(response)
+    return await app.state.pilot2_action_summary.read()
 
 
 @app.get("/api/v1/local-cloud/waylines/{wayline_id}/preview")
