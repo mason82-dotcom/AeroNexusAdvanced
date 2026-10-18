@@ -10,7 +10,7 @@ from math import isfinite
 from zipfile import ZIP_DEFLATED, ZipFile, BadZipFile
 import xml.etree.ElementTree as ET
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, model_serializer
 from typing import Annotated, Literal, Union
 
 
@@ -153,6 +153,13 @@ class Waypoint(BaseModel):
     longitude: float = Field(ge=-180, le=180)
     take_photo: bool = False
     actions: list[WaypointAction] = Field(default_factory=list, max_length=MAX_WAYPOINT_ACTIONS)
+
+    @model_serializer(mode="wrap")
+    def dump_without_empty_actions(self, handler):
+        data = handler(self)
+        if not self.actions:
+            data.pop("actions", None)
+        return data
 
     @model_validator(mode="after")
     def valid_gps_fix(self) -> "Waypoint":
@@ -513,6 +520,7 @@ def import_kmz(data: bytes) -> WaypointMission:
         and (waypoints[-1]["latitude"], waypoints[-1]["longitude"])
             == (waypoints[0]["latitude"], waypoints[0]["longitude"])
         and not waypoints[-1]["take_photo"]
+        and not waypoints[-1].get("actions")
         and len({(point["latitude"], point["longitude"]) for point in waypoints[:-1]}) >= 3
     )
     if closed:
