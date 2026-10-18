@@ -122,3 +122,32 @@ Sitzungen nicht hinzu. MQTT-Rechte bleiben OSD plus optional State, nie Publish.
 Die Website wurde gegenüber dem älteren öffentlichen Markdown-Spiegel
 bevorzugt. Gemeinsame Eigenschaften sind eine Decoderfähigkeit, keine Garantie,
 dass jede Firmware jedes Feld oder jede Kameraoption sendet.
+
+## Ergänzender RC-/Steuerquellen-Abgleich (18.10.2026, Review-Branch)
+
+- RC Plus 2 / RC Pro: `drc_state` wird ausschließlich als Code 0/1/2
+  (`drc_link_state_code`) gelesen. Das bedeutet nur Verbindungsstatus,
+  **keine** aktivierte Fernsteuerung oder Flugberechtigung.
+- `cloud_control_auth` wird als geprüfte, begrenzte Anzahl von Einträgen
+  (`cloud_control_authorization_count`) gespeichert. Die einzelnen, von DJI
+  nicht fest enumerierten Berechtigungsstrings werden bewusst nicht an die
+  Weboberfläche weitergegeben; die Anzahl ist keine Rechtefreigabe.
+- `control_source` am Fluggerät und in `payloads[]` wird in
+  `control_source_category` kategorisiert: A/B, Browser, nicht zugewiesen,
+  sonstige. Eine DJI-Browser-UUID wird niemals gespeichert; Seriennummern der
+  `payloads[]` werden ignoriert. Der DJI-Payloadstatus liegt unter
+  `payload_control`, Gimbal-Telemetrie weiterhin unter `payloads`.
+- `wireless_link.*_quality`: Werte 0–5 oder 65535 (DJI-Sonderwert für
+  nicht verfügbare Messungen) werden akzeptiert; 65535 wird `null`.
+  Andere Werte werden abgewiesen, statt eine falsche Signalqualität anzuzeigen.
+- Diese Felder erscheinen pro Gerät unter `telemetry.cloud_details` und auf
+  den entsprechenden Statuskarten. Zustandsmeldungen benötigen weiterhin
+  eine **explizit freigeschaltete** `state`-Subscription mit lesender ACL.
+- Es gibt keine MQTT-Publish-Rechte, keinen DRC-Verbindungsaufbau und keine
+  Änderungen am Pi-Betrieb. Ein realer RC-/Fluggerätetest steht weiter aus.
+
+Offizielle Referenzen:
+- https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/mqtt/dji-rc-plus-2/properties.html
+- https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/mqtt/others/rc/properties.html
+- https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/mqtt/m4-series/properties.html
+- https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/pilot-to-cloud/mqtt/aircraft/properties.html
