@@ -42,3 +42,14 @@ Parameter, Modellfreigaben, Interoperabilitäts- und Roundtrip-Tests.
 
 Herstellerreferenz:
 https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
+
+## Bekannte Pilot-2-Parameterfelder (Präsenzdiagnose)
+
+Die vier tatsächlich beobachteten Originalnamen `cameraFocusType`,
+`smartObliqueCycleMode`, `smartObliquePoint` und `minShootInterval`
+haben ab dieser Änderung explizite **unverified**-Feldkategorien.
+Es werden weiterhin ausschließlich Feldpräsenzen ausgegeben, keine Werte.
+Wiederholte `smartObliquePoint`-Elemente geben keine Ausführungspunkte,
+Abfolge oder DJI-Kompatibilität frei. Sie entfallen aus dem Zähler völlig
+unbekannter Pxx-Feldnamen; frühere P01/P02/P03-Aliase sind flüchtig und
+werden nicht rückwirkend als Firmwarebefehle gedeutet.

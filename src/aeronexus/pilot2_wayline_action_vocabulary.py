@@ -57,6 +57,12 @@ PARAMETER_FIELD_CATEGORIES = {
     "hoverTime": "hover",
     "aircraftHeading": "aircraft",
     "aircraftPathMode": "aircraft",
+    # Pilot 2 WPML 1.0.6 fields observed in genuine waylines. These are
+    # presence-only labels, NOT DJI-documented schema or safe parameter enums.
+    "cameraFocusType": "pilot2_focus_type_unverified",
+    "smartObliqueCycleMode": "pilot2_smart_oblique_unverified",
+    "smartObliquePoint": "pilot2_smart_oblique_unverified",
+    "minShootInterval": "pilot2_interval_unverified",
 }
 MAX_PARAM_FIELDS_PER_ACTION = 64
 
