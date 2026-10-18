@@ -641,3 +641,19 @@ Regressionstest des echten JS-Blocks, aber kein echter Chromium-
 oder HTTPS-Browser-Abnahmetest. Der Pi-Produktionsserver wird
 nicht berührt. Weder die neue UI noch die Diagnoseroute werden
 damit in den laufenden Dienst ausgerollt.
+
+### Zusätzliche Browser-Fail-Closed-Prüfung (ohne Deployment)
+
+Die Studio-Aktionsdiagnose verwirft nun auch eine Antwort mit
+`full_content_verified` ungleich `false`, eine unvollständige Inventur
+(`checked` nicht zwischen 1 und 8, `checked != total`, oder
+abweichende Anzahl Wayline-Einträge) sowie ungültige Aktionszähler.
+Diese UI-seitigen Prüfungen sind eine zweite Schranke hinter dem
+Backend-Allowlist-Validator, kein Beleg für Semantik oder Flugtauglichkeit.
+
+Der Node-DOM-Laufzeittest enthält dafür negative HTTP-Response-Fixtures
+mit behaupteter Inhaltsverifikation, Teilbeständen, inkonsistenten
+Gesamtzahlen und ungültigen Zählertypen. Es bleibt ein isolierter
+Laufzeittest des extrahierten Studio-JavaScript-Blocks; ein echter
+Chromium/HTTPS-End-to-End-Test und ein überprüftes Deployment fehlen
+weiterhin. Keine Änderung am laufenden Raspberry-Pi-Dienst.
