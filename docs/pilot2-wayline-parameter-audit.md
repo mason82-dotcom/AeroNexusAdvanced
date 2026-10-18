@@ -439,3 +439,44 @@ Keine Flugkommandos, keine Uploads, kein O4.
 
 Quelle zu den ActionGroup-Indizes:
 https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
+
+### Optionale, grobe Index-Differenz der ActionGroup-Spannen
+
+Alle 369 A02/P03-Aktionen der Pilot-2-Bibliothek haben eine
+actionGroupStartIndex/EndIndex-Spanne, die am XML-Anker beginnt und
+über diesen Index hinausgeht. Das sagt nichts über die genaue Länge,
+Entfernung oder sichere Ausführung aus.
+
+Eine weitere explizit aktivierte Diagnose zählt nur die Klassen der
+**WPML-Indexdifferenz** und die gleichzeitig vorkommende Pxx-Feldanzahl:
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced-pr46
+PYTHONPATH="$PWD/src" \
+ "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+ -m aeronexus.pilot2_wayline_action_vocabulary \
+ --limit 8 --parameter-hints --field-aliases \
+ --span-audit --span-length-buckets
+~~~
+
+results[].unknown_field_xml_index_delta_by_route enthält pro Folder
+und unbekanntem Feldalias Pxx einen Kreuzvergleich der groben
+Indexdifferenz und Feldanzahl je Aktionsinstanz. Kategorien sind:
+same_index, one_index_step, two_to_four_index_steps,
+five_to_sixteen_index_steps, over_sixteen_index_steps,
+starts_elsewhere, endpoint_outside_folder, reversed_span,
+missing_or_invalid_index, unreliable_folder_indices und
+start_group_not_applicable.
+
+Die Indexklassen werden **nur dann** ermittelt, wenn die wpml:index-
+Werte innerhalb desselben Folder vollständig, eindeutig und lückenlos
+sind und die beiden Endpunkte auf deklarierte Indizes verweisen.
+Anderenfalls liefert das Programm ausschließlich eine Statusklasse.
+
+Die Ausgabe enthält keine absoluten Indizes, Koordinaten, Flugstrecken,
+Aktions-/Feldnamen oder Parameterwerte. Eine Indexdifferenz ist keine
+geografische Flugdistanz, keine Flugdauer und keine Flugfreigabe.
+Unbekannte WPML-1.0.6-Aktionen werden weder ausgeführt noch nach
+WPML 1.0.2 umgedeutet. Kein Missionsupload, keine Befehle, kein O4.
+
+Referenz: https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
