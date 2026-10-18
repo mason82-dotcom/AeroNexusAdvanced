@@ -184,3 +184,37 @@ Diagnoseausgaben übernommen.
 Originalaktionen werden weder umgeschrieben noch veröffentlicht,
 hochgeladen oder auf einer Drohne ausgeführt. Übertragbarkeit von
 WPML-1.0.6-Aktionen bleibt ungeprüft.
+
+## Anonyme Korrelation über das ganze Pilot-2-Inventar
+
+Für die vielen unbekannten DJI-WPML-1.0.6-Aktoren existiert ein **separater**,
+explizit gestarteter, lesender Prüfbefehl:
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced-pr46
+PYTHONPATH="$PWD/src" \
+  "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+  -m aeronexus.pilot2_wayline_action_vocabulary --limit 8
+~~~
+
+Er benötigt keine lokale Studio-Mission. Er lädt KMZ-Dateien nur aus dem
+vollständigen, bereits autorisierten Pilot-2-Inventar des verbundenen
+Workspaces über denselben überprüften lokalen GET-/MinIO-Pfad wie die
+Kartenvorschau. Keine Zugriffe auf den Flugcontroller, keine Uploads.
+
+**Ausgabe:** unbekannte Aktionsbezeichner werden nur innerhalb dieses einen
+CLI-Laufs durch neutrale Bezeichnungen A01, A02, … ersetzt. Gleichlautende
+unbekannte Aktionsbezeichner in verschiedenen KMZ-Dateien bekommen dieselbe
+anonyme Kennung. Gezählt werden Auftreten je KMZ/Folder, Start- gegenüber
+Wegpunktaktion, Auslöser (nur dokumentierte Trigger wie reachPoint und
+betweenAdjacentPoints) sowie Anzahl verschiedener Dateien je Kennung.
+
+Das Format enthält keine echten Aktionsnamen, Hashes, ursprünglichen
+Parameter, Koordinaten, Namen, UUIDs, Seriennummern, signierten URLs oder
+Tokens. Die Zuordnung verbleibt ausschließlich im Arbeitsspeicher und wird
+beim Programmende verworfen. Die Aliasnamen sind nicht stabil über
+verschiedene Läufe; sie sind **keine DJI-Aktionsnamen**.
+
+Die Ergebnisse verraten keine Funktion der unbekannten Aktionen. Ebenso
+wird keine semantische DJI-WPML-1.0.6-Kompatibilität zertifiziert. Alle
+Flug- und Schreibbefehle und O4 bleiben ausdrücklich ausgeschlossen.
