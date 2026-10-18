@@ -33,7 +33,7 @@ _FORBIDDEN_USERS = frozenset({"companion", "admin", "dashboard", "onprem-backend
                               "pilot", "pilot2", "backend"})
 _TRUE = ("1", "true", "yes", "on")
 HMS_EVENT_TOPIC = "thing/product/+/events"
-_HMS_EVENT = re.compile(r"thing/product/([A-Za-z0-9_-]{1,80})/events\\Z")
+_HMS_EVENT = re.compile(r"thing/product/([A-Za-z0-9_-]{1,80})/events\Z")
 
 
 @dataclass(frozen=True, repr=False)
@@ -338,10 +338,11 @@ class CloudMqttFeed:
         if not isinstance(payload, (bytes, bytearray)) or len(payload) > MAX_PAYLOAD_BYTES:
             return
         try:
-            self._loop.call_soon_threadsafe(
-                self.ingest.handle_hms, message.topic, bytes(payload))
-                if self.settings.include_hms and _HMS_EVENT.fullmatch(message.topic)
-                else self._loop.call_soon_threadsafe(
+            if self.settings.include_hms and _HMS_EVENT.fullmatch(message.topic):
+                self._loop.call_soon_threadsafe(
+                    self.ingest.handle_hms, message.topic, bytes(payload))
+            else:
+                self._loop.call_soon_threadsafe(
                     self.ingest.handle, message.topic, bytes(payload), self.settings.include_state)
         except RuntimeError:
             pass  # event loop closed during shutdown

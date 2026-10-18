@@ -196,7 +196,9 @@ def resolve_hms(item: Mapping, *, kind: str = "aircraft") -> dict | None:
     }
 
 
-def normalize_cloud_hms_event(payload: bytes) -> tuple[tuple[dict, ...], int | None]:
+def normalize_cloud_hms_event(
+    payload: bytes, *, kind: str = "aircraft"
+) -> tuple[tuple[dict, ...], int | None]:
     """Validated full-snapshot HMS MQTT event; empty list means alarms resolved."""
     if not isinstance(payload, (bytes, bytearray)) or not 0 < len(payload) <= 65536:
         raise ValueError("Invalid HMS event size")
@@ -218,5 +220,5 @@ def normalize_cloud_hms_event(payload: bytes) -> tuple[tuple[dict, ...], int | N
            for row in rows):
         raise ValueError("Invalid HMS item")
     # No free-form text, device SN or arbitrary properties are preserved.
-    alerts = tuple(resolve_hms(row, kind="aircraft") for row in rows)
+    alerts = tuple(resolve_hms(row, kind=kind) for row in rows)
     return tuple(a for a in alerts if a), timestamp
