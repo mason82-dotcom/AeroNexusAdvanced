@@ -136,3 +136,37 @@ def test_real_local_asgi_server_receives_camera_preview_without_workspace_write(
             assert json.load(res)["missions"] == []
     assert list((workspace / "missions").iterdir()) == []
     assert len(list((workspace / "geo_objects").glob("*.json"))) == 1
+
+
+def test_staging_chromium_calls_real_local_api_with_leaflet(monkeypatch, tmp_path):
+    """Real browser + real FastAPI + real Leaflet, with verified offline JS/CSS.
+
+    External map tiles are optional here. The Pi's --require-tiles run checks
+    live imagery separately. The only allowed mutating browser request is the
+    non-persisting survey preview.
+    """
+    import shutil
+
+    pytest.importorskip("playwright.sync_api")
+    assets_value = os.environ.get("AERONEXUS_LEAFLET_TEST_ASSETS", "")
+    assets = Path(assets_value) if assets_value else None
+    if not assets or not all((assets / item).is_file()
+                             for item in ("leaflet.js", "leaflet.css")):
+        pytest.skip("Pinned Leaflet assets unavailable")
+    chrome = (shutil.which(os.environ.get("AERONEXUS_CHROMIUM_BIN", ""))
+              if os.environ.get("AERONEXUS_CHROMIUM_BIN") else
+              next((p for name in ("chromium", "chromium-browser",
+                                   "google-chrome", "google-chrome-stable")
+                    if (p := shutil.which(name))), None))
+    if chrome is None:
+        pytest.skip("Chromium unavailable")
+    monkeypatch.setenv("AERONEXUS_CHROMIUM_BIN", chrome)
+    workspace = tmp_path / "isolated"
+    staging.seed_synthetic_workspace(workspace)
+    port = _free_loopback_port()
+    screenshot = tmp_path / "camera-staging.png"
+    with staging.staging_server(Path(sys.executable), CHECKOUT, workspace, port) as origin:
+        staging.run_browser(origin, screenshot, require_tiles=False)
+        assert screenshot.is_file() and screenshot.stat().st_size > 3000
+    assert len(list((workspace / "geo_objects").glob("*.json"))) == 1
+    assert not list((workspace / "missions").iterdir())
