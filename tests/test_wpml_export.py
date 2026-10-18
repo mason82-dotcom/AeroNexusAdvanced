@@ -348,3 +348,120 @@ def test_import_allows_pretty_print_and_independent_creation_times():
         root.find(".//" + W + "updateTime").text = "200"
         ET.indent(root)
     assert import_kmz(mutated_kmz("wpmz/template.kml", mutate)).model_dump() == draft().model_dump()
+
+
+@pytest.mark.parametrize("model,lens,global_flag", [
+    ("matrice4e", "wide", "0"),
+    ("matrice4t", "wide", "0"),
+    ("mavic3e", None, "0"),
+    ("mavic3t", None, "0"),
+    ("mavic3m", None, "0"),
+])
+def test_camera_action_lens_fields_follow_current_dji_matrix(model, lens, global_flag):
+    """Validate both WPML documents, not just the executable route."""
+    mission = draft(drone_model=model, waypoints=[
+        {"latitude": 49.1, "longitude": 8.5, "take_photo": True,
+         "actions": [{"type": "startRecord"}]},
+        {"latitude": 49.2, "longitude": 8.6,
+         "actions": [{"type": "stopRecord"}]},
+    ])
+    for document in files(mission):
+        first = document.findall(".//" + K + "Placemark")[0]
+        actions = {
+            group.findtext(W + "action/" + W + "actionActuatorFunc"):
+                group.find(W + "action/" + W + "actionActuatorFuncParam")
+            for group in first.findall(W + "actionGroup")
+        }
+        assert set(actions) == {"takePhoto", "startRecord"}
+        for operation in ("takePhoto", "startRecord"):
+            params = actions[operation]
+            assert params.findtext(W + "payloadPositionIndex") == "0"
+            assert params.findtext(W + "payloadLensIndex") == lens
+            assert params.findtext(W + "useGlobalPayloadLensIndex") == global_flag
+        # DJI does not document these two fields as mandatory for stopRecord.
+        second = document.findall(".//" + K + "Placemark")[1]
+        stop = second.find(".//" + W + "actionActuatorFuncParam")
+        assert stop is not None
+        assert stop.find(W + "payloadLensIndex") is None
+        assert stop.find(W + "useGlobalPayloadLensIndex") is None
+
+
+def test_mavic3ta_not_inferred_to_support_matrice4_lens_fields():
+    # M3TA is not independently documented in DJI's relevant WPML action rows.
+    for document in files(draft(drone_model="mavic3ta")):
+        params = document.find(".//" + W + "actionActuatorFuncParam")
+        assert params is not None
+        assert params.find(W + "payloadLensIndex") is None
+        assert params.find(W + "useGlobalPayloadLensIndex") is None
+
+
+def _previous_aeronexus_camera_kmz(mission):
+    """A byte-structured fixture of the prior AeroNexus camera action writer."""
+    from aeronexus.wpml_export import _xml
+    from zipfile import ZIP_DEFLATED
+    output = BytesIO()
+    with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("wpmz/template.kml", _xml(
+            mission, template=True, timestamp_ms=1760641200000,
+            legacy_camera_params=True))
+        archive.writestr("wpmz/waylines.wpml", _xml(
+            mission, template=False, timestamp_ms=1760641200000,
+            legacy_camera_params=True))
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("model", ["matrice4e", "matrice4t", "mavic3e", "mavic3t", "mavic3m"])
+def test_previous_aeronexus_kmz_camera_actions_import_and_upgrade(model):
+    mission = draft(drone_model=model, waypoints=[
+        {"latitude": 49.1, "longitude": 8.5, "take_photo": True,
+         "actions": [{"type": "startRecord"}]},
+        {"latitude": 49.2, "longitude": 8.6,
+         "actions": [{"type": "stopRecord"}]},
+    ])
+    restored = import_kmz(_previous_aeronexus_camera_kmz(mission))
+    assert restored.model_dump() == mission.model_dump()
+    # An imported legacy mission must use modern camera action fields on export.
+    archive = ZipFile(BytesIO(export_kmz(restored, timestamp_ms=1760641200001)))
+    route = ET.fromstring(archive.read("wpmz/waylines.wpml"))
+    first = route.findall(".//" + K + "Placemark")[0]
+    for group in first.findall(W + "actionGroup"):
+        params = group.find(W + "action/" + W + "actionActuatorFuncParam")
+        assert params.findtext(W + "useGlobalPayloadLensIndex") == "0"
+
+
+def test_mixed_legacy_and_current_xml_cannot_bypass_strict_import():
+    mission = draft(drone_model="matrice4t")
+    with ZipFile(BytesIO(export_kmz(mission, timestamp_ms=1760641200000))) as current:
+        new_route = current.read("wpmz/waylines.wpml")
+    with ZipFile(BytesIO(_previous_aeronexus_camera_kmz(mission))) as old:
+        old_template = old.read("wpmz/template.kml")
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as output:
+        output.writestr("wpmz/template.kml", old_template)
+        output.writestr("wpmz/waylines.wpml", new_route)
+    with pytest.raises(ValueError, match="WPML settings disagree"):
+        import_kmz(buffer.getvalue())
+
+
+@pytest.mark.parametrize("replacement", ["ir", "zoom", "wide,ir", ""])
+def test_matrice4_lens_value_changes_rejected_on_import(replacement):
+    mission = draft(drone_model="matrice4t")
+    def mutate(root):
+        root.find(".//" + W + "payloadLensIndex").text = replacement
+    with pytest.raises(ValueError):
+        import_kmz(mutated_kmz("wpmz/waylines.wpml", mutate))
+
+
+def test_legacy_import_does_not_accept_arbitrary_partial_camera_fields():
+    mission = draft(drone_model="matrice4t")
+    with ZipFile(BytesIO(_previous_aeronexus_camera_kmz(mission))) as old:
+        old_template = ET.fromstring(old.read("wpmz/template.kml"))
+        old_route = old.read("wpmz/waylines.wpml")
+    first_photo = old_template.find(".//" + W + "actionActuatorFuncParam")
+    ET.SubElement(first_photo, W + "useGlobalPayloadLensIndex").text = "0"
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as output:
+        output.writestr("wpmz/template.kml", ET.tostring(old_template))
+        output.writestr("wpmz/waylines.wpml", old_route)
+    with pytest.raises(ValueError, match="WPML settings disagree"):
+        import_kmz(buffer.getvalue())
