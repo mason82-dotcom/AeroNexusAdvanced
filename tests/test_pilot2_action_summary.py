@@ -303,7 +303,10 @@ def test_documented_catalog_counts_are_allowlisted_and_complete():
     assert clean["state"] == "connected"
     assert len(clean["documented_types"]) == 14
     assert sum(x["occurrences"] for x in clean["documented_types"]) == 9
-    assert [x["name"] for x in clean["documented_types"] if x["export_supported"]] == ["takePhoto"]
+    assert {x["name"] for x in clean["documented_types"] if x["export_supported"]} == {
+        "takePhoto", "startRecord", "stopRecord", "focus", "zoom",
+        "gimbalRotate", "gimbalEvenlyRotate",
+    }
     for entry in clean["documented_types"]:
         assert entry["status"] == "documented"
     report["documented_type_counts"] = {"totallyPrivateAction": 9}

@@ -12,7 +12,10 @@ def test_all_21_dji_names_have_bounded_labels_and_capabilities():
     assert len(set(DOCUMENTED_ACTION_LABELS) | set(PILOT2_OBSERVED_ACTIONS)) == 21
     assert all(x["status"] == "pilot2_observed_unverified"
                and x["export_supported"] is False for x in observed)
-    assert {x["name"] for x in docs if x["export_supported"]} == {"takePhoto"}
+    assert {x["name"] for x in docs if x["export_supported"]} == {
+        "takePhoto", "startRecord", "stopRecord", "focus", "zoom",
+        "gimbalRotate", "gimbalEvenlyRotate",
+    }
     assert PILOT2_OBSERVED_FIELDS == {
         "cameraFocusType", "smartObliqueCycleMode",
         "smartObliquePoint", "minShootInterval",

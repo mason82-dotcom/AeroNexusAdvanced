@@ -43,11 +43,17 @@ PILOT2_OBSERVED_FIELDS = frozenset({
     "smartObliquePoint", "minShootInterval",
 })
 
+OFFLINE_WPML_EXPORT_ACTIONS = frozenset({
+    "takePhoto", "startRecord", "stopRecord", "focus", "zoom",
+    "gimbalRotate", "gimbalEvenlyRotate",
+})
+
+
 def public_documented_catalog():
     """Only immutable locally defined labels and capabilities (no raw XML)."""
     return [
         {"name": key, "label": label, "status": "documented",
-         "export_supported": key == "takePhoto"}
+         "export_supported": key in OFFLINE_WPML_EXPORT_ACTIONS}
         for key, label in DOCUMENTED_ACTION_LABELS.items()
     ]
 

@@ -10,8 +10,8 @@ from math import isfinite
 from zipfile import ZIP_DEFLATED, ZipFile, BadZipFile
 import xml.etree.ElementTree as ET
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, model_serializer
+from typing import Annotated, Literal, Union
 
 
 KML_NS = "http://www.opengis.net/kml/2.2"
@@ -54,11 +54,112 @@ def _num(value: float) -> str:
     return format(value, ".7f").rstrip("0").rstrip(".") if value else "0"
 
 
+# DJI WPML Common Elements, current product matrix (2026). M3TA is listed
+# as an aircraft/payload, but is NOT explicitly listed in these action rows.
+# Never infer firmware compatibility from the parent M3 Enterprise family.
+ACTION_MATRIX_SOURCE = (
+    "https://developer.dji.com/doc/cloud-api-tutorial/en/"
+    "api-reference/dji-wpml/common-element.html"
+)
+ACTION_MODEL_MATRIX = {
+    "matrice4t": frozenset({"startRecord", "stopRecord", "focus", "zoom",
+                           "gimbalRotate", "gimbalEvenlyRotate"}),
+    "matrice4e": frozenset({"startRecord", "stopRecord", "focus", "zoom",
+                           "gimbalRotate", "gimbalEvenlyRotate"}),
+    "mavic3e": frozenset({"startRecord", "stopRecord", "focus", "zoom",
+                         "gimbalRotate", "gimbalEvenlyRotate"}),
+    "mavic3t": frozenset({"startRecord", "stopRecord", "focus", "zoom",
+                         "gimbalRotate", "gimbalEvenlyRotate"}),
+    "mavic3m": frozenset({"startRecord", "stopRecord", "focus", "zoom",
+                         "gimbalRotate", "gimbalEvenlyRotate"}),
+    "mavic3ta": frozenset(),  # not explicitly in the WPML action table
+}
+MAX_WAYPOINT_ACTIONS = 8
+# Intentionally conservative gimbal pitch envelope; NOT a model calibration.
+PITCH_MIN_DEG, PITCH_MAX_DEG = -90.0, 0.0
+
+
+class _CameraAction(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class StartRecord(_CameraAction):
+    type: Literal["startRecord"]
+
+
+class StopRecord(_CameraAction):
+    type: Literal["stopRecord"]
+
+
+class FocusAction(_CameraAction):
+    type: Literal["focus"]
+    focus_x: float = Field(ge=0, le=1)
+    focus_y: float = Field(ge=0, le=1)
+
+    @field_validator("focus_x", "focus_y")
+    @classmethod
+    def finite_xy(cls, value: float) -> float:
+        if not isfinite(value):
+            raise ValueError("Focus coordinate must be finite")
+        return value
+
+
+class ZoomAction(_CameraAction):
+    type: Literal["zoom"]
+    focal_length_mm: float = Field(gt=0, le=500)
+
+    @field_validator("focal_length_mm")
+    @classmethod
+    def finite_length(cls, value: float) -> float:
+        if not isfinite(value):
+            raise ValueError("Focal length must be finite")
+        return value
+
+
+class GimbalRotateAction(_CameraAction):
+    type: Literal["gimbalRotate"]
+    pitch_deg: float = Field(ge=PITCH_MIN_DEG, le=PITCH_MAX_DEG)
+
+    @field_validator("pitch_deg")
+    @classmethod
+    def finite_pitch(cls, value: float) -> float:
+        if not isfinite(value):
+            raise ValueError("Pitch must be finite")
+        return value
+
+
+class GimbalEvenlyRotateAction(_CameraAction):
+    type: Literal["gimbalEvenlyRotate"]
+    pitch_deg: float = Field(ge=PITCH_MIN_DEG, le=PITCH_MAX_DEG)
+
+    @field_validator("pitch_deg")
+    @classmethod
+    def finite_pitch(cls, value: float) -> float:
+        if not isfinite(value):
+            raise ValueError("Pitch must be finite")
+        return value
+
+
+WaypointAction = Annotated[
+    Union[StartRecord, StopRecord, FocusAction, ZoomAction,
+          GimbalRotateAction, GimbalEvenlyRotateAction],
+    Field(discriminator="type"),
+]
+
+
 class Waypoint(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     take_photo: bool = False
+    actions: list[WaypointAction] = Field(default_factory=list, max_length=MAX_WAYPOINT_ACTIONS)
+
+    @model_serializer(mode="wrap")
+    def dump_without_empty_actions(self, handler):
+        data = handler(self)
+        if not self.actions:
+            data.pop("actions", None)
+        return data
 
     @model_validator(mode="after")
     def valid_gps_fix(self) -> "Waypoint":
@@ -94,6 +195,19 @@ class WaypointMission(BaseModel):
         if not isfinite(value):
             raise ValueError("Altitude and speed must be finite")
         return value
+
+    @model_validator(mode="after")
+    def validate_action_matrix(self) -> "WaypointMission":
+        # Only offline export preparation. Hardware/firmware support remains
+        # separately unverified; never send these actions to any aircraft.
+        resolved = waypoints_for_export(self)
+        for index, point in enumerate(resolved):
+            for action in point.actions:
+                if action.type not in ACTION_MODEL_MATRIX[self.drone_model]:
+                    raise ValueError("DJI WPML action not evidenced for selected aircraft model")
+                if action.type == "gimbalEvenlyRotate" and index == len(resolved) - 1:
+                    raise ValueError("Even gimbal rotation needs a following waypoint")
+        return self
 
     @field_validator("name")
     @classmethod
@@ -160,6 +274,54 @@ def _photo_action(place: ET.Element, index: int) -> None:
     _set(params, "payloadPositionIndex", 0)
 
 
+def _extra_action(place: ET.Element, index: int, seq: int, action: WaypointAction) -> None:
+    """Canonical DJI WPML action groups; only the reviewed offline subset."""
+    group = ET.SubElement(place, _w("actionGroup"))
+    between = action.type == "gimbalEvenlyRotate"
+    for key, value in (
+        ("actionGroupId", 10000 + 10 * index + seq),
+        ("actionGroupStartIndex", index),
+        ("actionGroupEndIndex", index + 1 if between else index),
+        ("actionGroupMode", "sequence"),
+    ):
+        _set(group, key, value)
+    trigger = ET.SubElement(group, _w("actionTrigger"))
+    _set(trigger, "actionTriggerType",
+         "betweenAdjacentPoints" if between else "reachPoint")
+    item = ET.SubElement(group, _w("action"))
+    _set(item, "actionId", 0)
+    _set(item, "actionActuatorFunc", action.type)
+    param = ET.SubElement(item, _w("actionActuatorFuncParam"))
+    if action.type == "gimbalEvenlyRotate":
+        _set(param, "gimbalPitchRotateAngle", _num(action.pitch_deg))
+        _set(param, "payloadPositionIndex", 0)
+    else:
+        _set(param, "payloadPositionIndex", 0)
+        if action.type == "startRecord":
+            _set(param, "fileSuffix", f"v{index:03d}")
+        elif action.type == "focus":
+            _set(param, "isPointFocus", 1)
+            _set(param, "focusX", _num(action.focus_x))
+            _set(param, "focusY", _num(action.focus_y))
+            _set(param, "isInfiniteFocus", 0)
+        elif action.type == "zoom":
+            _set(param, "focalLength", _num(action.focal_length_mm))
+        elif action.type == "gimbalRotate":
+            for key, value in (
+                ("gimbalHeadingYawBase", "north"),
+                ("gimbalRotateMode", "absoluteAngle"),
+                ("gimbalPitchRotateEnable", 1),
+                ("gimbalPitchRotateAngle", _num(action.pitch_deg)),
+                ("gimbalRollRotateEnable", 0),
+                ("gimbalRollRotateAngle", 0),
+                ("gimbalYawRotateEnable", 0),
+                ("gimbalYawRotateAngle", 0),
+                ("gimbalRotateTimeEnable", 0),
+                ("gimbalRotateTime", 0),
+            ):
+                _set(param, key, value)
+
+
 def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int) -> bytes:
     root = ET.Element(_k("kml"))
     doc = ET.SubElement(root, _k("Document"))
@@ -212,6 +374,8 @@ def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int) -> byte
             _set(turning, "waypointTurnDampingDist", 0)
         if wp.take_photo:
             _photo_action(place, index)
+        for seq, action in enumerate(wp.actions, start=1):
+            _extra_action(place, index, seq, action)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
@@ -308,17 +472,45 @@ def import_kmz(data: bytes) -> WaypointMission:
             raise ValueError("Per-point altitude is outside the supported subset")
         if txt(plan, _w("useGlobalHeight")) != "1":
             raise ValueError("Per-point height references are not supported")
-        actions = point.findall(".//" + _w("actionActuatorFunc"))
-        template_actions = plan.findall(".//" + _w("actionActuatorFunc"))
-        if (len(actions) > 1 or len(template_actions) != len(actions)
-                or any(a.text != "takePhoto" for a in actions + template_actions)):
+        action_groups = point.findall(_w("actionGroup"))
+        template_groups = plan.findall(_w("actionGroup"))
+        if len(action_groups) != len(template_groups) or len(action_groups) > MAX_WAYPOINT_ACTIONS + 1:
             raise ValueError("Unsupported waypoint action")
+        action_names = [g.findtext(_w("action") + "/" + _w("actionActuatorFunc"))
+                        for g in action_groups]
+        plan_names = [g.findtext(_w("action") + "/" + _w("actionActuatorFunc"))
+                      for g in template_groups]
+        if action_names != plan_names or action_names.count("takePhoto") > 1:
+            raise ValueError("Unsupported waypoint action")
+        extra = []
+        for group, name in zip(action_groups, action_names):
+            if name == "takePhoto":
+                continue
+            params = group.find(_w("action") + "/" + _w("actionActuatorFuncParam"))
+            if params is None:
+                raise ValueError("Unsupported waypoint action")
+            if name in ("startRecord", "stopRecord"):
+                data = {"type": name}
+            elif name == "focus":
+                data = {"type": name,
+                        "focus_x": float(txt(params, _w("focusX"))),
+                        "focus_y": float(txt(params, _w("focusY")))}
+            elif name == "zoom":
+                data = {"type": name,
+                        "focal_length_mm": float(txt(params, _w("focalLength")))}
+            elif name in ("gimbalRotate", "gimbalEvenlyRotate"):
+                data = {"type": name,
+                        "pitch_deg": float(txt(params, _w("gimbalPitchRotateAngle")))}
+            else:
+                raise ValueError("Unsupported waypoint action")
+            extra.append(data)
         try:
             lon, lat = (float(coord) for coord in raw.split(","))
         except (ValueError, TypeError) as exc:
             raise ValueError("Invalid WGS84 waypoint") from exc
         waypoints.append({"latitude": lat, "longitude": lon,
-                          "take_photo": bool(actions)})
+                          "take_photo": "takePhoto" in action_names,
+                          "actions": extra})
     # AeroNexus exports "close route" as the actual final flight waypoint.
     # Recover the option from that final duplicate only when no camera action
     # would be discarded. Older explicitly repeated finish points may be
@@ -328,6 +520,7 @@ def import_kmz(data: bytes) -> WaypointMission:
         and (waypoints[-1]["latitude"], waypoints[-1]["longitude"])
             == (waypoints[0]["latitude"], waypoints[0]["longitude"])
         and not waypoints[-1]["take_photo"]
+        and not waypoints[-1].get("actions")
         and len({(point["latitude"], point["longitude"]) for point in waypoints[:-1]}) >= 3
     )
     if closed:

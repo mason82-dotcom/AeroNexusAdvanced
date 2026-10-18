@@ -3,7 +3,12 @@
 ## Grenzen der Unterstützung
 
 Das Studio importiert oder führt keine fremden DJI-Missionen aus.
-**Nur takePhoto ist Teil des bestehenden lokalen AeroNexus-KMZ-Export-Subsets.**
+**Für den lokalen KMZ-Export sind jetzt takePhoto, startRecord, stopRecord,
+focus, zoom, gimbalRotate und gimbalEvenlyRotate modellabhängig integriert.**
+Details und Modellvorbehalte: [Offline-Exportmatrix](dji-wpml-camera-gimbal-export.md).
+M3TA ist zwar ein gültiger DJI-Produktcode, aber in den spezifischen
+WPML-Aktionszeilen nicht explizit aufgeführt; zusätzliche Aktionen bleiben
+für M3TA gesperrt.
 Der vollständige Katalog dient der GET-only Diagnose und der Einordnung
 bereits gespeicherter DJI-Pilot-2-WPML-1.0.6-Missionen.
 
