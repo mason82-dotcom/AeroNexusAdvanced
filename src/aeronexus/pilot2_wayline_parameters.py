@@ -29,6 +29,13 @@ from .wpml_export import KML_NS, WPML_NS, MODELS, WaypointMission, _num, waypoin
 
 K = "{" + KML_NS + "}"
 W = "{" + WPML_NS + "}"
+# DJI's published WPML sample declares 1.0.2; 1.0.6 occurs in
+# newer Pilot 2-compatible KMZ files but is NOT a semantic equivalence proof.
+# Never accept arbitrary XML namespaces based on element local names alone.
+KNOWN_WPML_SCHEMAS = {
+    "1.0.2": WPML_NS,
+    "1.0.6": "http://www.dji.com/wpmz/1.0.6",
+}
 FIELDS = (
     "flyToWaylineMode", "finishAction", "exitOnRCLost",
     "executeRCLostAction", "takeOffSecurityHeight",
@@ -38,10 +45,10 @@ MODES = {"relativeToStartPoint", "WGS84", "realTimeFollowSurface"}
 _MODEL_PART = re.compile(r"[0-9]{1,5}\Z")
 
 
-def _child_text(parent, tag):
+def _child_text(parent, tag, wpml_prefix=W):
     if parent is None:
         return None
-    elems = parent.findall(W + tag)
+    elems = parent.findall(wpml_prefix + tag)
     if len(elems) != 1 or elems[0].text is None:
         return None
     value = elems[0].text.strip()
@@ -58,9 +65,9 @@ def _number(value):
     return num if num.is_finite() and abs(num) <= 1000000000 else None
 
 
-def _model_key(node):
-    a = _child_text(node, "droneEnumValue")
-    b = _child_text(node, "droneSubEnumValue")
+def _model_key(node, wpml_prefix=W):
+    a = _child_text(node, "droneEnumValue", wpml_prefix)
+    b = _child_text(node, "droneSubEnumValue", wpml_prefix)
     return f"0-{a}-{b}" if a and b and _MODEL_PART.fullmatch(a) and _MODEL_PART.fullmatch(b) else None
 
 
@@ -127,6 +134,9 @@ def classify_wpml_structure(kmz: bytes) -> dict:
     direct_folders = [item for item in doc if _tag(item) == "Folder"] if doc is not None else []
     all_folders = [item for item in descendants if _tag(item) == "Folder"]
     direct_wpml_config = doc.find(W + "missionConfig") if doc is not None else None
+    recognized_versions = [v for v, ns in KNOWN_WPML_SCHEMAS.items()
+                           if configs and configs[0].tag == "{" + ns + "}missionConfig"]
+    detected_schema = recognized_versions[0] if len(recognized_versions) == 1 else "unknown"
     direct_qualified_folders = doc.findall(K + "Folder") if doc is not None else []
     spots = [item for item in descendants if _tag(item) == "Placemark"]
     points = [item for item in descendants if _tag(item) == "Point"]
@@ -163,6 +173,8 @@ def classify_wpml_structure(kmz: bytes) -> dict:
         "direct_mission_config_count": len(direct_configs),
         "mission_config_count": len(configs),
         "mission_config_namespace": _ns_class(configs[0].tag, WPML_NS) if configs else None,
+        "recognized_wpml_schema_version": detected_schema,
+        "read_only_schema_supported": detected_schema in KNOWN_WPML_SCHEMAS,
         "direct_folder_count": len(direct_folders),
         "folder_count": len(all_folders),
         "folder_namespace": _ns_class(all_folders[0].tag, KML_NS) if all_folders else None,
@@ -211,14 +223,20 @@ async def diagnose_structure(*, limit=8, inventory_reader=None, kmz_reader=None,
 def parse_parameter_audit(kmz: bytes) -> dict:
     """Bounded, allowlisted, position-free WPML audit over actual executable Folders."""
     doc = _read_xml(kmz)
-    config = doc.find(W + "missionConfig")
+    # Only exact namespace URIs in a deliberately small read-only allowlist.
+    # Duplicate/mixed schemas are ambiguous and fail closed.
+    matches = [(version, doc.find("{" + namespace + "}missionConfig"))
+               for version, namespace in KNOWN_WPML_SCHEMAS.items()]
+    present = [(version, node) for version, node in matches if node is not None]
     folders = doc.findall(K + "Folder")
-    if config is None or not 1 <= len(folders) <= MAX_FEATURES:
+    if len(present) != 1 or not 1 <= len(folders) <= MAX_FEATURES:
         raise LocalWaylineError("unsupported_geometry")
+    schema_version, config = present[0]
+    wpml_prefix = "{" + KNOWN_WPML_SCHEMAS[schema_version] + "}"
 
-    drone = config.find(W + "droneInfo")
-    payload = config.find(W + "payloadInfo")
-    global_fields = {field: _child_text(config, field) for field in FIELDS}
+    drone = config.find(wpml_prefix + "droneInfo")
+    payload = config.find(wpml_prefix + "payloadInfo")
+    global_fields = {field: _child_text(config, field, wpml_prefix) for field in FIELDS}
     route_info = []
     total = 0
     for folder in folders:
@@ -234,37 +252,38 @@ def parse_parameter_audit(kmz: bytes) -> dict:
                 raise LocalWaylineError("unsupported_geometry")
             # Validate values, but coordinates are NEVER returned in the audit.
             _coordinate(coords.text)
-            action_nodes = place.findall(".//" + W + "action")
+            action_nodes = place.findall(".//" + wpml_prefix + "action")
             actions = [
                 item.text.strip() if item.text else None
-                for item in place.findall(".//" + W + "actionActuatorFunc")
+                for item in place.findall(".//" + wpml_prefix + "actionActuatorFunc")
             ]
             action_structure_unknown = (
                 len(action_nodes) != len(actions)
-                or (bool(place.findall(".//" + W + "actionGroup")) and not action_nodes)
+                or (bool(place.findall(".//" + wpml_prefix + "actionGroup")) and not action_nodes)
             )
             photo_count += actions.count("takePhoto")
             other_action_count += len(actions) - actions.count("takePhoto")
             waypoints.append({
-                "height": _number(_child_text(place, "executeHeight")),
-                "speed": _number(_child_text(place, "waypointSpeed")),
+                "height": _number(_child_text(place, "executeHeight", wpml_prefix)),
+                "speed": _number(_child_text(place, "waypointSpeed", wpml_prefix)),
                 "photo_only": actions == ["takePhoto"],
                 "no_actions": len(actions) == 0,
                 "action_count": len(actions),
                 "action_structure_unknown": action_structure_unknown,
             })
-        mode = _child_text(folder, "executeHeightMode")
+        mode = _child_text(folder, "executeHeightMode", wpml_prefix)
         route_info.append({
             "height_mode": mode if mode in MODES else "unknown",
-            "speed": _number(_child_text(folder, "autoFlightSpeed")),
+            "speed": _number(_child_text(folder, "autoFlightSpeed", wpml_prefix)),
             "waypoints": waypoints,
             "photo_count": photo_count,
             "other_action_count": other_action_count,
-            "start_actions_present": folder.find(W + "startActionGroup") is not None,
+            "start_actions_present": folder.find(wpml_prefix + "startActionGroup") is not None,
         })
     return {
-        "wpml_model_key": _model_key(drone),
-        "wpml_payload_key": _child_text(payload, "payloadEnumValue"),
+        "wpml_schema_version": schema_version,
+        "wpml_model_key": _model_key(drone, wpml_prefix),
+        "wpml_payload_key": _child_text(payload, "payloadEnumValue", wpml_prefix),
         "global_fields": global_fields,
         "routes": route_info,
     }
@@ -284,6 +303,8 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
     wpml_model = audit["wpml_model_key"]
     output = {
         "wpml_model_key": wpml_model,
+        "wpml_schema_version": audit["wpml_schema_version"],
+        "wpml_schema_semantics_verified": audit["wpml_schema_version"] == "1.0.2",
         "cloud_model_key": cloud_model_key,
         "cloud_metadata_wpml_agree": (
             cloud_model_key == wpml_model if cloud_model_key and wpml_model else None
@@ -303,6 +324,7 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
     }
     # Don't compare route-specific properties to a partial or multi-folder match.
     if (len(routes) != 1 or geometry.get("geometry_result") != "coordinates_equal"
+            or audit["wpml_schema_version"] != "1.0.2"
             or wpml_model != expected_model or not routes[0]["waypoints"]):
         return output
     route = routes[0]
