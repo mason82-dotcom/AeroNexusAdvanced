@@ -51,8 +51,10 @@ macht 90 Sekunden alte Quellwerte deshalb **nicht** neu.
 
 Ein Wert wird nur als Livewert angezeigt, wenn (1) die geschützte
 Geräte-API erfolgreich antwortete, (2) der Onlinezustand explizit
-`true` ist, (3) die Gerätefrische `fresh` meldet und (4) eine ggf.
-vorhandene Einzel-Feld-Uhr ebenfalls `fresh` meldet. Bei HTTP-Fehler,
+`true` ist, (3) die Gerätefrische `fresh` meldet, (4) das
+OSD-Eingangsalter höchstens 15 Sekunden beträgt und (5) eine ggf.
+vorhandene Einzel-Feld-Uhr ebenfalls `fresh` meldet und weder ihr
+Quell- noch Empfangsalter 15 Sekunden überschreitet. Bei HTTP-Fehler,
 Offline, Stale, fehlender oder unplausibler Uhr wird die Live-Anzeige
 zurückgesetzt. Historische Werte bleiben ausschließlich im vorhandenen
 technischen `last_known_telemetry`, eindeutig beschriftet. Nur vorhandene
@@ -61,7 +63,9 @@ Messwerte werden visualisiert; unbekannte DJI-Enums bleiben Codes.
 Die Browser-Trends (max. 60 pro Messreihe) und die relative GNSS-Spur
 (max. 120 Punkte) bleiben **flüchtig im RAM**; sie sind kein Flugschreiber.
 OSD-Zeitstempel deduplizieren neue Messpunkte, nicht Browser-Refreshs.
-Anomale Positionssprünge über 50 km starten eine neue relative Spur.
+Anomale Positionssprünge über 50 km starten eine neue relative Spur. Offline-/Stale- oder API-Ausfälle verwerfen
+lokale Browser-Verläufe, um über Empfangslücken keine durchgehende
+Flugspur zu suggerieren.
 Keine Positions-/Seriennummern-, Token- oder DJI-Rohdaten verlassen über
 neue Verbindungen den lokalen Browser.
 
