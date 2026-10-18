@@ -78,6 +78,44 @@ wird lediglich die beim Topic bekannte Identität verwendet, andernfalls
 die Meldung ignoriert. Zuordnung und Dock-Alarmtext sollten gegen eine
 echte DJI-Dock-Sitzung validiert werden.
 
+## HMS-Ereignishistorie (privat und dauerhaft)
+
+Sobald `AERONEXUS_OSD_HMS_ENABLED=1` aktiv ist, speichert AeroNexusAdvanced
+**nur Änderungen zwischen vollständig validierten HMS-Snapshots** in einer
+privaten SQLite-Datei:
+
+`~/.config/aeronexusadvanced/hms-history.sqlite3` (Dateimodus `0600`).
+
+Gespeichert werden bis zu **3.000** Zustandswechsel, danach werden die ältesten
+Einträge gelöscht. Der Browser zeigt für das ausgewählte Gerät die letzten zwölf
+Änderungen an und aktualisiert sie mit den übrigen Live-Daten.
+
+- `appeared`: ein Code wird zum ersten Mal in einer akzeptierten Liste gemeldet.
+- `resolved`: ein zuvor gemeldeter Code fehlt in einem neueren vollständigen
+  Snapshot. Bedeutet **nicht**, dass der technische Defekt sicher behoben ist.
+- `reappeared`: ein zuvor nicht mehr gemeldeter Code wird erneut gemeldet.
+- `updated`: Stufe oder HMS-Modul eines aktiven Codes hat sich verändert.
+- `observed`: nach Neustart weiterhin gemeldeter Code, dessen vorheriger
+  Zustand bereits aus der gespeicherten Historie bekannt ist; **kein
+  neuer Fehlerbeginn** wird behauptet.
+
+Jede Änderung trägt eine UTC-Eingangszeit vom Pi. Der optionale DJI-MQTT-
+Quellzeitstempel wird getrennt gespeichert; **beide sind keine sichere
+Fehlereintrittszeit**. Die Historie enthält keine Rohpayloads, GPS-Positionen,
+Geräte-Logins oder Steuerbefehle. Gerätekennungen und normalisierte Meldungstexte
+bleiben ausschließlich in der privaten lokalen Datenbank.
+
+Die geschützte, seitenweise lesbare API lautet
+`GET /api/v1/status/hms-history?device_id=...&limit=50&offset=0`.
+Sie verwendet dieselbe Viewer-Zugriffskontrolle wie
+`/api/v1/status/devices`. Ein Zugriff ohne Berechtigung ist nicht möglich.
+Bei Dateisystemfehlern läuft der HMS- und OSD-Empfang weiter, aber die
+Antwort kennzeichnet `storage_error: true` und `persistent: false`.
+
+Ein abweichender Speicherort kann über
+`AERONEXUS_HMS_HISTORY_PATH=/privater/pfad/hms-history.sqlite3`
+gesetzt werden. Keine Speicherung findet statt, solange HMS deaktiviert ist.
+
 ## Grenzen
 
 - Der lokale Code kann *alle im installierten DJI-Katalog enthaltenen,
