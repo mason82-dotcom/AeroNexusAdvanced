@@ -276,3 +276,67 @@ def test_conflicting_payload_identity_rejects_packet_atomically(feed):
 def test_invalid_m3_camera_properties_rejected(camera):
     with pytest.raises(ValueError):
         normalize_osd(DeviceType.AIRCRAFT, {'cameras': [camera]})
+
+
+def test_rc_plus2_drc_and_auth_without_sensitive_permission_values(feed):
+    assert push(feed, {'capacity_percent': 80, 'drc_state': 2,
+                       'cloud_control_auth': ['flight', 'payload'],
+                       'wireless_link': {'sdr_quality': 65535, '4g_quality': 4,
+                                         '4g_uav_quality': 0, '4g_gnd_quality': 65535}},
+                device=RC)
+    details = view(feed, RC)['telemetry']['cloud_details']
+    assert details['drc_link_state_code'] == 2
+    assert details['cloud_control_authorization_count'] == 2
+    assert details['wireless_link'] == {'sdr_quality': None, 'cellular_quality': 4,
+                                        'cellular_aircraft_quality': 0,
+                                        'cellular_ground_quality': None}
+    assert 'flight' not in json.dumps(details) and 'payload' not in json.dumps(details)
+    assert validate_details(details) == details
+
+
+def test_rc_state_permissions_only_update_on_state_and_do_not_refresh_osd(feed):
+    assert push(feed, {'capacity_percent': 61}, device=RC)
+    feed[1][0] += timedelta(minutes=10)
+    assert push(feed, {'drc_state': 1, 'cloud_control_auth': ['flight']},
+                device=RC, channel='state')
+    v = view(feed, RC)
+    assert v['freshness'] == 'stale' and v['online'] is None
+    assert v['telemetry']['battery_percent'] is None
+    assert v['telemetry']['cloud_details']['drc_link_state_code'] == 1
+    assert v['field_status']['cloud_details.drc_link_state_code']['channel'] == 'state'
+
+
+@pytest.mark.parametrize('payload', [
+    {'drc_state': 3}, {'drc_state': -1}, {'cloud_control_auth': 'flight'},
+    {'cloud_control_auth': ['x'] * 17}, {'cloud_control_auth': [3]},
+    {'wireless_link': {'sdr_quality': 6}},
+    {'wireless_link': {'4g_uav_quality': -1}},
+])
+def test_invalid_rc_extended_telemetry_rejected(payload):
+    with pytest.raises(ValueError):
+        normalize_osd(DeviceType.CONTROLLER, payload)
+
+
+@pytest.mark.parametrize('source,expected', [
+    ('A', 'controller_a'), ('B', 'controller_b'), ('', 'unassigned'),
+    ('00000000-0000-4000-8000-000000000123', 'browser'),
+    ('some_unknown_device_name', 'other'),
+])
+def test_aircraft_control_source_is_category_only(source, expected):
+    raw = {'mode_code': 3, 'control_source': source,
+           'payloads': [{'payload_index': '89-0-0', 'control_source': source,
+                         'sn': 'SENSITIVE-PAYLOAD-SERIAL'}]}
+    details = normalize_osd(DeviceType.AIRCRAFT, raw)['cloud_details']
+    assert details['control_source_category'] == expected
+    assert details['payload_control'][0]['control_source_category'] == expected
+    assert 'SENSITIVE' not in json.dumps(details)
+    assert source not in json.dumps(details) if expected == 'browser' else True
+    assert validate_details(details) == details
+
+
+def test_invalid_control_source_and_payload_control_fail_closed():
+    for raw in ({'control_source': 42}, {'control_source': 'A\\nsecret'},
+                {'payloads': [{'payload_index': '../bad'}]},
+                {'payloads': [{'control_source': 23}]}):
+        with pytest.raises(ValueError):
+            normalize_osd(DeviceType.AIRCRAFT, {'mode_code': 3, **raw})
