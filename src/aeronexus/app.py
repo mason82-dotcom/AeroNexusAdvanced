@@ -71,6 +71,7 @@ from .local_session import LocalSessionHandoff, handoff_origin
 from .mission_csv import MAX_CSV_BYTES, MissionCsvError, preview_csv
 from .status_polling import ReadOnlyStatusPoller
 from .status_runtime import StatusRuntime, StatusSettings
+from .hms_history import HmsHistory, default_history_path
 
 
 @asynccontextmanager
@@ -97,6 +98,8 @@ async def lifespan(app: FastAPI):
     stop_polling = asyncio.Event()
     if settings is not None:
         runtime = app.state.status_runtime
+        if settings.include_hms:
+            runtime.hms_history = HmsHistory(default_history_path())
         ingest = CloudOsdIngest(runtime, settings.project_id, settings.max_devices)
         feed = CloudMqttFeed(settings, ingest)
         runtime.live_feed = feed.status
@@ -252,6 +255,25 @@ async def status_devices(
     devices = app.state.status_runtime.device_views(provider, project_id)
     return {"total": len(devices), "offset": offset, "limit": limit,
             "devices": list(devices[offset:offset + limit])}
+
+
+@app.get("/api/v1/status/hms-history")
+async def status_hms_history(
+    request: Request,
+    response: Response,
+    authorization: str | None = Header(default=None),
+    device_id: str | None = Query(default=None, min_length=1, max_length=80),
+    project_id: str | None = Query(default=None, min_length=1, max_length=128),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """Protected, bounded local history of HMS transitions (not raw DJI messages)."""
+    _no_cache(response)
+    _require_viewer_access(request, authorization)
+    return app.state.status_runtime.hms_history.list_events(
+        provider=ProviderKind.CLOUD_API.value, project_id=project_id,
+        device_id=device_id, limit=limit, offset=offset
+    )
 
 
 @app.get("/api/v1/dji/media/summary")

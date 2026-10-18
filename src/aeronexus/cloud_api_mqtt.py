@@ -234,8 +234,13 @@ class CloudOsdIngest:
             # Gateway /events reports dock/aircraft alarms together.
             # The record is grouped by *reporting* gateway, not assigned
             # by guesswork to an aircraft. Retain per-row device domain.
+            previous_alerts = self.runtime.health.get(key)
             self.runtime.health[key] = alerts
             self.runtime.cloud_hms_clocks[key] = timestamp
+            # Record changes only AFTER accepting the complete snapshot.
+            # Storage errors are isolated from live telemetry by HmsHistory.
+            self.runtime.hms_history.record_snapshot(
+                key, previous_alerts, alerts, now, timestamp)
         except ValueError:
             self.hms_rejected += 1
             return False

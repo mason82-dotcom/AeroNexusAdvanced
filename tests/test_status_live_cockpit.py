@@ -153,6 +153,9 @@ api.renderCockpit([{...first,health:[{
   code:"0x16100083",level:"warning",module:"HMS",message:marker,
   source:"dji-cloud-hms",device_domain:"aircraft",
   message_source:"dji-hms-catalog-en",imminent:true,in_the_sky:true
+}],hms_history:[{
+  action:"reappeared",code:"0x16070042",observed_at:"2026-10-18T20:00:00Z",
+  level:"reminder",message:marker
 }]}]);
 const hmsText=bodyText(el("cockpit-hms"));
 assert.ok(hmsText.includes("DJI-Gateway-Meldung")&&hmsText.includes("Fluggerät"),
@@ -160,6 +163,8 @@ assert.ok(hmsText.includes("DJI-Gateway-Meldung")&&hmsText.includes("Fluggerät"
 assert.ok(hmsText.includes("Englischer DJI-Katalogtext"));
 assert.ok(hmsText.includes("Dringend laut DJI"));
 assert.ok(hmsText.includes(marker),"HMS data is rendered as literal text");
+assert.ok(hmsText.includes("Wiederaufgetreten") && hmsText.includes("2026-10-18T20:00:00Z"),
+  "History must show real backend transitions, not browser-inferred changes");
 """
 
 
