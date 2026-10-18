@@ -1537,31 +1537,47 @@ async function openCloudOverview(){
     "Routen einzeln schaltbar; keine Flugfreigabe.");
 }
 
+let pilot2ActionController=null,pilot2ActionRequest=0;
+function clearPilot2ActionSummary(){
+  ++pilot2ActionRequest;
+  pilot2ActionController?.abort();
+  pilot2ActionController=null;
+  $("pilot2-action-load").disabled=false;
+  $("pilot2-action-results").replaceChildren();
+  $("pilot2-action-status").className="status";
+  $("pilot2-action-status").textContent="Nur nach Klick: keine automatischen KMZ-Abrufe.";
+}
 async function loadPilot2ActionSummary(){
   const button=$("pilot2-action-load");
   const status=$("pilot2-action-status");
   const list=$("pilot2-action-results");
   if(button.disabled)return;
+  const serial=++pilot2ActionRequest;
   const controller=new AbortController();
+  pilot2ActionController=controller;
   const timer=setTimeout(()=>controller.abort(),95000);
   button.disabled=true;list.replaceChildren();
   status.className="status";status.textContent="Anonyme WPML-Aktionsdiagnose wird lesend abgerufen…";
   try{
     const response=await api("/api/v1/studio/pilot2/action-summary",{signal:controller.signal});
     const data=await response.json();
+    // A tab switch may cancel the scan after HTTP headers were received.
+    if(serial!==pilot2ActionRequest||controller.signal.aborted)return;
     if(data?.state!=="connected"){
       status.className="status error";
       status.textContent="Pilot-2-Diagnose nicht verfügbar ("+clean(data?.state)+"). Es wurden keine Flugaktionen ausgeführt.";
       return;
     }
+    if(data.read_only!==true||data.flight_compatibility_verified!==false||
+       data.wpml_semantics_verified!==false||!Array.isArray(data.anonymous_types)||
+       !Array.isArray(data.waylines)){
+      throw new Error("Diagnoseformat unvollständig oder nicht schreibgeschützt.");
+    }
     const count=Number(data.checked)||0;
     status.className="status";
     status.textContent=count+" Waylines geprüft · "+clean(data.recognized_actions)+
-      " bekannte und "+clean(data.unknown_actions)+" unbekannte Aktionsvorkommen."+
-      " WPML-Semantik und Flugkompatibilität nicht bestätigt.";
-    if(!Array.isArray(data.anonymous_types)||!Array.isArray(data.waylines)){
-      throw new Error("Diagnoseformat unvollständig");
-    }
+      " Aktionen in der bekannten Typenliste und "+clean(data.unknown_actions)+
+      " nicht zugeordnete Aktionsvorkommen. WPML-Semantik und Flugkompatibilität nicht bestätigt.";
     for(const entry of data.anonymous_types.slice(0,128)){
       const card=els("article","wayline-card");
       cardText(card,"h2","",clean(entry.alias));
@@ -1573,10 +1589,17 @@ async function loadPilot2ActionSummary(){
     }
     cardText(list,"p","note","Nur anonymisierte Zähler. Kein unbearbeitetes WPML, keine Koordinaten, keine Übertragbarkeits- oder Flugfreigabe.");
   }catch(err){
+    if(serial!==pilot2ActionRequest)return;
     status.className="status error";
     status.textContent=controller.signal.aborted
       ?"Diagnose-Zeitlimit erreicht.":errorMessage(err);
-  }finally{clearTimeout(timer);button.disabled=false;}
+  }finally{
+    clearTimeout(timer);
+    if(serial===pilot2ActionRequest){
+      button.disabled=false;
+      pilot2ActionController=null;
+    }
+  }
 }
 function waylineSourceState(data){
   const state=data.local_pilot?.state||"not_configured";
@@ -1607,6 +1630,7 @@ async function loadWaylines(){
   }finally{clearTimeout(timer);if(serial===waylineSerial){$("refresh-waylines").disabled=false;$("wayline-grid").setAttribute("aria-busy","false");waylineAbort=null;}}
 }
 function switchTab(id){
+  if(id!=="waylines-pane")clearPilot2ActionSummary();
   if(id!=="map-pane"&&id!=="geo-pane"&&document.body.classList.contains("map-focus-active"))setMapFocus(false);
   document.querySelectorAll(".pane").forEach(el=>el.classList.toggle("active",el.id===id));
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.classList.toggle("active",el.dataset.tab===id));
