@@ -366,6 +366,37 @@ git show FETCH_HEAD:scripts/pi/dji_state_decoder_observer.py \
 
 Der produktive Server/EMQX werden dadurch nicht verändert.
 
+### Fehlerfreier 120-Sekunden-Livedurchlauf (19.10.2026)
+
+Der Betreiber meldete einen weiteren **isolierten** Live-Durchlauf
+mit folgendem Ergebnis:
+
+| Wert | Ergebnis |
+|---|---:|
+| SUBACK (beide Topics) | erfolgreich |
+| OSD insgesamt / akzeptiert | **120 / 120** |
+| State insgesamt / akzeptiert | **33 / 33** |
+| State ignoriert / abgelehnt / veraltet | **0 / 0 / 0** |
+| State akzeptiert Fluggerät / Controller | **26 / 7** |
+| Unterschiedliche State-Feldpfade | **4** |
+| Verbindungsunterbrechungen / interne Fehler | **0 / 0** |
+| Unmapped-Kategorien | **sämtlich 0** |
+
+Somit verarbeitet der isolierte lokale Decoder in diesem Fenster sämtliche
+153 beobachteten OSD-/State-Nachrichten erfolgreich. Die früher beobachteten
+unmapped/ignored-State-Fälle sind **in diesem Fenster nicht reproduziert**;
+das ist kein Nachweis ihrer dauerhaften Beseitigung, weil die übermittelten
+State-Properties und die Reihenfolge des initialen OSD-Inventars
+zustandsabhängig wechseln. Eine 100-prozentige Erfolgsquote in einem
+einzelnen Fenster bestätigt **nicht** die vollständige Implementierung
+aller in DJI Cloud API 1.18 dokumentierten Felder.
+
+Als letzte lesende Feld- und Zeitabnahme müssen noch die tatsächlichen vier
+kanonischen State-Feldpfade und die DJI-Quellzeit-/Empfangszeit-Differenz
+pro Geräteklasse nachgewiesen werden. Hierfür liefert der unabhängige
+Observer nur **fest kodierte, sichere kanonische Feldnamen** sowie
+aggregierte Zeitdifferenzen; keine dynamischen DJI-Pfade und keine Werte.
+
 ## Verbindliche Hardwareabnahme (noch offen)
 
 1. **RC Plus 2 allein eingeschaltet:** tatsächlicher RC-OSD-Eingang,
