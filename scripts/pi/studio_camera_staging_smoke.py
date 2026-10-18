@@ -221,8 +221,8 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool):
             count, distance, camera = validate_result(response)
             seen_preview.append(True)
             page.wait_for_function(
-                """n => !!window.surveyLayer &&
-                     surveyLayer.getLayers().length === n &&
+                """n => typeof surveyLayer !== 'undefined' &&
+                     !!surveyLayer && surveyLayer.getLayers().length === n &&
                      !document.getElementById('survey-camera-metrics').hidden""",
                 arg=count, timeout=12000)
             svg = page.locator(
