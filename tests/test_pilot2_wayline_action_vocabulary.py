@@ -266,6 +266,61 @@ def test_default_action_report_does_not_expose_route_field_multiplicity():
     assert "unknown_field_multiplicity_by_route" not in out["results"][0]
 
 
+def test_xml_position_bucket_divides_six_placemark_anchors_without_coordinates():
+    mission = WaypointMission.model_validate({
+        "name": "HIGHLY-PRIVATE-ROUTE", "drone_model": "mavic3e",
+        "waypoints": [
+            {"latitude": 49.10 + i * 0.01, "longitude": 8.5,
+             "take_photo": True}
+            for i in range(6)
+        ],
+    })
+    raw = export_kmz(mission, timestamp_ms=1730000000000)
+    buf = BytesIO()
+    with ZipFile(BytesIO(raw)) as src, ZipFile(buf, "w") as dst:
+        for filename in src.namelist():
+            data = src.read(filename)
+            if filename == "wpmz/waylines.wpml":
+                data = data.replace(
+                    b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
+                    b"<wpml:actionActuatorFunc>secretVendorAction</wpml:actionActuatorFunc>")
+                data = data.replace(
+                    b"<wpml:actionActuatorFuncParam>",
+                    b"<wpml:actionActuatorFuncParam>"
+                    b"<wpml:privateDiagnosticField>NEVER-LOG</wpml:privateDiagnosticField>")
+            dst.writestr(filename, data)
+    result = av._aggregate_action_records(
+        [(1, buf.getvalue())],
+        parameter_hints=True, field_aliases=True, position_buckets=True)
+    assert result["results"][0]["unknown_field_xml_placement_by_route"] == [
+        {"P01": {"first": {"1": 2}, "middle": {"1": 2}, "last": {"1": 2}}}
+    ]
+    assert result["unknown_field_aliases"][0]["occurrences"] == 6
+    serialized = json.dumps(result)
+    for private in ("HIGHLY-PRIVATE-ROUTE", "49.10", "secretVendorAction",
+                    "privateDiagnosticField", "NEVER-LOG"):
+        assert private not in serialized
+
+
+def test_position_buckets_require_field_aliases_and_are_off_by_default():
+    with pytest.raises(ValueError, match="require field aliases"):
+        av._aggregate_action_records(
+            [(1, param_archive(unknown_tag=True))],
+            parameter_hints=True, position_buckets=True)
+    result = av._aggregate_action_records(
+        [(1, param_archive(unknown_tag=True))],
+        parameter_hints=True, field_aliases=True)
+    assert "unknown_field_xml_placement_by_route" not in result["results"][0]
+
+
+def test_first_last_bucket_for_two_placemarks():
+    assert av._xml_placement_bucket(0, 2) == "first"
+    assert av._xml_placement_bucket(1, 2) == "last"
+    assert av._xml_placement_bucket(0, 1) == "first"
+    with pytest.raises(LocalWaylineError, match="unsupported_geometry"):
+        av._xml_placement_bucket(1, 1)
+
+
 def test_field_aliases_require_explicit_parameter_hints():
     with pytest.raises(ValueError, match="require parameter hints"):
         av._aggregate_action_records(
