@@ -81,7 +81,7 @@ def link_quality(value):
 
 _SOURCE_CATEGORIES = frozenset({'unassigned', 'controller_a', 'controller_b',
                                 'browser', 'other'})
-_UUID = re.compile(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\Z')
+_UUID = re.compile(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
 
 
 def control_source_category(value):
@@ -101,16 +101,21 @@ def control_source_category(value):
     return 'browser' if _UUID.fullmatch(value) else 'other'
 
 
-def authorization_count(value):
-    """Do not expose raw cloud authorization strings or identifiers to the UI."""
-    if type(value) is int and 0 <= value <= 16:
-        return value  # canonical validation
+def authorization_count_wire(value):
+    """Validate DJI list but expose only its size, never arbitrary strings."""
     if not isinstance(value, list) or len(value) > 16:
         raise ValueError('Invalid cloud authorization list')
     if any(not isinstance(item, str) or not 1 <= len(item) <= 64
            or any(ord(c) < 32 for c in item) for item in value):
         raise ValueError('Invalid cloud authorization entry')
     return len(value)
+
+
+def authorization_count(value):
+    """Validate normalized telemetry without accepting numbers on DJI wire."""
+    if type(value) is not int or not 0 <= value <= 16:
+        raise ValueError('Invalid canonical authorization count')
+    return value
 
 # wire key: (canonical key, parser). Unknown enums are retained as numeric
 # codes, never guessed into labels. Wind's wire unit is 0.1 m/s, not m/s.
@@ -154,7 +159,7 @@ PACK = {
 RC = {
     'height': ('controller_height_m', number()),
     'drc_state': ('drc_link_state_code', DRC_STATE),
-    'cloud_control_auth': ('cloud_control_authorization_count', authorization_count),
+    'cloud_control_auth': ('cloud_control_authorization_count', authorization_count_wire),
 }
 WIRELESS = {
     'dongle_number': ('dongle_count', COUNT),
@@ -331,6 +336,7 @@ DETAILS_SCHEMA = canonical_schema(COMMON | AIRCRAFT | RC) | {
 }
 # Canonical wind is already in m/s. Never apply the wire conversion twice.
 DETAILS_SCHEMA['wind_speed_mps'] = number(0)
+DETAILS_SCHEMA['cloud_control_authorization_count'] = authorization_count
 
 
 def validate_details(data, schema=DETAILS_SCHEMA):
