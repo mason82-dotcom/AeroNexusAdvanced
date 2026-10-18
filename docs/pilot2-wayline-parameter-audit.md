@@ -333,3 +333,40 @@ Insbesondere gilt weder ein mehrfaches Feld noch die Kopplung an
 betweenAdjacentPoints als Bestätigung einer ausführbaren oder
 übertragbaren DJI-Funktion. Nur GET-Zugriffe; kein O4, kein Upload,
 keine Flugsteuerung.
+
+### Wiederholte Feldnamen je ausführbare Route
+
+Die echten WPML-1.0.6-Missionen ergaben 551 P03-Feldvorkommen
+innerhalb 369 A02-Aktionen: 217 Aktionen mit 1, 122 mit 2 und
+30 mit 3 identischen P03-XML-Elementen.
+
+Mit --parameter-hints --field-aliases gibt das CLI jetzt zusätzlich
+results[].unknown_field_multiplicity_by_route aus. Pro KMZ-Datei und
+ausführbarem Folder wird je temporärem Feldalias Pxx eine Verteilung
+angezeigt, wie häufig genau 1, 2, 3 usw. Felder innerhalb derselben
+Aktionsinstanz vorkommen. So kann eine Häufung etwa auf einzelne
+Waylines oder Teilrouten eingegrenzt werden.
+
+Die Summe über alle Routen muss mit unknown_field_aliases[].occurrences
+übereinstimmen. Ohne --field-aliases entfällt das Feld vollständig.
+Es enthält ausschließlich Aliasbezeichner und ganzzahlige Zähler,
+keine XML-Inhalte, Aktionsnamen, Rohfeldnamen, Koordinaten oder
+Parameterwerte. Mehrfache Felder werden niemals als gültige
+WPML-1.0.6-Semantik zertifiziert.
+
+Ausgabe auf das interessante Feld eingrenzen, ohne weitere Rohdaten:
+
+~~~bash
+PYTHONPATH=src "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+  -m aeronexus.pilot2_wayline_action_vocabulary \
+  --limit 8 --parameter-hints --field-aliases |
+"$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps([
+ {"index":i["index"],"routes":[r.get("P03",{}) for r in
+ i.get("unknown_field_multiplicity_by_route",[])]}
+ for i in d.get("results",[])
+],indent=2))
+'
+~~~
