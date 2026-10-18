@@ -86,3 +86,44 @@ def test_real_chromium_safe_clicks_with_isolated_file_fixture():
             assert page.locator("#tasks-all").get_attribute("data-clicked") == "2"
         finally:
             driver.close()
+
+def test_real_get_relay_never_exposes_bearer_in_browser_headers():
+    class Client:
+        calls = []
+        def _read_reviewed(self, url, *, max_bytes):
+            self.calls.append((url, max_bytes))
+            return 200, "application/json", b'{"ok":true}', False
+    class Route:
+        request = SimpleNamespace(url=BASE + "/api/v1/status/summary",
+                                  headers={"Authorization": "Bearer secret"},
+                                  method="GET")
+        sent = None
+        def fulfill(self, **kwargs):
+            self.sent = kwargs
+    route = Route()
+    client = Client()
+    audit.relay_live_api(route, client)
+    assert client.calls == [("/api/v1/status/summary", audit.MAX_BROWSER_API_BYTES)]
+    assert route.sent["status"] == 200
+    assert "headers" not in route.sent
+    assert b"secret" not in route.sent["body"]
+    assert route.sent["body"] == b'{"ok":true}'
+
+
+def test_real_get_relay_fails_closed_on_large_or_invalid_response():
+    class Client:
+        result = None
+        def _read_reviewed(self, *args, **kwargs):
+            return self.result
+    class Route:
+        request = SimpleNamespace(url=BASE + "/api/v1/status/devices?limit=5")
+        def fulfill(self, **kwargs):
+            self.result = kwargs
+    client, route = Client(), Route()
+    client.result = (200, "application/json", b"", True)
+    audit.relay_live_api(route, client)
+    assert route.result["status"] == 413
+    client.result = (200, "text/html", b"<secret>", False)
+    audit.relay_live_api(route, client)
+    assert route.result["status"] == 502
+    assert "secret" not in str(route.result)

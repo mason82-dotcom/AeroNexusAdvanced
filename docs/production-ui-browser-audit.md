@@ -74,3 +74,15 @@ Koordinaten auszugeben. Der Standardaufruf lädt keine Drittanbieter-Kacheln.
 `--allow-tiles` muss ausdrücklich gewählt werden (max. 18 pro Seite).
 Auch bei `tiles-200=0` kann die übrige UI-Abnahme erfolgreich sein;
 die tatsächliche Kartenkacheldarstellung bleibt dann separat offen.
+
+## Datentransport und Zugangsdaten
+
+Der Browser lädt die HTML-Seite und Leaflet-Assets über HTTPS. Für
+ursprungsgebundene `/api/v1/...`-Leseabfragen wird der Request
+vom Playwright-Router abgefangen und **mit dem bestehenden, CA-verifizierten
+Python-HTTPS-GET-Client** ausgeführt. Die echten JSON-Antworten werden mit
+maximal 2 MB in den Browser weitergereicht. Das ist kein Test der nativen
+Browser-Authentifizierung, wohl aber der echten Frontend-Verarbeitung
+produktiver Leseantworten. Die bestehende Bearer-Zugangskennung verlässt
+niemals den Python-Prozess und wird insbesondere keinem Drittanbieter-Request
+angehängt. HTTP-Redirects werden vom Python-Client abgewiesen.

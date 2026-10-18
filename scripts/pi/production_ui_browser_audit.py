@@ -105,6 +105,35 @@ def allow_request(url: str, method: str, base: str, *, tiles: bool = False) -> s
     return "block"
 
 
+MAX_BROWSER_API_BYTES = 2_000_000
+
+
+def relay_live_api(route, client: ReadOnlyClient) -> None:
+    """A real verified-CA GET relay: bearer tokens NEVER enter Chromium.
+
+    Avoid route.continue_(headers={Authorization:...} because redirected
+    requests can inherit override headers outside the trusted origin.
+    """
+    parsed = urlsplit(route.request.url)
+    relative = parsed.path + (("?" + parsed.query) if parsed.query else "")
+    try:
+        status, mime, body, excess = client._read_reviewed(
+            relative, max_bytes=MAX_BROWSER_API_BYTES
+        )
+        if excess:
+            route.fulfill(status=413, content_type="application/json",
+                          body='{"detail":"Read-only browser response size limit"}')
+        elif status >= 400:
+            route.fulfill(status=status, content_type="application/json", body="{}")
+        elif "application/json" not in mime.lower():
+            route.fulfill(status=502, content_type="application/json", body="{}")
+        else:
+            route.fulfill(status=status, content_type="application/json", body=body)
+    except Exception:
+        # Never log exception text; upstream exceptions can contain object keys.
+        route.fulfill(status=503, content_type="application/json", body="{}")
+
+
 def browser_path() -> str | None:
     selected = os.getenv("AERONEXUS_CHROMIUM_BIN", "").strip()
     if selected:
@@ -218,10 +247,7 @@ def audit_page(browser, client: ReadOnlyClient, module: str, path: str,
                 return route.abort()
         if kind == "api":
             counters["api_requested"] += 1
-        # Add token only to same-origin APIs (never jsDelivr or map providers).
-        if kind == "api" and "Authorization" in client.headers:
-            headers = {**request.headers, "Authorization": client.headers["Authorization"]}
-            return route.continue_(headers=headers)
+            return relay_live_api(route, client)
         return route.continue_()
 
     context.route("**/*", route_request)
