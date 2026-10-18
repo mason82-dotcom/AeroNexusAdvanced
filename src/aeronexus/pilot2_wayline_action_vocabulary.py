@@ -59,7 +59,7 @@ def _archive_action_records(kmz):
         records = []
         for group in folder.findall(W + "startActionGroup"):
             trigger = "start"
-            actions = group.findall(W + "action")
+            actions = group.findall(".//" + W + "action")
             for action in actions:
                 seen_actions += 1
                 records.append(("start", trigger, _text_or_missing(
@@ -73,7 +73,7 @@ def _archive_action_records(kmz):
                 raw_trigger = _text_or_missing(trigger_elem)
                 trigger = (raw_trigger if raw_trigger in DOCUMENTED_ACTION_TRIGGERS
                            else "unknown_trigger")
-                actions = group.findall(W + "action")
+                actions = group.findall(".//" + W + "action")
                 for action in actions:
                     seen_actions += 1
                     records.append(("waypoint", trigger, _text_or_missing(
