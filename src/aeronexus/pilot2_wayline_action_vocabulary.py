@@ -25,20 +25,36 @@ MAX_ALIASES = 128
 # Existence only, NOT actual contents, semantic meaning or 1.0.6 support.
 # A field may occur in multiple action types.
 PARAMETER_FIELD_CATEGORIES = {
+    # The mapping classifies presence only; never XML values or action semantics.
+    # Field names below appear in the DJI WPML Common Elements specification.
     "payloadPositionIndex": "payload",
+    "gimbalPort": "payload",
     "payloadLensIndex": "camera_lens",
     "useGlobalPayloadLensIndex": "camera_lens",
+    "orientedCameraType": "camera_model",
     "fileSuffix": "media_naming",
     "orientedFileSuffix": "media_naming",
+    "orientedFilePath": "media_reference",
+    "actionUUID": "action_tracking",
+    "imageWidth": "image_dimensions",
+    "imageHeight": "image_dimensions",
     "gimbalPitchRotateAngle": "gimbal",
     "gimbalYawRotateAngle": "gimbal",
+    "gimbalRollRotateAngle": "gimbal",
     "gimbalRotateMode": "gimbal",
     "gimbalPitchRotateEnable": "gimbal",
+    "gimbalYawRotateEnable": "gimbal",
+    "gimbalRollRotateEnable": "gimbal",
+    "gimbalRotateTimeEnable": "gimbal",
+    "gimbalRotateTime": "gimbal",
     "focusX": "focus",
     "focusY": "focus",
+    "AFPos": "focus",
+    "focalLength": "zoom",
     "zoomFocalLength": "zoom",
     "hoverTime": "hover",
     "aircraftHeading": "aircraft",
+    "aircraftPathMode": "aircraft",
 }
 MAX_PARAM_FIELDS_PER_ACTION = 64
 
