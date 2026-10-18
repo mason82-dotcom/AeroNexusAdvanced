@@ -215,6 +215,7 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                         item["parameter_category_counts"][category] += 1
                     if field_aliases:
                         item["foreign_namespace_field_count"] += foreign_count
+                        action_field_counts = Counter()
                         for field_name in unknown_names:
                             if field_name not in field_names_to_aliases:
                                 if len(field_names_to_aliases) >= MAX_FIELD_ALIASES:
@@ -224,12 +225,20 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                                 field_totals[fid] = {
                                     "id": fid, "occurrences": 0,
                                     "files": set(), "action_aliases": set(),
+                                    "action_count": 0,
+                                    "per_action_multiplicity": Counter(),
                                 }
                             fid = field_names_to_aliases[field_name]
                             item["unknown_field_alias_counts"][fid] += 1
                             field_totals[fid]["occurrences"] += 1
                             field_totals[fid]["files"].add(index)
                             field_totals[fid]["action_aliases"].add(alias)
+                            action_field_counts[fid] += 1
+                        # One action can contain a field more than once. Count
+                        # that multiplicity without retaining values or names.
+                        for fid, count in action_field_counts.items():
+                            field_totals[fid]["action_count"] += 1
+                            field_totals[fid]["per_action_multiplicity"][str(count)] += 1
             route_counts.append(dict(sorted(unknown_by_alias.items())))
         results.append({
             "index": index,
@@ -269,7 +278,11 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
         output["unknown_field_aliases"] = [
             {"id": fid, "occurrences": data["occurrences"],
              "file_count": len(data["files"]),
-             "action_aliases": sorted(data["action_aliases"])}
+             "action_aliases": sorted(data["action_aliases"]),
+             "actions_with_field": data["action_count"],
+             "multiplicity_per_action": dict(sorted(
+                 data["per_action_multiplicity"].items(),
+                 key=lambda pair: int(pair[0]))),}
             for fid, data in field_totals.items()
         ]
         output["field_alias_scope"] = "single_invocation_only"
