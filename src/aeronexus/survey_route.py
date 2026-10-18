@@ -12,6 +12,7 @@ class SurveyRouteOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
     speed_mps: float = Field(default=5.0, ge=1, le=15, allow_inf_nan=False)
     turn_delay_s: float = Field(default=5.0, ge=0, le=60, allow_inf_nan=False)
+    turn_radius_m: float | None = Field(default=None, ge=2, le=30, allow_inf_nan=False)
 
 
 def _distance_m(a: dict, b: dict) -> float:

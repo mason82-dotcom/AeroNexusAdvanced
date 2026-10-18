@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .survey_camera import SurveyCameraRequest, camera_footprint
 from .survey_route import SurveyRouteOptions, build_schematic_route
+from .survey_turns import build_turn_geometry
 
 
 class GeoPoint(BaseModel):
@@ -166,5 +167,12 @@ def generate_survey_preview(request: SurveyPlanRequest) -> dict:
     if optics:
         result["camera_plan"] = {**optics, "estimated_photo_count": photo_estimate}
     if request.route is not None:
-        result["route_preview"] = build_schematic_route(legs, total, request.route)
+        route_result = build_schematic_route(legs, total, request.route)
+        if request.route.turn_radius_m is not None:
+            route_result["turn_geometry"] = build_turn_geometry(
+                legs, [p.model_dump() for p in vertices],
+                total, request.route.turn_radius_m,
+                request.route.speed_mps, request.route.turn_delay_s,
+            )
+        result["route_preview"] = route_result
     return result
