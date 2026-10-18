@@ -6,6 +6,7 @@ deterministic map API double and only local workspace/survey HTTP with memory
 fixtures. It tests frontend wiring, not actual Leaflet raster rendering.
 Does not contact the Pi, DJI, MinIO or any backend, or write a real mission.
 """
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -15,7 +16,12 @@ import tempfile
 from aeronexus.geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
 from aeronexus.studio_page import render_studio
 
-from scripts.pi import studio_full_ui_chromium_smoke as base
+# Load the existing sibling browser harness by path. Pytest doesn't always put
+# the repository root on sys.path when collecting tests on GitHub Actions.
+BASE_PATH = Path(__file__).with_name("studio_full_ui_chromium_smoke.py")
+base_spec = importlib.util.spec_from_file_location("studio_full_ui_base", BASE_PATH)
+base = importlib.util.module_from_spec(base_spec)
+base_spec.loader.exec_module(base)
 
 PASS = re.compile(r'<html\b[^>]*\bdata-survey-ui="PASS"', re.I)
 ERROR = re.compile(r'data-survey-error="([^"]{0,180})"', re.I)
