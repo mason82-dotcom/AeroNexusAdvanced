@@ -327,7 +327,21 @@ function cockpitRenderRadio(dev){
     ["Mobilfunk-Dongles","cloud_details.wireless_link.dongle_count"],
     ["Livestream-Kapazität","cloud_details.live_capacity.available_videos"],
     ["Max. parallele Streams","cloud_details.live_capacity.simultaneous_videos"],
+    ["DJI-Videoquellen","cloud_details.live_capacity.source_devices_count"],
+    ["DJI-Kameras mit Quellen","cloud_details.live_capacity.source_cameras_count"],
+    ["DJI-Videostreams auswählbar","cloud_details.live_capacity.source_streams_count"],
   ],dev);
+  const labels={normal:"Normal",wide:"Weitwinkel",zoom:"Zoom",ir:"IR",
+                thermal:"Thermal",infrared:"Infrarot",other:"Sonstige"};
+  for(const [path,label] of [
+      ["video_types","Gemeldete Objektivtypen"],
+      ["switchable_video_types","Umschaltbare Objektivtypen"]]){
+    const values=cockpitRead(dev,"cloud_details.live_capacity."+path);
+    if(Array.isArray(values)){
+      cockpitItem(byId("cockpit-radio"),label,
+        values.length?values.map(value=>labels[value]||"Sonstige").join(", "):"Keine gemeldet");
+    }
+  }
   const lives=cockpitRead(dev,"cloud_details.live_status");
   if(Array.isArray(lives)){
     const root=byId("cockpit-radio");
@@ -404,6 +418,11 @@ function cockpitRenderSafety(dev){
     ["Windgeschwindigkeit · DJI-Schätzung","cloud_details.wind_speed_mps",v=>cockpitNumber(v,1,"m/s")],
     ["Windrichtung (Code)","cloud_details.wind_direction_code"],
     ["Flughöhenlimit","cloud_details.height_limit_m",v=>cockpitNumber(v,0,"m")],
+    ["Entfernungsgrenze (Statuscode)","cloud_details.distance_limit.state_code"],
+    ["Entfernungsgrenze","cloud_details.distance_limit.distance_limit_m",v=>cockpitNumber(v,0,"m")],
+    ["Nahe Entfernungsgrenze","cloud_details.distance_limit.near_limit",v=>v?"Ja":"Nein"],
+    ["RTH-Rückkehrhöhe","cloud_details.rth_altitude_m",v=>cockpitNumber(v,0,"m")],
+    ["RC-Verbindungsverlust (Code)","cloud_details.rc_lost_action_code"],
     ["Nahe Gebietsgrenze","cloud_details.near_area_limit",v=>v?"Ja":"Nein"],
     ["Nahe Höhenlimit","cloud_details.near_height_limit",v=>v?"Ja":"Nein"],
     ["Nachtbeleuchtung","cloud_details.night_lights_on",v=>v?"An":"Aus"],

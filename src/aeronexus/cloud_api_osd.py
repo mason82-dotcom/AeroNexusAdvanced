@@ -140,12 +140,21 @@ def normalize_osd(kind: DeviceType, data: Mapping) -> dict:
     if not isinstance(data, Mapping):
         raise CloudOsdError("OSD data must be an object")
     fields: dict = {}
-    if "latitude" in data or "longitude" in data:
-        lat, lon = _number(data.get("latitude")), _number(data.get("longitude"))
-        # DJI reports 0/0 when no position is known; that is not a location.
-        if lat is None or lon is None or (lat == 0 and lon == 0):
-            lat = lon = None
-        fields["latitude"], fields["longitude"] = lat, lon
+    # DJI property deltas may contain just one coordinate. Validate that
+    # value, but never replace an existing pair with a partial position.
+    has_lat, has_lon = "latitude" in data, "longitude" in data
+    if has_lat or has_lon:
+        lat = _number(data["latitude"]) if has_lat else None
+        lon = _number(data["longitude"]) if has_lon else None
+        if lat is not None and (not isfinite(lat) or not -90 <= lat <= 90):
+            raise CloudOsdError("Invalid latitude")
+        if lon is not None and (not isfinite(lon) or not -180 <= lon <= 180):
+            raise CloudOsdError("Invalid longitude")
+        if has_lat and has_lon:
+            # Explicit 0/0 means unknown, never a valid location.
+            if lat is None or lon is None or (lat == 0 and lon == 0):
+                lat = lon = None
+            fields["latitude"], fields["longitude"] = lat, lon
     if kind == DeviceType.CONTROLLER:
         _put(fields, data, "capacity_percent", "battery_percent")
         details = normalize_details(kind.value, data)

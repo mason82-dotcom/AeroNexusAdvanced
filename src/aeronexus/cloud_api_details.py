@@ -132,6 +132,8 @@ AIRCRAFT = {
     'home_longitude': ('home_longitude', number(-180, 180)),
     'total_flight_distance': ('total_flight_distance_m', number(0)),
     'height_limit': ('height_limit_m', number(0)),
+    'rth_altitude': ('rth_altitude_m', number(20, 500, integer=True)),
+    'rc_lost_action': ('rc_lost_action_code', number(0, 2, integer=True)),
     'is_near_area_limit': ('near_area_limit', switch),
     'is_near_height_limit': ('near_height_limit', switch),
     'night_lights_state': ('night_lights_on', switch),
@@ -212,6 +214,113 @@ CAPACITY = {
     'available_video_number': ('available_videos', COUNT),
     'coexist_video_number_max': ('simultaneous_videos', COUNT),
 }
+# DJI RC Plus 2 / RC Pro: live_capacity.device_list/camera_list/video_list
+# contain serials and private stream indices. Expose only bounded aggregates.
+LIVE_SOURCE_LIMIT = 16
+LIVE_CAMERA_LIMIT = 16
+LIVE_VIDEO_LIMIT = 32
+LIVE_SWITCHABLE_LIMIT = 16
+LIVE_TYPES = frozenset(('normal', 'wide', 'zoom', 'ir', 'thermal', 'infrared', 'other'))
+
+
+def live_type(value):
+    """Classify a DJI text enum without retaining arbitrary device strings."""
+    if (not isinstance(value, str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,23}', value)):
+        raise ValueError('Invalid DJI video type')
+    return value if value in LIVE_TYPES else 'other'
+
+
+def live_type_list(value):
+    """Canonical video categories: never expose unconstrained wire strings."""
+    if value is None:
+        return None
+    if (not isinstance(value, list) or len(value) > len(LIVE_TYPES)
+            or any(type(item) is not str or item not in LIVE_TYPES for item in value)
+            or value != sorted(set(value))):
+        raise ValueError('Invalid canonical DJI video types')
+    return list(value)
+
+
+def live_capacity(data):
+    """Read-only stream capability summary, never a stream control identifier.
+
+    Partial DJI property deltas are not proof of complete camera/video lists.
+    Missing nested lists produce null summaries, not fabricated zero counts.
+    """
+    result = mapped(data, CAPACITY)
+    if 'device_list' not in data or data['device_list'] is None:
+        return result
+    sources = data['device_list']
+    if not isinstance(sources, list) or len(sources) > LIVE_SOURCE_LIMIT:
+        raise ValueError('Invalid DJI video sources')
+
+    cameras_count, streams_count = 0, 0
+    cameras_complete, streams_complete = True, True
+    types_complete, switches_complete = True, True
+    video_types, switches = set(), set()
+    for source in sources:
+        if not isinstance(source, Mapping):
+            raise ValueError('Invalid DJI video source')
+        if 'sn' in source:
+            text(source['sn'])  # validate, deliberately never store
+        for field in ('available_video_number', 'coexist_video_number_max'):
+            if field in source:
+                COUNT(source[field])
+        cameras = source.get('camera_list')
+        if cameras is None:
+            cameras_complete = streams_complete = False
+            continue
+        if not isinstance(cameras, list) or len(cameras) > LIVE_CAMERA_LIMIT:
+            raise ValueError('Invalid DJI video camera list')
+        cameras_count += len(cameras)
+        for camera_item in cameras:
+            if not isinstance(camera_item, Mapping):
+                raise ValueError('Invalid DJI video camera')
+            if 'camera_index' in camera_item:
+                payload_index(camera_item['camera_index'])  # validate, drop
+            for field in ('available_video_number', 'coexist_video_number_max'):
+                if field in camera_item:
+                    COUNT(camera_item[field])
+            videos = camera_item.get('video_list')
+            if videos is None:
+                streams_complete = False
+                continue
+            if not isinstance(videos, list) or len(videos) > LIVE_VIDEO_LIMIT:
+                raise ValueError('Invalid DJI camera video list')
+            streams_count += len(videos)
+            for video in videos:
+                if not isinstance(video, Mapping):
+                    raise ValueError('Invalid DJI camera video')
+                if 'video_index' in video:
+                    text(video['video_index'])  # validate, drop
+                if 'video_type' in video:
+                    video_types.add(live_type(video['video_type']))
+                else:
+                    types_complete = False
+                selected = video.get('switchable_video_types')
+                if selected is None:
+                    switches_complete = False
+                else:
+                    if not isinstance(selected, list) or len(selected) > LIVE_SWITCHABLE_LIMIT:
+                        raise ValueError('Invalid DJI switchable video types')
+                    for item in selected:
+                        switches.add(live_type(item))
+
+    result.update({
+        'source_devices_count': len(sources),
+        'source_cameras_count': cameras_count if cameras_complete else None,
+        'source_streams_count': streams_count if streams_complete else None,
+        'video_types': sorted(video_types) if streams_complete and types_complete else None,
+        'switchable_video_types': sorted(switches)
+            if streams_complete and switches_complete else None,
+    })
+    return result
+
+DISTANCE_LIMIT = {
+    'state': ('state_code', number(0, 1, integer=True)),
+    'distance_limit': ('distance_limit_m', number(15, 8000, integer=True)),
+    'is_near_distance_limit': ('near_limit', switch),
+}
 STORAGE = {'total': ('total_kib', COUNT), 'used': ('used_kib', COUNT)}
 OBSTACLES = {k: (k + '_enabled', switch) for k in ('horizon', 'upside', 'downside')}
 # DJI M3 uses wide/zoom, while M4 (e.g. RC Plus 2/M4T) uses vision.
@@ -265,6 +374,7 @@ def normalize_details(kind, data):
         for wire, target, schema in [('battery', 'battery', BATTERY),
                                      ('position_state', 'position', {'quality': ('quality_code', CODE)}),
                                      ('storage', 'storage', STORAGE),
+                                     ('distance_limit_status', 'distance_limit', DISTANCE_LIMIT),
                                      ('obstacle_avoidance', 'obstacle_avoidance', OBSTACLES)]:
             if wire in data and data[wire] is not None:
                 value = mapped(data[wire], schema)
@@ -313,16 +423,21 @@ def normalize_details(kind, data):
     else:
         for wire, schema in [('wireless_link', WIRELESS), ('live_capacity', CAPACITY)]:
             if wire in data and data[wire] is not None:
-                parsed = mapped(data[wire], schema)
+                parsed = live_capacity(data[wire]) if wire == 'live_capacity' else mapped(data[wire], schema)
                 if parsed:
                     result[wire] = parsed
         if 'live_status' in data:
             result['live_status'] = array(data['live_status'], LIVE, 16)
-    # A half home coordinate pair and DJI's unknown 0/0 do not locate a home.
+    # Never merge a changed home latitude with an older home longitude (or
+    # vice versa). mapped() has already validated even a lone wire value.
     if 'home_latitude' in result or 'home_longitude' in result:
-        lat, lon = result.get('home_latitude'), result.get('home_longitude')
-        if lat is None or lon is None or (lat == 0 and lon == 0):
-            result['home_latitude'] = result['home_longitude'] = None
+        if 'home_latitude' not in result or 'home_longitude' not in result:
+            result.pop('home_latitude', None)
+            result.pop('home_longitude', None)
+        else:
+            lat, lon = result['home_latitude'], result['home_longitude']
+            if lat is None or lon is None or (lat == 0 and lon == 0):
+                result['home_latitude'] = result['home_longitude'] = None
     return result
 
 
@@ -333,6 +448,7 @@ def canonical_schema(mapping):
 DETAILS_SCHEMA = canonical_schema(COMMON | AIRCRAFT | RC) | {
  'battery': canonical_schema(BATTERY),
     'position': {'quality_code': CODE}, 'storage': canonical_schema(STORAGE),
+    'distance_limit': canonical_schema(DISTANCE_LIMIT),
     'obstacle_avoidance': canonical_schema(OBSTACLES), 'battery_packs': (canonical_schema(PACK), 8),
     'maintenance': (canonical_schema(MAINTENANCE), 16), 'payloads': ('payloads', canonical_schema(PAYLOAD)),
     'payload_control': (canonical_schema(PAYLOAD_CONTROL), 16),
@@ -343,7 +459,14 @@ DETAILS_SCHEMA = canonical_schema(COMMON | AIRCRAFT | RC) | {
         'liveview_world_region': {k: number(0, 1) for k in ('left', 'top', 'right', 'bottom')},
         'photo_storage_settings': ('storage_settings', 4), 'video_storage_settings': ('storage_settings', 4),
     }, 16), 'wireless_link': canonical_schema(WIRELESS),
-    'live_status': (canonical_schema(LIVE), 16), 'live_capacity': canonical_schema(CAPACITY),
+    'live_status': (canonical_schema(LIVE), 16),
+    'live_capacity': canonical_schema(CAPACITY) | {
+        'source_devices_count': COUNT,
+        'source_cameras_count': COUNT,
+        'source_streams_count': COUNT,
+        'video_types': live_type_list,
+        'switchable_video_types': live_type_list,
+    },
     'aircraft_model_hint': model_hint,
 }
 # Canonical wind is already in m/s. Never apply the wire conversion twice.
