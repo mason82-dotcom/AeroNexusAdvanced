@@ -2168,8 +2168,14 @@ async function saveGeoObject(){
 }
 function updateSurveyCameraMode(){
   const automatic=Boolean($("survey-camera").value);
+  const spacing=$("survey-spacing");
+  // Returning from automatic camera planning must restore the operator's
+  // original manual spacing rather than silently inheriting the camera value.
+  if(automatic&&!spacing.disabled)spacing.dataset.manualValue=spacing.value;
+  if(!automatic&&spacing.disabled&&spacing.dataset.manualValue!==undefined)
+    spacing.value=spacing.dataset.manualValue;
   $("survey-camera-fields").hidden=!automatic;
-  $("survey-spacing").disabled=automatic;
+  spacing.disabled=automatic;
   $("survey-camera-metrics").hidden=true;
 }
 async function surveyPreview(){
