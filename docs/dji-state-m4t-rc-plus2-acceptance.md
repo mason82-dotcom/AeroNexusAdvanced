@@ -265,6 +265,54 @@ nicht unterstützte State-Properties, Quellzeit-Reihenfolge oder
 Validierungsfehler hinweisen. Keine DJI-Einstellungen verändern, um
 ein Ereignis künstlich zu erzeugen.
 
+### Decoder-Livetest: 93 State-Ereignisse (Betreiberbeleg, 19.10.2026)
+
+Eine weitere 120-s-Beobachtung mit dem isolierten kanonischen lokalen Decoder ergab:
+
+| Kanal / Entscheidung | Anzahl |
+|---|---:|
+| OSD insgesamt / akzeptiert | 110 / **110** |
+| OSD ignoriert / abgelehnt / überholt | **0 / 0 / 0** |
+| State insgesamt | **93** |
+| State akzeptiert | **30** |
+| State ignoriert | **59** |
+| State abgelehnt | **4** |
+| State veraltet/wiederholt (Teilmenge ignoriert) | **12** |
+| State akzeptiert am Fluggerät / Controller | **18 / 12** |
+| Verschiedene State-Feldpfade | **4** |
+| Verbindungsabbrüche / interne Fehler | **0 / 0** |
+
+Somit sind mindestens **47 ignorierte, nicht als veraltet markierte**
+State-Meldungen und **vier durch den Decoder abgelehnte** State-Meldungen
+noch zu untersuchen. Ignoriert bedeutet nicht automatisch fehlerhaft:
+State-Nachrichten können vor dem OSD-Geräteeintrag eintreffen oder
+nur nicht unterstützte Eigenschaften enthalten. Hier lässt sich kein
+Ursachenschluss allein aus den Summenzählern ziehen.
+
+Der Observer wurde deshalb erweitert: pro beobachtetem abgelehntem/
+ignoriertem State-Event erzeugt er ausschließlich feste anonyme
+Diagnosekategorien `state_before_osd`, `unmapped_properties`,
+`outdated`, `invalid_envelope`, `future_source_timestamp`,
+`kind_conflict`, `invalid_field` oder `other`.
+Er gibt keine DJI-Rohwerte oder unbekannten Eigenschaftsnamen aus.
+Die Kategorien werden **nach** der kanonischen Decoderentscheidung
+ermittelt; sie verändern die Entscheidung nicht.
+
+Die Probe kann auf dem Pi erneut ohne Deployment ausgeführt werden:
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+set -o pipefail
+git fetch origin pull/68/head
+git show FETCH_HEAD:scripts/pi/dji_state_decoder_observer.py \
+  | PYTHONPATH=src .venv/bin/python - --env-file .env --seconds 120
+```
+
+Das Ergebnis gilt nur für den isolierten Decoder im lokalen Checkout,
+nicht als Fehlerstatistik des bereits laufenden Produktivprozesses.
+Zusätzliche, nicht abbildbare DJI-Felder werden vorläufig **nicht**
+automatisch übernommen.
+
 ## Verbindliche Hardwareabnahme (noch offen)
 
 1. **RC Plus 2 allein eingeschaltet:** tatsächlicher RC-OSD-Eingang,
