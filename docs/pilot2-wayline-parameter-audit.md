@@ -273,3 +273,40 @@ Feldkategorie erlaubt KEINEN Schluss auf die Identität eines
 unbekannten DJI-WPML-1.0.6-Aktors.
 
 Quellen: https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
+
+### Temporäre Feld-Aliase für unbekannte WPML-1.0.6-Parameter
+
+Der jüngste echte Pilot-2-Test ließ für A01 und A02 weiterhin
+unclassified_fields_present bestehen. Auch erweiterte, offiziell
+dokumentierte Feldlisten konnten diese XML-Feldnamen nicht zuordnen.
+
+Für eine streng optionale, anonymisierte Feld-Korrelation:
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced-pr46
+PYTHONPATH="$PWD/src" \
+  "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+  -m aeronexus.pilot2_wayline_action_vocabulary \
+  --limit 8 --parameter-hints --field-aliases
+~~~
+
+Dabei erhalten identische **unbekannte Feldnamen im erlaubten DJI-WPML-
+Namensraum** ausschließlich innerhalb dieses Programmlaufs P01, P02, …
+in der Reihenfolge ihres erstmaligen Auftretens. Das Programm zählt
+pro unbekannter Aktionskennung Axx die zugehörigen Feldalias-Vorkommen;
+die globale Übersicht zeigt pro Pxx nur Häufigkeit, Anzahl betroffener
+KMZ-Dateien und zugeordnete Axx-Aliase. Andersnamige XML-Namensräume
+werden nur als Zahl foreign_namespace_field_count erfasst, **nicht**
+als feldübergreifend vergleichbar behandelt.
+
+Keine Originalfeldnamen, XML-Werte, Dateipfade, GPS-Werte, Aktionsnamen,
+Hashes, UUIDs oder Zugangsdaten verlassen den Prozess. Beide
+Alias-Mappings sind nur im RAM vorhanden und werden nicht gespeichert.
+Die Aliasnummern sind weder stabil noch Teil des DJI-Standards.
+
+Die zusätzlichen Zähler liefern ausschließlich Strukturkorrelation;
+sie identifizieren nicht die Funktion eines unbekannten Befehls,
+beweisen keine WPML-1.0.6-Semantik und erlauben ausdrücklich keine
+Missionsexport-, Upload- oder Flugfreigabe.
+
+Ohne --field-aliases bleibt das vorherige Ergebnisformat erhalten.
