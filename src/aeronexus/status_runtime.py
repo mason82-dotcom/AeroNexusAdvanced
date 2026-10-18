@@ -54,6 +54,7 @@ class StatusRuntime:
     catalog_updated_at: datetime | None = None
     cloud_field_clocks: dict = field(default_factory=dict, repr=False)
     cloud_osd_clocks: dict = field(default_factory=dict, repr=False)
+    cloud_hms_clocks: dict = field(default_factory=dict, repr=False)
 
     def device_views(
         self, provider: ProviderKind | None = None,

@@ -149,6 +149,17 @@ api.cockpitUnavailable("HTTP 401");
 assert.equal(el("cockpit-battery").textContent,"–");
 assert.equal(el("cockpit-live").dataset.state,"error");
 assert.equal(el("cockpit-track").children.length,0);
+api.renderCockpit([{...first,health:[{
+  code:"0x16100083",level:"warning",module:"HMS",message:marker,
+  source:"dji-cloud-hms",device_domain:"aircraft",
+  message_source:"dji-hms-catalog-en",imminent:true,in_the_sky:true
+}]}]);
+const hmsText=bodyText(el("cockpit-hms"));
+assert.ok(hmsText.includes("DJI-Gateway-Meldung")&&hmsText.includes("Fluggerät"),
+  "HMS source and reported device domain must be visible in live cockpit");
+assert.ok(hmsText.includes("Englischer DJI-Katalogtext"));
+assert.ok(hmsText.includes("Dringend laut DJI"));
+assert.ok(hmsText.includes(marker),"HMS data is rendered as literal text");
 """
 
 

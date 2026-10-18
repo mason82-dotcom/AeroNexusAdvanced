@@ -10,6 +10,7 @@ import re
 from uuid import UUID
 
 from .providers import ProviderConfig, ProviderKind
+from .hms_catalog import resolve_hms
 from .read_only_transport import ReadOnlyTransport
 
 
@@ -30,13 +31,30 @@ def _text(value, limit: int) -> str | None:
 def _alert(item) -> dict | None:
     if not isinstance(item, Mapping) or item.get("status", 1) != 1:
         return None
-    level = item.get("level")
-    return {
-        "level": level if level in LEVELS else "unknown",
+    # Preserve FlightHub-native text if the code is not part of the DJI Cloud
+    # API's documented eight-digit hex HMS namespace.
+    native = {
+        "level": item.get("level"),
         "code": _text(item.get("code"), 64),
         "message": _text(item.get("message"), 300),
-        "imminent": item.get("imminent") is True,
-        "in_the_sky": item.get("in_the_sky") == "in_the_sky",
+        "imminent": item.get("imminent"),
+        "in_the_sky": item.get("in_the_sky"),
+        "module": item.get("module"),
+        "args": item.get("args"),
+        "device_type": item.get("device_type"),
+    }
+    # Preserve already supplied FlightHub text and the legacy API shape;
+    # only add catalog metadata when FlightHub left a code undescribed.
+    if not native["message"]:
+        decoded = resolve_hms(native, kind="aircraft", source="flighthub")
+        if decoded and decoded["message"]:
+            return decoded
+    return {
+        "level": native["level"] if native["level"] in LEVELS else "unknown",
+        "code": native["code"],
+        "message": native["message"],
+        "imminent": native["imminent"] is True,
+        "in_the_sky": native["in_the_sky"] == "in_the_sky",
     }
 
 

@@ -429,6 +429,16 @@ function cockpitRenderHms(dev){
     const level=alert.level==="warning"?"Warnung":alert.level==="reminder"?"Hinweis":"Information";
     cardEl(entry,"b","",level+" · "+(alert.code||"DJI HMS"));
     cardEl(entry,"p","hms-description",alert.message||"DJI übermittelte keinen Beschreibungstext.");
+    if(alert.imminent===true)cardEl(entry,"p","hms-secondary","Dringend laut DJI");
+    if(alert.in_the_sky===true)cardEl(entry,"p","hms-secondary","Im Flug gemeldet");
+    if(alert.module)cardEl(entry,"p","hms-secondary","Bereich: "+alert.module);
+    if(alert.source==="dji-cloud-hms")
+      cardEl(entry,"p","hms-secondary","DJI-Gateway-Meldung · Geräteklasse: "+(
+        {aircraft:"Fluggerät",dock:"Dock",controller:"Fernsteuerung",payload:"Nutzlast"}[
+          alert.device_domain]||"unbekanntes Gerät")+
+        " · Seriennummer des auslösenden Geräts nicht bestätigt.");
+    if(alert.message_source==="dji-hms-catalog-en")
+      cardEl(entry,"p","hms-secondary","Englischer DJI-Katalogtext (keine deutsche Übersetzung)");
   });
 }
 function cockpitRenderDiagnostics(dev){

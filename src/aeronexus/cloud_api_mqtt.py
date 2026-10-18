@@ -13,6 +13,9 @@ from datetime import datetime
 import ipaddress
 import os
 import secrets
+import re
+
+from .hms_catalog import normalize_cloud_hms_event
 
 from .cloud_api_osd import (CloudOsdError, OSD_TOPIC, STATE_TOPIC, MAX_PAYLOAD_BYTES,
                             classify, normalize_osd, osd_envelope, topic_device)
@@ -29,6 +32,8 @@ _NAMES = {DeviceType.AIRCRAFT: "Aircraft", DeviceType.CONTROLLER: "Remote contro
 _FORBIDDEN_USERS = frozenset({"companion", "admin", "dashboard", "onprem-backend",
                               "pilot", "pilot2", "backend"})
 _TRUE = ("1", "true", "yes", "on")
+HMS_EVENT_TOPIC = "thing/product/+/events"
+_HMS_EVENT = re.compile(r"thing/product/([A-Za-z0-9_-]{1,80})/events\Z")
 
 
 @dataclass(frozen=True, repr=False)
@@ -41,6 +46,7 @@ class MqttSettings:
     project_id: str = "aeronexus"
     max_devices: int = 50
     include_state: bool = False
+    include_hms: bool = False
 
     def __post_init__(self):
         if not self.host or any(ch.isspace() for ch in self.host) or "/" in self.host:
@@ -56,8 +62,8 @@ class MqttSettings:
             raise ValueError("Project ID required")
         if type(self.max_devices) is not int or not 1 <= self.max_devices <= 500:
             raise ValueError("max_devices must be 1..500")
-        if type(self.include_state) is not bool:
-            raise ValueError("include_state must be boolean")
+        if type(self.include_state) is not bool or type(self.include_hms) is not bool:
+            raise ValueError("include_state and include_hms must be boolean")
 
     def __repr__(self):
         return (f"MqttSettings(host={self.host!r}, port={self.port}, "
@@ -80,9 +86,13 @@ class MqttSettings:
         except ValueError as exc:
             raise ValueError("Invalid MQTT broker port") from exc
         state_setting = env.get("AERONEXUS_OSD_STATE_ENABLED", "0").strip().lower()
+        hms_setting = env.get("AERONEXUS_OSD_HMS_ENABLED", "0").strip().lower()
         if state_setting not in (*_TRUE, "0", "false", "no", "off", ""):
             raise ValueError("AERONEXUS_OSD_STATE_ENABLED must be 0 or 1")
+        if hms_setting not in (*_TRUE, "0", "false", "no", "off", ""):
+            raise ValueError("AERONEXUS_OSD_HMS_ENABLED must be 0 or 1")
         return cls(host=host, port=port, tls=tls,
+                   include_hms=hms_setting in _TRUE,
                    include_state=state_setting in _TRUE,
                    username=env.get("AERONEXUS_OSD_USERNAME", ""),
                    password=env.get("AERONEXUS_OSD_PASSWORD", ""),
@@ -113,6 +123,9 @@ class CloudOsdIngest:
         self.ignored = 0
         self.outdated = 0
         self.last_message_at: datetime | None = None
+        self.hms_accepted = 0
+        self.hms_rejected = 0
+        self.hms_ignored = 0
         runtime.inventory.add_project(Project(CLOUD, project_id, "AeroNexus (DJI Cloud API)"))
 
     def handle(self, topic: str, payload: bytes, allow_state: bool = False) -> bool:
@@ -188,6 +201,48 @@ class CloudOsdIngest:
         return True
 
 
+    def handle_hms(self, topic: str, payload: bytes) -> bool:
+        """Read full HMS snapshots for *already known* MQTT devices only.
+
+        DJI documents HMS events as complete alarm lists: an empty list clears
+        resolved warnings. No OSD liveness is renewed by HMS-only packets.
+        A gateway event is not assigned to a different aircraft by guesswork.
+        """
+        match = _HMS_EVENT.fullmatch(topic) if isinstance(topic, str) else None
+        if match is None:
+            self.hms_rejected += 1
+            return False
+        key = (CLOUD, self.project_id, match.group(1))
+        device = self.runtime.inventory._devices.get(key)
+        if device is None:
+            self.hms_ignored += 1
+            return False
+        try:
+            alerts, timestamp = normalize_cloud_hms_event(payload, kind=device.kind.value)
+            now = utc_now()
+            if timestamp is not None and timestamp > int(now.timestamp() * 1000) + 30000:
+                raise ValueError("HMS timestamp from future")
+            previous = self.runtime.cloud_hms_clocks.get(key)
+            if previous is not None:
+                if timestamp is None and previous is not None:
+                    # Undated packets cannot supersede an accepted dated snapshot.
+                    self.hms_ignored += 1
+                    return False
+                if timestamp is not None and timestamp <= previous:
+                    self.hms_ignored += 1
+                    return False
+            # Gateway /events reports dock/aircraft alarms together.
+            # The record is grouped by *reporting* gateway, not assigned
+            # by guesswork to an aircraft. Retain per-row device domain.
+            self.runtime.health[key] = alerts
+            self.runtime.cloud_hms_clocks[key] = timestamp
+        except ValueError:
+            self.hms_rejected += 1
+            return False
+        self.hms_accepted += 1
+        return True
+
+
 def _code(reason_code) -> int:
     return int(getattr(reason_code, "value", reason_code))
 
@@ -248,8 +303,13 @@ class CloudMqttFeed:
             self.state = "auth_failed"
             return
         self.state = "connected"
-        topics = ([(OSD_TOPIC, 0), (STATE_TOPIC, 0)]
-                  if self.settings.include_state else OSD_TOPIC)
+        subscriptions = [OSD_TOPIC]
+        if self.settings.include_state:
+            subscriptions.append(STATE_TOPIC)
+        if self.settings.include_hms:
+            subscriptions.append(HMS_EVENT_TOPIC)
+        topics = ([(topic, 0) for topic in subscriptions]
+                  if len(subscriptions) > 1 else OSD_TOPIC)
         result = client.subscribe(topics, qos=0)
         if isinstance(result, tuple) and len(result) >= 2 and result[0] == 0:
             self._pending_mid = result[1]
@@ -260,7 +320,7 @@ class CloudMqttFeed:
         if self._pending_mid is None or mid != self._pending_mid:
             return
         self._pending_mid = None
-        expected = 2 if self.settings.include_state else 1
+        expected = 1 + int(self.settings.include_state) + int(self.settings.include_hms)
         granted = (len(reason_codes) == expected and
                    all(_code(code) in (0, 1, 2) for code in reason_codes))
         self.state = "subscribed" if granted else "subscription_denied"
@@ -281,8 +341,12 @@ class CloudMqttFeed:
         if not isinstance(payload, (bytes, bytearray)) or len(payload) > MAX_PAYLOAD_BYTES:
             return
         try:
-            self._loop.call_soon_threadsafe(
-                self.ingest.handle, message.topic, bytes(payload), self.settings.include_state)
+            if self.settings.include_hms and _HMS_EVENT.fullmatch(message.topic):
+                self._loop.call_soon_threadsafe(
+                    self.ingest.handle_hms, message.topic, bytes(payload))
+            else:
+                self._loop.call_soon_threadsafe(
+                    self.ingest.handle, message.topic, bytes(payload), self.settings.include_state)
         except RuntimeError:
             pass  # event loop closed during shutdown
 
@@ -292,6 +356,10 @@ class CloudMqttFeed:
             "source": "dji-cloud-api-mqtt",
             "state": self.state,
             "state_topic_enabled": self.settings.include_state,
+            "hms_topic_enabled": self.settings.include_hms,
+            "hms_accepted": self.ingest.hms_accepted,
+            "hms_rejected": self.ingest.hms_rejected,
+            "hms_ignored": self.ingest.hms_ignored,
             "accepted": self.ingest.accepted,
             "rejected": self.ingest.rejected,
             "ignored": self.ingest.ignored,
