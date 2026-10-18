@@ -259,6 +259,24 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </div>
 <p class="coordinate-help">Koordinaten auf 7 Dezimalstellen begrenzt (WGS84, Grad). Zwischenpunkt: Koordinatenmittelwert zwischen Auswahl und nächstem Wegpunkt – keine Hindernis- oder Geländeprüfung.</p>
 <label style="flex-direction:row;align-items:center"><input id="point-photo" type="checkbox" style="width:auto"> Foto am Wegpunkt aufnehmen</label>
+<section aria-labelledby="point-actions-title">
+  <h3 id="point-actions-title">Kamera und Gimbal (offline)</h3>
+  <p id="point-action-support" class="note">DJI WPML-Aktionsmatrix; keine Flugfreigabe.</p>
+  <div id="point-action-list"></div>
+  <label>Aktion wählen<select id="point-action-type">
+    <option value="startRecord">Video starten</option><option value="stopRecord">Video stoppen</option>
+    <option value="focus">Punktfokus</option><option value="zoom">Brennweite setzen</option>
+    <option value="gimbalRotate">Gimbal-Neigung setzen</option>
+    <option value="gimbalEvenlyRotate">Neigung im nächsten Flugsegment</option>
+  </select></label>
+  <div id="point-focus-params" class="field-row" hidden>
+    <label>Fokus X (0–1)<input id="point-focus-x" type="number" min="0" max="1" step="0.01" value="0.5"></label>
+    <label>Fokus Y (0–1)<input id="point-focus-y" type="number" min="0" max="1" step="0.01" value="0.5"></label>
+  </div>
+  <label id="point-zoom-params" hidden>Brennweite (mm)<input id="point-zoom-mm" type="number" min="0.1" max="500" step="0.1" value="24"></label>
+  <label id="point-pitch-params" hidden>Gimbal-Neigung (-90° bis 0°)<input id="point-pitch-deg" type="number" min="-90" max="0" step="1" value="-45"></label>
+  <button id="point-action-add" type="button">Aktion hinzufügen</button>
+</section>
 <div class="button-row"><button id="apply-point">Übernehmen</button><button id="remove-point" class="danger">Entfernen</button></div>
 <div class="button-row"><button id="insert-midpoint">Zwischenpunkt danach</button><button id="copy-point">WGS84 kopieren</button></div>
 </div>
@@ -482,6 +500,10 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 const $=id=>document.getElementById(id);
 const els=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=String(text);return el};
 const EMPTY=()=>({name:"Neue Wegpunktmission",description:"",drone_model:"matrice4t",altitude_m:50,speed_mps:5,takeoff_security_height_m:20,rth_height_m:60,finish_action:"goHome",close_route:false,waypoints:[]});
+const WPML_ACTION_TYPES=new Set(["startRecord","stopRecord","focus","zoom","gimbalRotate","gimbalEvenlyRotate"]);
+const WPML_ACTION_LABELS={startRecord:"Video starten",stopRecord:"Video stoppen",focus:"Punktfokus",
+zoom:"Brennweite",gimbalRotate:"Gimbal-Neigung",gimbalEvenlyRotate:"Segment-Neigung"};
+const WPML_ACTION_MODELS=new Set(["matrice4e","matrice4t","mavic3e","mavic3t","mavic3m"]);
 let mission=EMPTY(),missionId=null,selected=-1,addMode=false,epoch=0,knownMissions=[],knownMedia=[],displayMedia=20,mediaUrls=[],previewUrl=null;
 const FORM_IDS=["mission-name","mission-description","mission-model","mission-altitude",
   "mission-speed","mission-takeoff","mission-rth","mission-finish"];
@@ -828,6 +850,7 @@ function resolvedWaypoints(){
   if(closingAddsWaypoint()){
     // Return point must never inherit a camera action from waypoint 1.
     points.push({...points[0],take_photo:false});
+    points[points.length-1].actions=[];
   }
   return points;
 }
@@ -927,6 +950,65 @@ function updateRouteStatus(){
     :"Geschlossene Route: der letzte Wegpunkt liegt bereits auf Wegpunkt 1 ("+total+" insgesamt).";
   if(total>500)info.textContent+=" Maximale WPML-Wegpunktzahl überschritten.";
 }
+function actionControls(){
+  const type=$("point-action-type").value;
+  $("point-focus-params").hidden=type!=="focus";
+  $("point-zoom-params").hidden=type!=="zoom";
+  $("point-pitch-params").hidden=!["gimbalRotate","gimbalEvenlyRotate"].includes(type);
+  const ok=WPML_ACTION_MODELS.has($("mission-model").value);
+  $("point-action-add").disabled=!ok||selected<0;
+  $("point-action-support").textContent=ok
+    ?"DJI WPML-Aktion dokumentiert, reales Payload/Firmware-Verhalten ungeprüft."
+    :"DJI-WPML-Aktionsmatrix nennt dieses Modell nicht ausdrücklich; Export zusätzlicher Aktionen gesperrt.";
+}
+function addWaypointAction(){
+  const point=mission.waypoints[selected],type=$("point-action-type").value;
+  if(!point||!WPML_ACTION_TYPES.has(type))return;
+  if(!WPML_ACTION_MODELS.has($("mission-model").value)){
+    notice("DJI-WPML-Matrix belegt keine Aktion für dieses Modell.",true);return;
+  }
+  if((point.actions||[]).length>=8){notice("Maximal 8 zusätzliche Aktionen.",true);return;}
+  if(type==="gimbalEvenlyRotate"&&selected>=resolvedWaypoints().length-1){
+    notice("Diese Aktion benötigt einen folgenden Flugabschnitt.",true);return;
+  }
+  const action={type};
+  if(type==="focus"){
+    action.focus_x=Number($("point-focus-x").value);
+    action.focus_y=Number($("point-focus-y").value);
+    if(![action.focus_x,action.focus_y].every(v=>Number.isFinite(v)&&v>=0&&v<=1)){
+      notice("Fokus X/Y müssen jeweils zwischen 0 und 1 liegen.",true);return;
+    }
+  }
+  if(type==="zoom"){
+    action.focal_length_mm=Number($("point-zoom-mm").value);
+    if(!Number.isFinite(action.focal_length_mm)||action.focal_length_mm<=0||action.focal_length_mm>500){
+      notice("Ungültige Brennweite.",true);return;
+    }
+  }
+  if(type==="gimbalRotate"||type==="gimbalEvenlyRotate"){
+    action.pitch_deg=Number($("point-pitch-deg").value);
+    if(!Number.isFinite(action.pitch_deg)||action.pitch_deg< -90||action.pitch_deg>0){
+      notice("Gimbal-Neigung muss zwischen -90° und 0° liegen.",true);return;
+    }
+  }
+  point.actions=[...(point.actions||[]),action];
+  redraw();historyRecord();
+}
+function drawWaypointActions(point){
+  const list=$("point-action-list");list.replaceChildren();
+  (point.actions||[]).forEach((action,n)=>{
+    const row=els("div","point-row");
+    const desc=els("div","");
+    cardText(desc,"b","",WPML_ACTION_LABELS[action.type]||"Unbekannt");
+    const details=action.type==="focus"?"X="+action.focus_x+" Y="+action.focus_y:
+      action.type==="zoom"?action.focal_length_mm+" mm":
+      action.pitch_deg!==undefined?action.pitch_deg+"°":"";
+    cardText(desc,"small","",details);row.appendChild(desc);
+    const del=els("button","danger","Entfernen");del.type="button";
+    del.addEventListener("click",()=>{point.actions.splice(n,1);redraw();historyRecord();});
+    row.appendChild(del);list.appendChild(row);
+  });
+}
 function redraw(){
   $("point-count").textContent=mission.waypoints.length;
   updateRouteStatus();
@@ -937,6 +1019,7 @@ function redraw(){
     cardText(row,"div","point-index",n+1);
     const desc=cardText(row,"div","");
     cardText(desc,"b","",p.take_photo?"📷 Foto-Wegpunkt":"Wegpunkt "+(n+1));
+    if(p.actions?.length)cardText(desc,"small","",p.actions.length+" Kamera/Gimbal-Aktionen");
     cardText(desc,"small","",p.latitude.toFixed(7)+", "+p.longitude.toFixed(7));
     if(n>0&&analysis.valid){
       const leg=analysis.segments[n-1];
@@ -956,7 +1039,9 @@ function redraw(){
   if(selected>=mission.waypoints.length)selected=mission.waypoints.length-1;
   const point=mission.waypoints[selected];
   $("point-editor").hidden=!point;
-  if(point){$("edit-index").textContent=selected+1;$("point-lat").value=point.latitude;$("point-lon").value=point.longitude;$("point-photo").checked=point.take_photo;}
+  if(point){$("edit-index").textContent=selected+1;$("point-lat").value=point.latitude;$("point-lon").value=point.longitude;$("point-photo").checked=point.take_photo;drawWaypointActions(point);}
+  else $("point-action-list").replaceChildren();
+  actionControls();
   if(!map)return;
   waypointsLayer.clearLayers();
   if(lines)map.removeLayer(lines);
@@ -2724,6 +2809,9 @@ function wire(){
     mission.close_route=e.target.checked;
     redraw();historyRecord();
   });
+  $("point-action-type").addEventListener("change",actionControls);
+  $("mission-model").addEventListener("change",actionControls);
+  $("point-action-add").addEventListener("click",addWaypointAction);
   $("export-mission").addEventListener("click",()=>exportMission().catch(err=>notice(err.message,true)));
   $("import-mission").addEventListener("click",()=>importMission().catch(err=>notice(err.message,true)));
   $("open-csv").addEventListener("click",openCsvImport);
@@ -2753,7 +2841,7 @@ function wire(){
     if(!$("point-lat").value.trim()||!$("point-lon").value.trim()||
       !Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180||
       (lat===0&&lon===0)){notice("Ungültige WGS84-Koordinaten (0/0 ist kein GPS-Fix)",true);return;}
-    mission.waypoints[selected]={latitude:+lat.toFixed(7),longitude:+lon.toFixed(7),take_photo:$("point-photo").checked};
+    mission.waypoints[selected]={...p,latitude:+lat.toFixed(7),longitude:+lon.toFixed(7),take_photo:$("point-photo").checked};
     redraw();historyRecord();
   });
   $("remove-point").addEventListener("click",()=>{
