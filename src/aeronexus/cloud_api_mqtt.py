@@ -231,6 +231,9 @@ class CloudOsdIngest:
                 if timestamp is not None and timestamp <= previous:
                     self.hms_ignored += 1
                     return False
+            # Gateway /events reports dock/aircraft alarms together.
+            # The record is grouped by *reporting* gateway, not assigned
+            # by guesswork to an aircraft. Retain per-row device domain.
             self.runtime.health[key] = alerts
             self.runtime.cloud_hms_clocks[key] = timestamp
         except ValueError:

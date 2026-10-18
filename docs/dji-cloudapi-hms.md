@@ -103,3 +103,15 @@ Im HMS-Event steht die Alarmherkunft explizit in `device_type`
 dem Typ des MQTT-Gateways. Das Gateway kann Meldungen für verschiedene
 Geräte übertragen; die Anzeige darf solche Meldungen nicht einem anderen
 Gerät nur aufgrund des Topic-Namens zuordnen.
+
+## Einordnung von Gateway-HMS-Events
+
+DJIs Dokumentationsbeispiel enthält kein `method`-Feld, obwohl die MQTT-
+Ereignismethode HMS lautet. Nichtleere, strikt validierte Listen werden
+deshalb auch ohne dieses Feld angenommen. Das sicherheitskritische Leeren
+eines bestehenden Alarmzustands durch eine **leere** Liste erfordert jedoch
+ein ausdrücklich gesetztes `method="hms"`.
+
+Der Status kennzeichnet Cloud-API-Meldungen ausdrücklich als vom MQTT-Gateway
+gemeldet und gibt die im Event genannte Geräteklasse an. Ohne Seriennummer
+des ursächlichen Geräts wird keine Zuordnung zur Drohne erfunden.

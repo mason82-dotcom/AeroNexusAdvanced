@@ -219,3 +219,19 @@ def test_cloud_mqtt_allows_documented_methodless_hms_sample(catalog):
     rows, ts = normalize_cloud_hms_event(msg)
     assert ts == 1700000000000
     assert len(rows) == 1 and rows[0]["device_domain"] == "aircraft"
+
+
+def test_methodless_empty_event_does_not_clear_active_alarms():
+    with pytest.raises(ValueError):
+        normalize_cloud_hms_event(b'{"data":{"list":[]}}')
+    rows, timestamp = normalize_cloud_hms_event(
+        b'{"method":"hms","timestamp":1700000000000,"data":{"list":[]}}')
+    assert rows == () and timestamp == 1700000000000
+
+
+def test_official_gateway_alarm_contains_device_origin_metadata(catalog):
+    result = resolve_hms({"code": "0x16100083", "device_type": "0-67-0",
+                          "in_the_sky": 1}, kind="controller")
+    assert result["source"] == "dji-cloud-hms"
+    assert result["device_domain"] == "aircraft"
+    assert result["message_source"] == "dji-hms-catalog-de"

@@ -358,6 +358,11 @@ function renderDeviceCards(devices) {
           alert.message&&alert.message!==alert.code?alert.message:
           "DJI hat für diesen HMS-Code keinen Beschreibungstext übermittelt.");
         if(alert.module)cardEl(entry,"div","hms-secondary","Bereich: "+alert.module);
+        if(alert.source==="dji-cloud-hms")
+          cardEl(entry,"div","hms-secondary","DJI-Gateway-Meldung · Quelle: "+(
+            {aircraft:"Fluggerät",dock:"Dock",controller:"Fernsteuerung"}[
+              alert.device_domain]||"unbekanntes Gerät")+
+            "; gerätespezifische Seriennummer im Event nicht enthalten.");
         if(alert.message_source==="dji-hms-catalog-en")
           cardEl(entry,"div","hms-secondary","DJI-Katalogtext auf Englisch (DE nicht verfügbar)");
       }

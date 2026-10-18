@@ -573,6 +573,12 @@ function renderCockpit(){
         alert.level==="reminder"?"Hinweis":"Meldung");
       add(warning,"div","",alert.message&&alert.message!==alert.code?
         alert.message:"Code: "+text(alert.code));
+      if(alert.code)add(warning,"code","","DJI HMS "+text(alert.code));
+      if(alert.source==="dji-cloud-hms")
+        add(warning,"div","cockpit-secondary-note","Vom DJI-Gateway gemeldet · Quelle: "+
+          ({aircraft:"Fluggerät",dock:"Dock",controller:"Fernsteuerung"}[
+            alert.device_domain]||"unbekannt")+
+          ". Keine eindeutige Zuordnung zum angezeigten Gerät aus dem HMS-Event.");
     }
     add(body,"div","cockpit-secondary-note",
       "HMS-Meldungen besitzen hier keine gesonderte garantierte Ereigniszeit.");

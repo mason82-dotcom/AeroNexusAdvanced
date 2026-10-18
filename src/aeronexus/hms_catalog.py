@@ -210,6 +210,7 @@ def resolve_hms(item: Mapping, *, kind: str = "aircraft") -> dict | None:
         "imminent": imminent, "in_the_sky": in_sky,
         "device_type": device_type,
         "device_domain": resolved_kind,
+        "source": "dji-cloud-hms",
     }
 
 
@@ -236,6 +237,9 @@ def normalize_cloud_hms_event(
     if timestamp is not None and (
             type(timestamp) is not int or timestamp < 0 or timestamp > 253402300799999):
         raise ValueError("Invalid HMS timestamp")
+    if obj.get("method") is None and not rows:
+        # Methodless empty events could be unrelated to HMS.
+        raise ValueError("Methodless empty event cannot clear alarms")
     if any(not isinstance(row, dict) or normalize_code(row.get("code")) is None
            or type(row.get("level")) is not int or row["level"] not in (0, 1, 2)
            or type(row.get("module")) is not int or row["module"] not in (0, 1, 2, 3)

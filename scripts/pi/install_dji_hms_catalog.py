@@ -46,7 +46,7 @@ def install(dest: Path) -> int:
     if len(data) > CATALOG_MAX_BYTES:
         raise ValueError("DJI HMS catalog too large")
     count = validate(data)
-    if dest.exists() and dest.is_symlink():
+    if dest.is_symlink():
         raise ValueError("Refusing symlink target")
     dest.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with tempfile.NamedTemporaryFile(mode="wb", dir=dest.parent, prefix=".hms-",
@@ -69,7 +69,7 @@ def main():
     parser.add_argument("--output", type=Path, default=catalog_path())
     args = parser.parse_args()
     os.umask(0o077)
-    count = install(args.output.expanduser().resolve())
+    count = install(Path(os.path.abspath(args.output.expanduser())))
     print(f"DJI HMS copy catalog installed: {count} entries; permissions 0600")
     return 0
 
