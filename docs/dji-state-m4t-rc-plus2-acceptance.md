@@ -313,6 +313,59 @@ nicht als Fehlerstatistik des bereits laufenden Produktivprozesses.
 Zusätzliche, nicht abbildbare DJI-Felder werden vorläufig **nicht**
 automatisch übernommen.
 
+### Zweite Decoder-Livemessung: Fehlerursachen vollständig klassifiziert
+
+Das nächste isolierte 120-Sekunden-Beobachtungsfenster ergab:
+
+| Kennzahl | Ergebnis |
+|---|---:|
+| OSD empfangen / akzeptiert | **104 / 104** |
+| State empfangen | **115** |
+| State akzeptiert | **25** |
+| State ignoriert | **90** |
+| State abgelehnt | **0** |
+| State als veraltet / wiederholt klassifiziert | **14** |
+| State vor erster OSD-Geräteidentifikation | **31** |
+| State ohne übernommene, bekannte Eigenschaft | **45** |
+| Akzeptierte State-Nachrichten: Fluggerät / RC | **19 / 6** |
+| Getrennte akzeptierte State-Feldpfade | **4** |
+| Verbindungsabbrüche / interne Decoderfehler | **0 / 0** |
+
+Die drei Gründe 14 + 31 + 45 ergeben genau die 90 ignorierten State-Pakete.
+Der isolierte Test beginnt stets ohne bekannte Geräte; 31 Pakete vor
+der ersten klassifizierbaren OSD-Nachricht sind daher **kein** Beleg
+für 31 verlorene Pakete im kontinuierlich laufenden Produktivdienst.
+Auch die vier Validierungsablehnungen einer vorherigen Messung konnten in
+diesem Beobachtungsfenster nicht reproduziert werden.
+
+Der verbleibende fokussierte Untersuchungsbereich sind die **45 State-Pakete
+mit nicht übernommenen Eigenschaften**. DJI definiert verschiedene
+State-Eigenschaften wie RC-Streamfähigkeiten mit verschachtelten
+Geräte-IDs sowie Dongle-/PSDK-Informationen, die aus Datenschutzgründen
+nicht ohne gezielte Schemafreigabe übernommen werden dürfen.
+
+Der Observer zählt deshalb nun ausschließlich **feste, quellcode-definierte
+unmapped-Wurzelkategorien** wie `rc_video_capability_only`,
+`aircraft_psdk_widgets` und `sensitive_dongle_metadata`; unerkannte
+Eigenschaftsnamen werden gesammelt als `other_or_unknown` ausgegeben.
+Dies geschieht nur für Pakete mit Grund `unmapped_properties`; bei
+mehreren passenden Feldern entscheidet die definierte Prioritätsreihenfolge.
+Keine untrusted Property-Namen oder verschachtelten Inhalte gelangen
+in die Ausgabe. Anschließend können gezielt geeignete Felder bewertet
+werden, ohne die Privacy-Allowlist pauschal zu erweitern.
+
+Für die nächste Messung den aktualisierten Observer vom PR ausführen:
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+set -o pipefail
+git fetch origin pull/68/head
+git show FETCH_HEAD:scripts/pi/dji_state_decoder_observer.py \
+  | PYTHONPATH=src .venv/bin/python - --env-file .env --seconds 120
+```
+
+Der produktive Server/EMQX werden dadurch nicht verändert.
+
 ## Verbindliche Hardwareabnahme (noch offen)
 
 1. **RC Plus 2 allein eingeschaltet:** tatsächlicher RC-OSD-Eingang,
