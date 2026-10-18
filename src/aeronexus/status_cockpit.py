@@ -327,7 +327,21 @@ function cockpitRenderRadio(dev){
     ["Mobilfunk-Dongles","cloud_details.wireless_link.dongle_count"],
     ["Livestream-Kapazität","cloud_details.live_capacity.available_videos"],
     ["Max. parallele Streams","cloud_details.live_capacity.simultaneous_videos"],
+    ["DJI-Videoquellen","cloud_details.live_capacity.source_devices_count"],
+    ["DJI-Kameras mit Quellen","cloud_details.live_capacity.source_cameras_count"],
+    ["DJI-Videostreams auswählbar","cloud_details.live_capacity.source_streams_count"],
   ],dev);
+  const labels={normal:"Normal",wide:"Weitwinkel",zoom:"Zoom",ir:"IR",
+                thermal:"Thermal",infrared:"Infrarot",other:"Sonstige"};
+  for(const [path,label] of [
+      ["video_types","Gemeldete Objektivtypen"],
+      ["switchable_video_types","Umschaltbare Objektivtypen"]]){
+    const values=cockpitRead(dev,"cloud_details.live_capacity."+path);
+    if(Array.isArray(values)){
+      cockpitItem(byId("cockpit-radio"),label,
+        values.length?values.map(value=>labels[value]||"Sonstige").join(", "):"Keine gemeldet");
+    }
+  }
   const lives=cockpitRead(dev,"cloud_details.live_status");
   if(Array.isArray(lives)){
     const root=byId("cockpit-radio");
