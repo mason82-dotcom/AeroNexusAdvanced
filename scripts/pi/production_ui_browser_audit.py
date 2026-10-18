@@ -33,7 +33,7 @@ from production_ui_readonly_audit import (
 # The exact seven UI routes and safe single-action controls.
 PAGES = (
     ("studio", "/studio", "#point-action-add"),
-    ("status", "/status", "#devices"),
+    ("status", "/status", "#cockpit"),
     ("operations", "/operations", "#refresh-now"),
     ("media", "/media", "#media-rows"),
     ("thermal", "/thermal", "#tab-flights"),

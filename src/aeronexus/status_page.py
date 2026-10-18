@@ -1,8 +1,11 @@
-"""Auto-refreshing read-only fleet dashboard for trusted HTTPS LAN clients.
+"""Auto-refreshing read-only DJI aircraft/RC cockpit for trusted HTTPS LAN clients.
 
 The frontend has no token form, cookie or credential storage. The backend
 enforces an explicitly enabled, direct-to-Pi LAN policy.
 """
+
+
+from .status_cockpit import COCKPIT_CSS, COCKPIT_HTML, COCKPIT_JS
 
 
 HTML = r"""<!doctype html>
@@ -11,7 +14,7 @@ HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>AeroNexusAdvanced | Status</title>
+<title>AeroNexusAdvanced | DJI Live-Telemetrie-Cockpit</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0c1523;color:#e5edf9}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top right,#182e49,#0c1523 55%);padding:28px}
@@ -86,14 +89,15 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 .catalog-grid>.device-empty{grid-column:1/-1}
 #poll-health{margin-top:12px}
 @media(max-width:650px){body{padding:12px}.panel{padding:14px;margin:14px 0}.grid{gap:8px}.metric{padding:12px}.metric b{font-size:22px}.controls input{width:100%}}
+__COCKPIT_STYLE__
 </style>
 </head>
 <body>
 <main>
 <header>
 <div><div class="eyebrow">DJI Monitoring · Nur Lesen</div><h1>AeroNexusAdvanced</h1>
-<div class="subtle">Flottenstatus · Flugbefehle deaktiviert · <a href="/studio" style="color:#9cd2ff">Mission Studio für Chrome ↗</a> · <a href="/operations" style="color:#9cd2ff">Operations Center ↗</a> · <a href="/thermal" style="color:#9cd2ff">Thermal ↗</a> · <a href="/multispectral" style="color:#9cd2ff">Multispektral ↗</a> · <a href="/results" style="color:#9cd2ff">Ergebnisraster ↗</a></div></div>
-<div class="meta">Automatische Anzeigeaktualisierung: __INTERVAL_SECONDS__ s<br>
+<div class="subtle">Live-Telemetrie-Cockpit · Flugbefehle deaktiviert · <a href="/studio" style="color:#9cd2ff">Mission Studio für Chrome ↗</a> · <a href="/operations" style="color:#9cd2ff">Operations Center ↗</a> · <a href="/thermal" style="color:#9cd2ff">Thermal ↗</a> · <a href="/multispectral" style="color:#9cd2ff">Multispektral ↗</a> · <a href="/results" style="color:#9cd2ff">Ergebnisraster ↗</a></div></div>
+<div class="meta">Zusammenfassung: __INTERVAL_SECONDS__ s · Cockpit: bis 5 s<br>
 <span id="timestamp">Noch keine Daten</span><br>
 <span id="feed">Live-Feed: –</span></div>
 </header>
@@ -107,6 +111,8 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <div class="metric"><span>Fehlende/unklare Daten</span><b id="unknown">–</b></div>
 <div class="metric"><span>HMS-Warnungen</span><b id="health">–</b></div>
 </section>
+__COCKPIT_HTML__
+<details class="legacy-status" id="legacy-status"><summary>Erweiterte Diagnose · Cloud-Dienste, Gerätetabelle und Pilot-2-Routen</summary>
 <section class="panel" id="cloud-panel">
 <h2>Lokaler DJI-Cloud-Server</h2>
 <p class="subtle" id="cloud-overall" role="status">Prüfe Dienste…</p>
@@ -142,6 +148,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 <div class="scroller"><table class="compact"><thead><tr><th>Name</th><th>Fluggerät</th><th>Typ</th><th>Geändert (UTC)</th></tr></thead><tbody id="waylines"></tbody></table></div>
 </details></section>
 </section>
+</details>
 <footer>Zeitstempel = Eingang bei AeroNexus, nicht DJI-Ereigniszeit. Veraltete Messwerte sind keine Live-Werte. Die Anzeige ruft selbst keine DJI-Endpunkte auf.</footer>
 </main>
 <script>
@@ -149,6 +156,7 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 const intervalMs = __INTERVAL_MILLISECONDS__;
 let sessionEpoch=0;
 let devicesRequest=0;
+let deviceFetchActive=false;
 let catalogRequest=0;
 const byId = id => document.getElementById(id);
 const asText = value => value === null || value === undefined ? "–" : String(value);
@@ -314,6 +322,25 @@ function renderDeviceCards(devices) {
         "AeroNexus-Farbhinweis: niedriger Akkustand. Keine DJI-Flugfreigabe oder Warnschwelle.");
     }
     const values=cardEl(card,"div","device-values");
+    const d=t.cloud_details||{};
+    if(device.kind==="controller") {
+      const link=d.wireless_link||{};
+      const drc={0:"Nicht verbunden",1:"Verbindungsaufbau",2:"Verbunden"};
+      cardValue(values,"DRC-Verbindung",drc[d.drc_link_state_code]);
+      cardValue(values,"Cloud-Berechtigungen (Anzahl)",d.cloud_control_authorization_count);
+      cardValue(values,"SDR-Verbindung",({0:"Getrennt",1:"Verbunden"})[link.sdr_link_state_code]);
+      cardValue(values,"4G-Verbindung",({0:"Getrennt",1:"Verbunden"})[link.cellular_link_state_code]);
+      cardValue(values,"SDR-Signal",link.sdr_quality===null?"Unbekannt":
+        typeof link.sdr_quality==="number"?link.sdr_quality+" / 5":null);
+      cardValue(values,"4G-Signal",link.cellular_quality===null?"Unbekannt":
+        typeof link.cellular_quality==="number"?link.cellular_quality+" / 5":null);
+    } else if(device.kind==="aircraft") {
+      const authority={unassigned:"Nicht zugewiesen",controller_a:"Fernsteuerung A",
+        controller_b:"Fernsteuerung B",browser:"Cloud-Browser",other:"Andere / unbekannt"};
+      cardValue(values,"Steuerquelle",authority[d.control_source_category]);
+      cardValue(values,"Kurswinkel",safeNumber(d.heading_deg,1,"°"));
+      cardValue(values,"Wind (Schätzwert)",safeNumber(d.wind_speed_mps,1,"m/s"));
+    }
     const mode=t.flight_mode_code;
     cardValue(values,"Flugmodus",mode===null||mode===undefined?null:flightModes[mode]||"Code "+mode);
     cardValue(values,"Höhe über Start",safeNumber(t.elevation_m,1,"m"));
@@ -360,7 +387,7 @@ function renderDeviceCards(devices) {
         if(alert.module)cardEl(entry,"div","hms-secondary","Bereich: "+alert.module);
         if(alert.source==="dji-cloud-hms")
           cardEl(entry,"div","hms-secondary","DJI-Gateway-Meldung · Quelle: "+(
-            {aircraft:"Fluggerät",dock:"Dock",controller:"Fernsteuerung"}[
+            {aircraft:"Fluggerät",dock:"Dock",controller:"Fernsteuerung",payload:"Nutzlast"}[
               alert.device_domain]||"unbekanntes Gerät")+
             "; gerätespezifische Seriennummer im Event nicht enthalten.");
         if(alert.message_source==="dji-hms-catalog-en")
@@ -430,6 +457,8 @@ async function updateCloud() {
   } catch (error) {byId("cloud-overall").textContent="Cloud-Server-Status nicht abrufbar: "+error.message;}
 }
 async function updateDevices() {
+  if(deviceFetchActive)return;
+  deviceFetchActive=true;
   const epoch=sessionEpoch,request=++devicesRequest;
   try {
     const r=await fetch("/api/v1/status/devices?limit=200",{cache:"no-store"});
@@ -437,6 +466,7 @@ async function updateDevices() {
     const data=await r.json();
     if(epoch!==sessionEpoch||request!==devicesRequest)return;
     renderDeviceCards(data.devices);
+    renderCockpit(data.devices);
     const body=byId("devices");body.replaceChildren();
     for(const device of data.devices) {
       const row=document.createElement("tr");
@@ -469,14 +499,19 @@ async function updateDevices() {
     byId("device-cards").replaceChildren();
     byId("device-info").textContent="Keine Gerätedaten verfügbar.";
     byId("message").textContent="Details nicht verfügbar ("+e.message+").";
+    cockpitUnavailable("geschützte Telemetrie-API: "+e.message);
+  } finally {
+    deviceFetchActive=false;
   }
 }
+__COCKPIT_JS__
 // All dashboard sections load automatically for trusted HTTPS LAN browsers.
 byId("message").textContent="Gerätedaten werden automatisch geladen…";
 updateDevices();
 updateCatalog();
 updateSummary();
-setInterval(()=>{updateSummary();updateDevices();},intervalMs);
+setInterval(updateSummary,intervalMs);
+setInterval(()=>{if(!document.hidden)updateDevices();},Math.min(intervalMs,5000));
 updateCloud();setInterval(updateCloud,15000);
 setInterval(updateCatalog,60000);
 </script>
@@ -488,4 +523,7 @@ def render_page(refresh_every_seconds: int) -> str:
     if type(refresh_every_seconds) is not int or not 5 <= refresh_every_seconds <= 3600:
         raise ValueError("Invalid refresh interval")
     return (HTML.replace("__INTERVAL_SECONDS__", str(refresh_every_seconds))
-                .replace("__INTERVAL_MILLISECONDS__", str(refresh_every_seconds * 1000)))
+                .replace("__INTERVAL_MILLISECONDS__", str(refresh_every_seconds * 1000))
+                .replace("__COCKPIT_STYLE__", COCKPIT_CSS)
+                .replace("__COCKPIT_HTML__", COCKPIT_HTML)
+                .replace("__COCKPIT_JS__", COCKPIT_JS))

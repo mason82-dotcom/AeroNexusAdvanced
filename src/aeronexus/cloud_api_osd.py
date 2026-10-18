@@ -33,7 +33,8 @@ _AIRCRAFT_KEYS = frozenset({"mode_code", "elevation", "position_state", "home_di
                             "horizontal_speed", "total_flight_sorties", "attitude_head",
                             "attitude_roll", "attitude_pitch", "wind_speed"})
 _CONTROLLER_KEYS = frozenset({"capacity_percent", "wireless_link",
-                              "transmission_signal_quality", "live_status", "live_capacity"})
+                              "transmission_signal_quality", "live_status", "live_capacity",
+                              "drc_state", "cloud_control_auth"})
 
 
 def topic_device(topic: str) -> tuple[str, str]:
