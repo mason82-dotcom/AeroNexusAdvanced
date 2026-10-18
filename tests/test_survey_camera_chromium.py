@@ -25,6 +25,7 @@ CAMERA_CHECK = r"""
   // Keep the prior manual flight-strip preview intact before changing modes.
   const selector=document.getElementById('survey-camera');
   rCheck(selector.value==='','Existing manual-mode default changed');
+  const previousManualSpacing=document.getElementById('survey-spacing').value;
   selector.value='matrice-4e-wide';
   selector.dispatchEvent(new Event('change',{bubbles:true}));
   rCheck(document.getElementById('survey-spacing').disabled,
@@ -74,6 +75,8 @@ CAMERA_CHECK = r"""
   selector.dispatchEvent(new Event('change',{bubbles:true}));
   rCheck(!document.getElementById('survey-spacing').disabled,
     'Camera mode failed to restore manual spacing input');
+  rCheck(document.getElementById('survey-spacing').value===previousManualSpacing,
+    'Camera mode overwrote the operator manual spacing');
 """
 
 
