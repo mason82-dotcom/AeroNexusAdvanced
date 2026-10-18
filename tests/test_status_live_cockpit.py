@@ -66,7 +66,8 @@ const document={
   getElementById(id){if(!elements.has(id))elements.set(id,new Element(id));
     return elements.get(id);},
   createElement(tag){return new Element(tag);},
-  createElementNS(ns,tag){return new Element(tag);}
+  createElementNS(ns,tag){const element=new Element(tag);
+    element.namespaceURI=ns;return element;}
 };
 const fetch=()=>new Promise(()=>{});
 const setInterval=()=>0;
@@ -120,6 +121,9 @@ assert.ok(bodyText(el("cockpit-camera")).includes("27.2"));
 assert.ok(bodyText(el("cockpit-payload")).includes("-45.0"));
 assert.equal(el("cockpit-device").children[0].textContent.includes(marker),true);
 assert.equal(api.cockpitHistory.get(api.cockpitKey(first)).battery.length,1);
+const batteryChart=el("cockpit-trends").children[0].children[1];
+assert.equal(batteryChart.namespaceURI,"http://www.w3.org/2000/svg",
+  "trend chart must use a real SVG element");
 api.renderCockpit([{...first,age_seconds:3}]);
 assert.equal(api.cockpitHistory.get(api.cockpitKey(first)).battery.length,1,
   "repeated source timestamp must not append artificial trend points");
