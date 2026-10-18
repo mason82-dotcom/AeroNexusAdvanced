@@ -176,10 +176,12 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
     for index, kmz in archives:
         version, routes = _archive_action_records(kmz)
         route_counts = []
+        route_field_multiplicities = []
         unknown_total = 0
         known_total = 0
         for route in routes:
             unknown_by_alias = Counter()
+            field_multiplicity_by_alias = {}
             recognized = Counter()
             for location, trigger, raw_name, hints in route:
                 if raw_name in DOCUMENTED_ACTION_TYPES:
@@ -239,8 +241,18 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                         for fid, count in action_field_counts.items():
                             field_totals[fid]["action_count"] += 1
                             field_totals[fid]["per_action_multiplicity"][str(count)] += 1
+                            # Scope every histogram to the current KMZ and
+                            # executable Folder, not only the entire library.
+                            if fid not in field_multiplicity_by_alias:
+                                field_multiplicity_by_alias[fid] = Counter()
+                            field_multiplicity_by_alias[fid][str(count)] += 1
             route_counts.append(dict(sorted(unknown_by_alias.items())))
-        results.append({
+            if field_aliases:
+                route_field_multiplicities.append({
+                    fid: dict(sorted(counts.items(), key=lambda pair: int(pair[0])))
+                    for fid, counts in sorted(field_multiplicity_by_alias.items())
+                })
+        result_item = {
             "index": index,
             "state": "connected",
             "wpml_schema_version": version,
@@ -248,7 +260,10 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
             "unknown_action_count": unknown_total,
             "recognized_action_count": known_total,
             "unknown_alias_counts_by_route": route_counts,
-        })
+        }
+        if field_aliases:
+            result_item["unknown_field_multiplicity_by_route"] = route_field_multiplicities
+        results.append(result_item)
     safe_totals = []
     for alias in aliases.values():
         item = totals[alias]
