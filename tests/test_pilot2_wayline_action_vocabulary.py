@@ -123,6 +123,50 @@ def test_optional_parameter_hints_classify_only_static_fields_without_values():
     assert report["flight_compatibility_verified"] is False
 
 
+def test_official_additional_fields_are_presence_only_and_never_leak_values():
+    raw = archive("secretM3EAction", version="1.0.6")
+    fields = (
+        b"<wpml:actionUUID>PRIVATE-UUID-456</wpml:actionUUID>"
+        b"<wpml:orientedFilePath>/private/photos/location.jpg</wpml:orientedFilePath>"
+        b"<wpml:gimbalPort>PRIVATE-PORT</wpml:gimbalPort>"
+        b"<wpml:focalLength>PRIVATE-FOCAL</wpml:focalLength>"
+        b"<wpml:imageWidth>PRIVATE-DIMENSION</wpml:imageWidth>"
+        b"<wpml:orientedCameraType>PRIVATE-CAMERA</wpml:orientedCameraType>"
+        b"<wpml:AFPos>PRIVATE-FOCUS</wpml:AFPos>"
+        b"<wpml:gimbalRollRotateAngle>PRIVATE-GIMBAL</wpml:gimbalRollRotateAngle>"
+    )
+    output = BytesIO()
+    with ZipFile(BytesIO(raw)) as src, ZipFile(output, "w") as dst:
+        for file_name in src.namelist():
+            data = src.read(file_name)
+            if file_name == "wpmz/waylines.wpml":
+                data = data.replace(b"<wpml:actionActuatorFuncParam>",
+                                    b"<wpml:actionActuatorFuncParam>" + fields, 1)
+            dst.writestr(file_name, data)
+    result = av._aggregate_action_records(
+        [(1, output.getvalue())], parameter_hints=True)
+    category_counts = result["anonymous_types"][0]["parameter_category_counts"]
+    assert category_counts == {
+        "action_tracking": 1,
+        "camera_model": 1,
+        "focus": 1,
+        "gimbal": 1,
+        "image_dimensions": 1,
+        "media_naming": 1,
+        "media_reference": 1,
+        "payload": 1,
+        "zoom": 1,
+    }
+    encoded = json.dumps(result)
+    for sensitive in ("PRIVATE-UUID-456", "/private/photos/location.jpg",
+                      "PRIVATE-PORT", "PRIVATE-FOCAL", "PRIVATE-DIMENSION",
+                      "PRIVATE-CAMERA", "PRIVATE-FOCUS", "PRIVATE-GIMBAL",
+                      "secretM3EAction"):
+        assert sensitive not in encoded
+    assert result["full_content_verified"] is False
+    assert result["flight_compatibility_verified"] is False
+
+
 def test_parameter_hints_off_keeps_existing_response_shape():
     report = av._aggregate_action_records([(1, param_archive())])
     entry = report["anonymous_types"][0]
