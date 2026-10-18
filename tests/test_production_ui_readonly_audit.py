@@ -105,7 +105,7 @@ def test_preview_fallback_uses_only_reviewed_metadata_search_paths():
     client = Client()
     chosen = audit.find_preview_listing(client, {"media": []})
     assert chosen == {"total": 1, "media": [media]}
-    assert client.paths == audit.PREVIEW_SEARCH_PATHS[:1]
+    assert client.paths == list(audit.PREVIEW_SEARCH_PATHS[:1])
     assert audit.check_preview(client, chosen).state == "PASS"
     client.paths.clear()
     assert audit.find_preview_listing(client, chosen) is chosen
