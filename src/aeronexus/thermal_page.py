@@ -622,8 +622,8 @@ function initMap(){
   if(!map){
     map=L.map("thermal-map",{zoomControl:true,preferCanvas:true}).setView([51.1,10.4],6);
     const sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:21,maxNativeZoom:19,attribution:"Esri World Imagery"});
-    const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:21,maxNativeZoom:19,attribution:"© OpenStreetMap"});
-    sat.addTo(map);L.control.layers({"Satellit":sat,"Straßenkarte":osm}).addTo(map);
+    const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:21,maxNativeZoom:19,referrerPolicy:"strict-origin-when-cross-origin",attribution:"© OpenStreetMap"});
+    osm.addTo(map);L.control.layers({"Straßenkarte":osm,"Satellit":sat}).addTo(map);
     markerLayer=L.layerGroup().addTo(map);footLayer=L.layerGroup();
     map.on("zoomend",()=>{if(map.getZoom()>=17)footLayer.addTo(map);else map.removeLayer(footLayer);});
   }
