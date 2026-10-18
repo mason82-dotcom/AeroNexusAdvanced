@@ -214,6 +214,9 @@ CAPACITY = {
 }
 STORAGE = {'total': ('total_kib', COUNT), 'used': ('used_kib', COUNT)}
 OBSTACLES = {k: (k + '_enabled', switch) for k in ('horizon', 'upside', 'downside')}
+# DJI M3 uses wide/zoom, while M4 (e.g. RC Plus 2/M4T) uses vision.
+# Accept both documented wire enum families, never arbitrary storage values.
+STORAGE_TYPES = frozenset(('current', 'wide', 'zoom', 'ir', 'vision'))
 MAINTENANCE = {
     'state': ('state_code', CODE), 'last_maintain_type': ('last_type_code', CODE),
     'last_maintain_time': ('last_time_s', COUNT),
@@ -249,7 +252,7 @@ def camera(data):
     for key in ('photo_storage_settings', 'video_storage_settings'):
         if key in data:
             values = data[key]
-            if not isinstance(values, list) or len(values) > 4 or any(v not in ('current', 'wide', 'zoom', 'ir') for v in values):
+            if not isinstance(values, list) or len(values) > 4 or any(v not in STORAGE_TYPES for v in values):
                 raise ValueError("Invalid camera storage settings")
             result[key] = list(values)
     return result
@@ -361,7 +364,7 @@ def validate_details(data, schema=DETAILS_SCHEMA):
         elif isinstance(rule, tuple):
             child, limit = rule
             if child == 'storage_settings':
-                if not isinstance(value, list) or len(value) > limit or any(v not in ('current', 'wide', 'zoom', 'ir') for v in value):
+                if not isinstance(value, list) or len(value) > limit or any(v not in STORAGE_TYPES for v in value):
                     raise ValueError("Invalid canonical storage settings")
                 result[key] = list(value)
             elif child == 'payloads':
