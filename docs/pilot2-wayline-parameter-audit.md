@@ -106,3 +106,24 @@ und lädt nicht automatisch Missionen anderer Workspaces.
 Mit diesem Befund kann gezielt die fehlschlagende Parser-Annahme angepasst
 werden, ohne eine fremde XML-Variante voreilig als voll valide DJI-Mission
 zu akzeptieren.
+
+## Explizite WPML-Namensräume
+
+Die strukturelle Pilot-2-Prüfung hat für alle acht KMZ-Dateien einen von
+DJIs dokumentiertem Beispielschema abweichenden WPML-Namensraum gezeigt.
+Der Parser akzeptiert für die **lesende** XML-Diagnose deshalb ausschließlich
+folgende exakten Namensräume:
+
+- DJI WPML 1.0.2: http://www.dji.com/wpmz/1.0.2 (DJI-API-Beispiel)
+- DJI WPML 1.0.6: http://www.dji.com/wpmz/1.0.6 (in neueren WPML-KMZ bekannt)
+
+Unbekannte, manipulierte oder nur lokalnamengleiche XML-Namensräume bleiben
+gesperrt. Welche Version im realen Pilot-2-Inventar vorliegt, zeigt
+--structure-only im Feld recognized_wpml_schema_version. Bei einer
+unbekannten Version werden keine Parameterinterpretionen freigegeben.
+
+DJI WPML 1.0.6 wird zunächst **nur zur Auswertung von erlaubten, groben
+Merkmalen** berücksichtigt. Solange die Feldsemantik nicht gesondert gegen
+den neuen WPML-Stand belegt ist, lautet wpml_schema_semantics_verified=false,
+parameter_state=not_comparable und full_content_verified=false – selbst wenn
+die Wegpunktkoordinaten identisch sein sollten.
