@@ -403,3 +403,39 @@ Steuerungs- oder Sicherheitsentscheidungen verwendet werden.
 
 DJI-Spezifikation:
 https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
+
+### Sicherheitsgerichtete ActionGroup-Span-Prüfung
+
+Bei Bedarf kann eine zusätzliche, rein lesende und standardmäßig
+deaktivierte Diagnose die XML-Felder actionGroupStartIndex und
+actionGroupEndIndex mit dem wpml:index der Placemark vergleichen.
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced-pr46
+PYTHONPATH="$PWD/src" \
+  "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+  -m aeronexus.pilot2_wayline_action_vocabulary \
+  --limit 8 --parameter-hints --field-aliases --span-audit
+~~~
+
+Nur das neue Feld results[].unknown_field_xml_span_by_route erscheint
+zusätzlich. Es gruppiert pro Folder und anonymem Parameteralias Pxx
+die *Anzahl von Aktionen* mit diesem Feld nach:
+single_at_anchor, range_starts_at_anchor, single_elsewhere,
+range_starts_elsewhere, reversed_span, missing_or_invalid_span,
+unresolved_placemark_index oder start_group_not_applicable.
+
+Dabei werden ausschließlich Ganzzahlen intern verarbeitet, auf den
+DJI-Indexbereich von 0 bis 65535 begrenzt und nur Statuskategorien
+ausgegeben. Die Ausgabe enthält keine Start-/End- oder Wegpunktnummern,
+Original-Aktionsnamen, Feldnamen, Nutzlastparameter, Koordinaten oder
+Roh-XML. Bei fehlenden/mehrdeutigen Feldern wird kein Index geraten.
+
+Insbesondere ist das **keine** Simulation der tatsächlichen zeitlichen
+Flug- oder Kameraausführung. Ein DJI-ActionGroup-Geltungsbereich kann
+vom Ort des XML-Placemark-Eintrags abweichen; auch eine formal
+konsistente Spanne belegt keine ausführbare WPML-1.0.6-Mission.
+Keine Flugkommandos, keine Uploads, kein O4.
+
+Quelle zu den ActionGroup-Indizes:
+https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
