@@ -86,6 +86,59 @@ def test_summary_fails_closed_on_invalid_payload(mutation):
         "invalid_response", "incomplete_inventory")
 
 
+@pytest.mark.parametrize("mutation", [
+    lambda x: x.update(reported_total=None),
+    lambda x: x.update(reported_total=1),
+    lambda x: x.update(reported_total=-1),
+    lambda x: x.update(reported_total=True),
+    lambda x: x.update(reported_total=10000001),
+    lambda x: x["anonymous_types"][1].update(id="A01"),
+    lambda x: x.update(full_content_verified=True),
+    lambda x: x.update(full_content_verified=None),
+])
+def test_summary_rejects_invalid_total_duplicate_alias_and_verification(mutation):
+    value = fixture_report()
+    mutation(value)
+    assert summarize_action_report(value)["state"] == "invalid_response"
+
+
+def test_summary_rejects_non_object_and_unhashable_state():
+    assert summarize_action_report([])["state"] == "invalid_response"
+    assert summarize_action_report({"inventory_state": []})["state"] == "unavailable"
+    assert summarize_action_report({"inventory_state": {"secret": "value"}})["state"] == "unavailable"
+
+
+def test_reader_parallel_requests_use_single_scan():
+    calls = []
+    async def diagnosis(**_):
+        calls.append(True)
+        await asyncio.sleep(0.01)
+        return fixture_report()
+    async def run():
+        reader = Pilot2ActionSummaryReader(
+            FakeInventory(), loader=lambda _: FIRST, diagnosis=diagnosis)
+        return await asyncio.gather(reader.read(), reader.read(), reader.read())
+    result = asyncio.run(run())
+    assert len(calls) == 1
+    assert all(x["state"] == "connected" for x in result)
+
+
+def test_reader_expired_cache_triggers_new_scan():
+    calls = []
+    async def diagnosis(**_):
+        calls.append(True)
+        return fixture_report()
+    async def run():
+        reader = Pilot2ActionSummaryReader(
+            FakeInventory(), loader=lambda _: FIRST, diagnosis=diagnosis)
+        first = await reader.read()
+        reader._until = 0
+        second = await reader.read()
+        return first, second
+    first, second = asyncio.run(run())
+    assert first == second and len(calls) == 2
+
+
 class FakeInventory:
     async def read(self):
         return {"state": "connected", "workspace_id": WORKSPACE,
@@ -174,3 +227,11 @@ def test_studio_ui_is_opt_in_get_only_and_uses_text_content():
     assert 'method:"POST"' not in block
     assert "innerHTML" not in block
     assert "Flugkompatibilität nicht bestätigt" in block
+    assert "serial!==pilot2ActionRequest||controller.signal.aborted" in block
+    assert "data.read_only!==true" in block
+    assert "innerHTML" not in block
+    assert 'if(id!=="waylines-pane")clearPilot2ActionSummary();' in page
+    clear = page[page.index("function clearPilot2ActionSummary()"):page.index("async function loadPilot2ActionSummary()")]
+    assert "pilot2ActionController?.abort()" in clear
+    assert '("pilot2-action-results").replaceChildren()' in clear
+
