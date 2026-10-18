@@ -21,6 +21,7 @@ from .pilot2_wayline_preview import _download_kmz
 
 MAX_ENUM_LENGTH = 120
 MAX_ALIASES = 128
+MAX_FIELD_ALIASES = 64
 # Allowlisted WPML field names from DJI's common-element documentation.
 # Existence only, NOT actual contents, semantic meaning or 1.0.6 support.
 # A field may occur in multiple action types.
@@ -69,32 +70,40 @@ def _text_or_missing(element):
 
 
 def _action_param_hints(action, wpml_prefix):
-    """Classify only allowlisted XML tag names; never inspect parameter values."""
+    """Allowlisted field presence and ephemeral unknown names; NO parameter values.
+
+    Unknown XML field names are private and never returned by the public CLI.
+    Foreign namespaces cannot be correlated as if they were DJI WPML tags.
+    """
     containers = action.findall(wpml_prefix + "actionActuatorFuncParam")
     if not containers:
-        return ("absent", ())
+        return ("absent", (), (), 0)
     if len(containers) != 1:
-        return ("ambiguous", ())
+        return ("ambiguous", (), (), 0)
     children = list(containers[0])
     if len(children) > MAX_PARAM_FIELDS_PER_ACTION:
         raise LocalWaylineError("invalid_archive")
     if not children:
-        return ("empty", ())
+        return ("empty", (), (), 0)
     categories = set()
-    unknown = False
+    unknown_fields = []
+    foreign_count = 0
     for child in children:
         if not isinstance(child.tag, str) or not child.tag.startswith(wpml_prefix):
-            unknown = True
+            foreign_count += 1
             continue
         key = child.tag[len(wpml_prefix):]
         label = PARAMETER_FIELD_CATEGORIES.get(key)
         if label is None:
-            unknown = True
+            # Local names remain private even if they contain arbitrary data.
+            if not key or len(key) > MAX_ENUM_LENGTH:
+                raise LocalWaylineError("unsupported_geometry")
+            unknown_fields.append(key)
         else:
             categories.add(label)
-    if unknown:
+    if unknown_fields or foreign_count:
         categories.add("unclassified_fields_present")
-    return ("present", tuple(sorted(categories)))
+    return ("present", tuple(sorted(categories)), tuple(unknown_fields), foreign_count)
 
 
 def _archive_action_records(kmz):
@@ -149,13 +158,19 @@ def _archive_action_records(kmz):
     return version, records_by_route
 
 
-def _aggregate_action_records(archives, *, parameter_hints=False):
+def _aggregate_action_records(archives, *, parameter_hints=False,
+                              field_aliases=False):
+    if field_aliases and not parameter_hints:
+        raise ValueError("field aliases require parameter hints")
     """Use per-call labels, not hashes, to correlate identical unknown enums.
 
     archives: list of (1-based inventory index, KMZ bytes) tuples. Does not
     materialize raw strings in returned or serializable structures.
     """
     aliases = {}  # Raw strings confined to this stack frame and never serialized.
+    # Per-invocation names only. Neither mapping is serialized, hashed or persisted.
+    field_names_to_aliases = {}
+    field_totals = {}
     totals = {}
     results = []
     for index, kmz in archives:
@@ -185,6 +200,8 @@ def _aggregate_action_records(archives, *, parameter_hints=False):
                         "location_counts": Counter(), "trigger_counts": Counter(),
                         "parameter_container_counts": Counter(),
                         "parameter_category_counts": Counter(),
+                        "unknown_field_alias_counts": Counter(),
+                        "foreign_namespace_field_count": 0,
                     }
                 item = totals[alias]
                 item["occurrences"] += 1
@@ -192,10 +209,27 @@ def _aggregate_action_records(archives, *, parameter_hints=False):
                 item["location_counts"][location] += 1
                 item["trigger_counts"][trigger] += 1
                 if parameter_hints:
-                    container_state, categories = hints
+                    container_state, categories, unknown_names, foreign_count = hints
                     item["parameter_container_counts"][container_state] += 1
                     for category in categories:
                         item["parameter_category_counts"][category] += 1
+                    if field_aliases:
+                        item["foreign_namespace_field_count"] += foreign_count
+                        for field_name in unknown_names:
+                            if field_name not in field_names_to_aliases:
+                                if len(field_names_to_aliases) >= MAX_FIELD_ALIASES:
+                                    raise LocalWaylineError("unsupported_geometry")
+                                fid = "P" + str(len(field_names_to_aliases) + 1).zfill(2)
+                                field_names_to_aliases[field_name] = fid
+                                field_totals[fid] = {
+                                    "id": fid, "occurrences": 0,
+                                    "files": set(), "action_aliases": set(),
+                                }
+                            fid = field_names_to_aliases[field_name]
+                            item["unknown_field_alias_counts"][fid] += 1
+                            field_totals[fid]["occurrences"] += 1
+                            field_totals[fid]["files"].add(index)
+                            field_totals[fid]["action_aliases"].add(alias)
             route_counts.append(dict(sorted(unknown_by_alias.items())))
         results.append({
             "index": index,
@@ -220,16 +254,30 @@ def _aggregate_action_records(archives, *, parameter_hints=False):
                 sorted(item["parameter_container_counts"].items()))
             entry["parameter_category_counts"] = dict(
                 sorted(item["parameter_category_counts"].items()))
+        if field_aliases:
+            entry["unknown_field_alias_counts"] = dict(
+                sorted(item["unknown_field_alias_counts"].items()))
+            entry["foreign_namespace_field_count"] = item["foreign_namespace_field_count"]
         safe_totals.append(entry)
-    return {"anonymous_types": safe_totals, "results": results,
-            "unknown_action_total": sum(x["unknown_action_count"] for x in results),
-            "recognized_action_total": sum(x["recognized_action_count"] for x in results),
-            "alias_scope": "single_invocation_only",
-            "full_content_verified": False,
-            "flight_compatibility_verified": False}
+    output = {"anonymous_types": safe_totals, "results": results,
+              "unknown_action_total": sum(x["unknown_action_count"] for x in results),
+              "recognized_action_total": sum(x["recognized_action_count"] for x in results),
+              "alias_scope": "single_invocation_only",
+              "full_content_verified": False,
+              "flight_compatibility_verified": False}
+    if field_aliases:
+        output["unknown_field_aliases"] = [
+            {"id": fid, "occurrences": data["occurrences"],
+             "file_count": len(data["files"]),
+             "action_aliases": sorted(data["action_aliases"])}
+            for fid, data in field_totals.items()
+        ]
+        output["field_alias_scope"] = "single_invocation_only"
+    return output
 
 
-async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False, inventory_reader=None,
+async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False,
+                                     field_aliases=False, inventory_reader=None,
                                      kmz_reader=None, credentials_loader=None):
     if type(limit) is not int or not 1 <= limit <= 8:
         raise ValueError("invalid limit")
@@ -257,11 +305,12 @@ async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False, inventor
         except (LocalWaylineError, httpx.HTTPError, OSError, TimeoutError, ValueError, KeyError, TypeError):
             results.append({"index": index, "state": "unavailable_or_unsupported"})
     try:
-        report = _aggregate_action_records(seen, parameter_hints=parameter_hints)
+        report = _aggregate_action_records(
+            seen, parameter_hints=parameter_hints, field_aliases=field_aliases)
     except (LocalWaylineError, ValueError, KeyError, TypeError):
         return {"inventory_state": "unsupported_geometry", "results": results}
     # Index is intentionally only the index in the verified inventory.
-    return {
+    response = {
         "inventory_state": "connected",
         "reported_total": inventory.get("reported_total"),
         "checked": len(seen) + len(results),
@@ -273,6 +322,10 @@ async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False, inventor
         "full_content_verified": False,
         "flight_compatibility_verified": False,
     }
+    if field_aliases:
+        response["unknown_field_aliases"] = report["unknown_field_aliases"]
+        response["field_alias_scope"] = report["field_alias_scope"]
+    return response
 
 
 def main():
@@ -282,10 +335,15 @@ def main():
     parser.add_argument("--limit", type=int, choices=range(1, 9), default=8)
     parser.add_argument("--parameter-hints", action="store_true",
                         help="Nur statische XML-Feldkategorien der unbekannten Aktionen zählen")
+    parser.add_argument("--field-aliases", action="store_true",
+                        help="Unbekannte DJI-Feldnamen nur als flüchtige P01/P02-Aliase korrelieren")
     args = parser.parse_args()
+    if args.field_aliases and not args.parameter_hints:
+        parser.error("--field-aliases erfordert --parameter-hints")
     try:
         report = asyncio.run(diagnose_action_vocabulary(
-            limit=args.limit, parameter_hints=args.parameter_hints))
+            limit=args.limit, parameter_hints=args.parameter_hints,
+            field_aliases=args.field_aliases))
     except KeyboardInterrupt:
         return 130
     print(json.dumps(report, ensure_ascii=False, indent=2))
