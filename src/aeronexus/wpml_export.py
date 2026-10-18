@@ -78,6 +78,29 @@ MAX_WAYPOINT_ACTIONS = 8
 # Intentionally conservative gimbal pitch envelope; NOT a model calibration.
 PITCH_MIN_DEG, PITCH_MAX_DEG = -90.0, 0.0
 
+# The current DJI developer WPML reference (which includes M4E/M4T) requires
+# explicit lens selection for M4 photo and start-record actions. For supported
+# Mavic 3 variants it requires the global-selection flag but does not specify
+# payloadLensIndex. M3TA is not listed in these action rows.
+_LENS_SELECTION_MODELS = frozenset({
+    "matrice4e", "matrice4t", "mavic3e", "mavic3t", "mavic3m",
+})
+_EXPLICIT_WIDE_LENS_MODELS = frozenset({"matrice4e", "matrice4t"})
+
+
+def _camera_lens_selection(params: ET.Element, model: str, *,
+                           legacy_camera_params: bool = False) -> None:
+    """Emit the documented lens-selection subset, never infer thermal capture.
+
+    Legacy mode reproduces the previously exported XML *only for strict import
+    compatibility*. It must not be used for new KMZ exports.
+    """
+    if legacy_camera_params or model not in _LENS_SELECTION_MODELS:
+        return
+    if model in _EXPLICIT_WIDE_LENS_MODELS:
+        _set(params, "payloadLensIndex", "wide")
+    _set(params, "useGlobalPayloadLensIndex", 0)
+
 
 class _CameraAction(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -255,7 +278,8 @@ def _mission_config(doc: ET.Element, mission: WaypointMission) -> None:
     _set(payload, "payloadPositionIndex", 0)
 
 
-def _photo_action(place: ET.Element, index: int) -> None:
+def _photo_action(place: ET.Element, index: int, model: str, *,
+                  legacy_camera_params: bool = False) -> None:
     group = ET.SubElement(place, _w("actionGroup"))
     for key, value in (
         ("actionGroupId", index),
@@ -272,9 +296,11 @@ def _photo_action(place: ET.Element, index: int) -> None:
     params = ET.SubElement(action, _w("actionActuatorFuncParam"))
     _set(params, "fileSuffix", f"p{index:03d}")
     _set(params, "payloadPositionIndex", 0)
+    _camera_lens_selection(params, model, legacy_camera_params=legacy_camera_params)
 
 
-def _extra_action(place: ET.Element, index: int, seq: int, action: WaypointAction) -> None:
+def _extra_action(place: ET.Element, index: int, seq: int, action: WaypointAction,
+                  model: str, *, legacy_camera_params: bool = False) -> None:
     """Canonical DJI WPML action groups; only the reviewed offline subset."""
     group = ET.SubElement(place, _w("actionGroup"))
     between = action.type == "gimbalEvenlyRotate"
@@ -299,6 +325,7 @@ def _extra_action(place: ET.Element, index: int, seq: int, action: WaypointActio
         _set(param, "payloadPositionIndex", 0)
         if action.type == "startRecord":
             _set(param, "fileSuffix", f"v{index:03d}")
+            _camera_lens_selection(param, model, legacy_camera_params=legacy_camera_params)
         elif action.type == "focus":
             _set(param, "isPointFocus", 1)
             _set(param, "focusX", _num(action.focus_x))
@@ -322,7 +349,8 @@ def _extra_action(place: ET.Element, index: int, seq: int, action: WaypointActio
                 _set(param, key, value)
 
 
-def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int) -> bytes:
+def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int,
+         legacy_camera_params: bool = False) -> bytes:
     root = ET.Element(_k("kml"))
     doc = ET.SubElement(root, _k("Document"))
     ET.SubElement(doc, _k("name")).text = mission.name
@@ -373,9 +401,11 @@ def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int) -> byte
             _set(turning, "waypointTurnMode", "toPointAndStopWithDiscontinuityCurvature")
             _set(turning, "waypointTurnDampingDist", 0)
         if wp.take_photo:
-            _photo_action(place, index)
+            _photo_action(place, index, mission.drone_model,
+                          legacy_camera_params=legacy_camera_params)
         for seq, action in enumerate(wp.actions, start=1):
-            _extra_action(place, index, seq, action)
+            _extra_action(place, index, seq, action, mission.drone_model,
+                          legacy_camera_params=legacy_camera_params)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
@@ -545,18 +575,26 @@ def import_kmz(data: bytes) -> WaypointMission:
     # representation, including settings, duplicate elements and action params.
     # XML indentation/prefix spelling and the two creation timestamps are not
     # flight semantics. No generic third-party KMZ compatibility is implied.
-    for actual, is_template in ((template, True), (route, False)):
-        expected = ET.fromstring(_xml(mission, template=is_template, timestamp_ms=0))
-        if is_template:
-            for tag in ("createTime", "updateTime"):
-                elements = actual.findall(_k("Document") + "/" + _w(tag))
-                value = (elements[0].text or "").strip() if len(elements) == 1 else ""
-                if not value.isascii() or not value.isdigit():
-                    raise ValueError("Invalid AeroNexus timestamp")
-                elements[0].text = "0"
-        if _document_signature(actual) != _document_signature(expected):
-            raise ValueError("WPML settings disagree or cannot be preserved by the supported mission format")
-    return mission
+    for tag in ("createTime", "updateTime"):
+        elements = template.findall(_k("Document") + "/" + _w(tag))
+        value = (elements[0].text or "").strip() if len(elements) == 1 else ""
+        if not value.isascii() or not value.isdigit():
+            raise ValueError("Invalid AeroNexus timestamp")
+        elements[0].text = "0"
+    actual = (_document_signature(template), _document_signature(route))
+    # Accept exactly one complete AeroNexus format generation. Mixing old and
+    # new camera parameters across documents, or altering any other parameter,
+    # is NOT a supported conversion and must never be silently accepted.
+    for legacy in (False, True):
+        expected = tuple(
+            _document_signature(ET.fromstring(
+                _xml(mission, template=is_template, timestamp_ms=0,
+                     legacy_camera_params=legacy)))
+            for is_template in (True, False)
+        )
+        if actual == expected:
+            return mission
+    raise ValueError("WPML settings disagree or cannot be preserved by the supported mission format")
 
 
 def _document_signature(root: ET.Element) -> tuple:
