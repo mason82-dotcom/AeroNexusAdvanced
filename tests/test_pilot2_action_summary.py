@@ -244,3 +244,52 @@ def test_studio_ui_is_opt_in_get_only_and_uses_text_content():
     assert "pilot2ActionController?.abort()" in clear
     assert '("pilot2-action-results").replaceChildren()' in clear
 
+
+
+
+def test_summary_presents_only_fixed_observed_names_without_export_permission():
+    report = fixture_report()
+    report["identified_types"] = [{
+        "name": "startSmartOblique", "alias": "A02",
+        "occurrences": 2, "file_count": 1,
+    }]
+    report["identified_action_total"] = 2
+    report["unresolved_action_total"] = 3
+    clean = summarize_action_report(report)
+    assert clean["state"] == "connected"
+    assert clean["recognized_actions"] == 9
+    assert clean["unknown_actions"] == 5  # deprecated non-documented count
+    assert clean["identified_actions"] == 2
+    assert clean["unresolved_actions"] == 3
+    assert clean["anonymous_types"] == [{
+        "alias": "A01", "occurrences": 3, "file_count": 2,
+        "locations": {"start": 1, "waypoint": 2},
+        "triggers": {"reachPoint": 2, "start": 1},
+    }]
+    assert clean["identified_types"] == [{
+        "name": "startSmartOblique", "label": "Smart Oblique starten",
+        "family": "smart_oblique", "occurrences": 2, "file_count": 1,
+        "status": "pilot2_observed_unverified",
+        "export_supported": False,
+    }]
+    assert clean["flight_compatibility_verified"] is False
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda p: p["identified_types"][0].update(name="secretInjectedActuator"),
+    lambda p: p["identified_types"][0].update(name="<script>alert(1)</script>"),
+    lambda p: p["identified_types"][0].update(occurrences=3),
+    lambda p: p["identified_types"][0].update(alias="A99"),
+    lambda p: p.update(unresolved_action_total=2),
+    lambda p: p.update(identified_action_total=True),
+])
+def test_summary_rejects_invalid_observed_dji_mapping(mutation):
+    report = fixture_report()
+    report["identified_types"] = [{
+        "name": "startSmartOblique", "alias": "A02",
+        "occurrences": 2, "file_count": 1,
+    }]
+    report["identified_action_total"] = 2
+    report["unresolved_action_total"] = 3
+    mutation(report)
+    assert summarize_action_report(report)["state"] == "invalid_response"

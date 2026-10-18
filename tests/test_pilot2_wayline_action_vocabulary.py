@@ -600,3 +600,36 @@ def test_partial_bad_archive_reports_only_sanitized_index():
     assert result["checked"] == 2
     assert result["results"][1] == {"index": 2, "state": "unavailable_or_unsupported"}
     assert "password-SHOULD-NOT-LEAK" not in json.dumps(result)
+
+
+
+@pytest.mark.parametrize("action_name", [
+    "setFocusType", "startSmartOblique", "stopSmartOblique",
+    "startContinuousShooting", "stopContinuousShooting",
+    "startTimeLapse", "stopTimeLapse",
+])
+def test_observed_pilot2_enum_is_named_but_not_claimed_documented(action_name):
+    report = av._aggregate_action_records([
+        (1, archive(action_name, version="1.0.6")),
+    ])
+    assert report["recognized_action_total"] == 0
+    assert report["unknown_action_total"] == 1  # legacy non-documented metric
+    assert report["identified_action_total"] == 1
+    assert report["unresolved_action_total"] == 0
+    assert report["identified_types"] == [{
+        "name": action_name, "alias": "A01",
+        "occurrences": 1, "file_count": 1,
+    }]
+    assert report["full_content_verified"] is False
+    assert report["flight_compatibility_verified"] is False
+
+
+def test_mixed_observed_and_unrecognized_actions_stay_separate_and_private():
+    report = av._aggregate_action_records([
+        (1, archive("startSmartOblique", version="1.0.6")),
+        (2, archive("genuinelyPrivateEnum", version="1.0.6")),
+    ])
+    assert report["identified_action_total"] == 1
+    assert report["unresolved_action_total"] == 1
+    assert report["unknown_action_total"] == 2
+    assert "genuinelyPrivateEnum" not in json.dumps(report)

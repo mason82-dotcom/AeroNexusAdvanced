@@ -11,6 +11,7 @@ import httpx
 
 from .local_waylines import LocalWaylineError, credentials_path, load_credentials
 from .pilot2_wayline_action_vocabulary import diagnose_action_vocabulary
+from .pilot2_action_catalog import PILOT2_OBSERVED_ACTIONS
 
 
 CACHE_SECONDS = 90
@@ -84,6 +85,43 @@ def summarize_action_report(report):
             "locations": dict(sorted(loc.items())),
             "triggers": dict(sorted(triggers.items())),
         })
+    # Optional backward-compatible extended diagnostics. Only exact local
+    # allowlisted Pilot 2 enum names are ever forwarded to the browser.
+    raw_identified = report.get("identified_types")
+    identified = []
+    aliases_identified = set()
+    if raw_identified is not None:
+        if not isinstance(raw_identified, list) or len(raw_identified) > len(PILOT2_OBSERVED_ACTIONS):
+            return _empty("invalid_response")
+        seen_names = set()
+        for item in raw_identified:
+            if not isinstance(item, dict):
+                return _empty("invalid_response")
+            name, alias = item.get("name"), item.get("alias")
+            count, file_count = item.get("occurrences"), item.get("file_count")
+            if (not isinstance(name, str) or name not in PILOT2_OBSERVED_ACTIONS
+                    or name in seen_names or not isinstance(alias, str)
+                    or alias not in seen_aliases or alias in aliases_identified
+                    or type(count) is not int or not 1 <= count <= 10000
+                    or type(file_count) is not int or not 1 <= file_count <= len(items)):
+                return _empty("invalid_response")
+            original = next((x for x in safe_types if x["alias"] == alias), None)
+            if original is None or original["occurrences"] != count or original["file_count"] != file_count:
+                return _empty("invalid_response")
+            label, family = PILOT2_OBSERVED_ACTIONS[name]
+            identified.append({"name": name, "label": label, "family": family,
+                               "occurrences": count, "file_count": file_count,
+                               "status": "pilot2_observed_unverified",
+                               "export_supported": False})
+            seen_names.add(name)
+            aliases_identified.add(alias)
+        identified_count = sum(x["occurrences"] for x in identified)
+        if (report.get("identified_action_total") != identified_count
+                or report.get("unresolved_action_total") != unknown_sum - identified_count):
+            return _empty("invalid_response")
+        safe_types = [x for x in safe_types if x["alias"] not in aliases_identified]
+    else:
+        identified_count = 0
     safe_files = []
     known_sum = 0
     total_unknown_files = 0
@@ -117,6 +155,9 @@ def summarize_action_report(report):
         "total": reported_total,
         "recognized_actions": known_sum,
         "unknown_actions": unknown_sum,
+        "identified_actions": identified_count,
+        "unresolved_actions": unknown_sum - identified_count,
+        "identified_types": identified,
         "anonymous_types": safe_types,
         "waylines": safe_files,
         "read_only": True,
@@ -136,7 +177,8 @@ def _empty(state):
         "state": state if isinstance(state, str) and state in known else "unavailable",
         "checked": 0, "total": None,
         "recognized_actions": 0, "unknown_actions": 0,
-        "anonymous_types": [], "waylines": [],
+        "identified_actions": 0, "unresolved_actions": 0,
+        "identified_types": [], "anonymous_types": [], "waylines": [],
         "read_only": True, "wpml_semantics_verified": False,
         "flight_compatibility_verified": False,
         "full_content_verified": False,
