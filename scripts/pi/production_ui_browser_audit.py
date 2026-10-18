@@ -65,6 +65,7 @@ class Result:
     reason: str
     api_ok: int = 0
     overflow_px: int = 0
+    tile_ok: int = 0
 
 
 def allow_request(url: str, method: str, base: str, *, tiles: bool = False) -> str:
@@ -90,7 +91,7 @@ def allow_request(url: str, method: str, base: str, *, tiles: bool = False) -> s
                 return "block"
             return "api"
         return "block"
-    if url.startswith(LEAFLET_ASSETS) and parsed.path.endswith((".js", ".css")):
+    if url.startswith(LEAFLET_ASSETS) and parsed.path.endswith((".js", ".css", ".png", ".svg")):
         return "leaflet"
     if tiles and f"{parsed.scheme}://{parsed.netloc}" in TILE_ORIGINS:
         # Restrict to tile paths; never allow arbitrary third-party URLs.
@@ -267,7 +268,7 @@ def audit_page(browser, client: ReadOnlyClient, module: str, path: str,
         # Leaflet assets are real where CDN is reachable; maps/tiles are optional.
         return Result(module, viewport, "PASS",
                       "real HTTPS browser, GET data, layout, safe clicks",
-                      counters["api_ok"], overflow)
+                      counters["api_ok"], overflow, counters["tile_ok"])
     except Exception:
         return Result(module, viewport, "FAIL",
                       "browser load/layout error", counters["api_ok"])
@@ -321,7 +322,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     for result in results:
         print(f"{result.status:4}  {result.module:15} {result.viewport:7} "
-              f"GET-200={result.api_ok} overflow={result.overflow_px}px | {result.reason}")
+              f"API-200={result.api_ok} tiles-200={result.tile_ok} "
+              f"overflow={result.overflow_px}px | {result.reason}")
     passed = sum(x.status == "PASS" for x in results)
     print(f"Total: {passed}/{len(results)} real HTTPS browser cases PASS")
     print("All actual writes blocked; no response body, screenshot or token persisted.")

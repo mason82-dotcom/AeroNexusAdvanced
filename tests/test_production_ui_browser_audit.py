@@ -20,6 +20,7 @@ BASE = "https://192.168.178.63:8000"
     (BASE + "/api/v1/status/devices?limit=5", "api"),
     ("https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js", "leaflet"),
     ("https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css", "leaflet"),
+    ("https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-icon.png", "leaflet"),
     ("http://192.168.178.63:8000/studio", "block"),
     ("https://192.168.178.64:8000/api/v1/status/devices", "block"),
     ("https://attacker.example/api/v1/status/devices", "block"),

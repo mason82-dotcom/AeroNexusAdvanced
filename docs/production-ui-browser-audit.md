@@ -66,3 +66,11 @@ lokale CA und prüft den \`/health\`-Endpunkt, bevor Chromium startet.
 
 **Wichtig:** \`PASS\` bedeutet sichere positive Browserstart-/Layout-
 und GET-Interaktion, nicht vollständige Funktionsfreigabe für Flugoperationen.
+
+## Tile-Diagnose
+
+`tiles-200` zählt nur erfolgreich geladene Kartenkacheln, ohne URLs oder
+Koordinaten auszugeben. Der Standardaufruf lädt keine Drittanbieter-Kacheln.
+`--allow-tiles` muss ausdrücklich gewählt werden (max. 18 pro Seite).
+Auch bei `tiles-200=0` kann die übrige UI-Abnahme erfolgreich sein;
+die tatsächliche Kartenkacheldarstellung bleibt dann separat offen.
