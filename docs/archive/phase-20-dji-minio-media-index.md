@@ -1,3 +1,5 @@
+> **Archiv (18.10.2026):** Historischer Entwicklungs-/Abnahmestand, kein aktueller Betriebsstatus. Siehe [Projektstatus](../PROJECT_STATUS.md) und [Dokumentationsindex](../README.md).
+
 # DJI-Medienseite: gemeinsamer Phase-21-Katalog
 
 Die eigenständige Metadatenansicht `/media` und ihre GET-Endpunkte
@@ -9,7 +11,7 @@ Die vorhandenen LAN-/Token-Zugriffsprüfungen gelten weiterhin.
 ## Einmaliger Umstieg von der früheren Phase-20-Implementierung
 
 - Der Scanner benötigt den separaten MinIO-Lesezugang und das Extra `minio`.
-  Einrichtung und Pi-Kommandos: [Phase 21](phase-21-dji-minio-media.md).
+  Einrichtung und Pi-Kommandos: [Phase 21](../phase-21-dji-minio-media.md).
 - Der aktive Index ist `dji_minio_media.sqlite3` im privaten Workspace,
   standardmäßig `~/.local/share/aeronexusadvanced`.
 - `var/dji-media-index.sqlite3` wird nicht mehr verwendet, nicht automatisch

@@ -1,3 +1,5 @@
+> **Archiv (18.10.2026):** Historischer Entwicklungs-/Abnahmestand, kein aktueller Betriebsstatus. Siehe [Projektstatus](../PROJECT_STATUS.md) und [Dokumentationsindex](../README.md).
+
 # Phase 19: DJI Pilot 2 Live-Cockpit im Operations Center
 
 ## Ziel und verifizierter Eingang

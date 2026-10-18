@@ -1,6 +1,11 @@
 name: tests
 on: [push, pull_request]
 jobs:
+  markdown-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/maintenance/check_markdown_links.py
   pytest:
     runs-on: ubuntu-latest
     strategy:

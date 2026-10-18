@@ -93,3 +93,31 @@ Es fügt keine noch nicht vorhandenen DJI-DRC-/HMS-Topics oder neue
 Telemetrie in die Hardware ein. Cloud API 2 und FlightHub bleiben eigene
 Datenwege. Fehlende reale RC-/Fluggeräteabnahme ist nicht mit
 synthetischer CI-Abnahme gleichzusetzen.
+
+
+## Persistenter HMS-Ereignisverlauf (main seit PR #65)
+
+Die HMS-Anzeige kann zusätzlich **normalisierte Zustandsübergänge** aus dem
+lokalen, privaten SQLite-Speicher darstellen. Die Funktion wurde mit
+[PR #65](https://github.com/mason82-dotcom/AeroNexusAdvanced/pull/65)
+auf GitHub gemergt; ihre produktive Verfügbarkeit hängt vom ausgerollten
+Pi-Code ab.
+
+- Historie von maximal 3.000 Übergängen in
+  `~/.config/aeronexusadvanced/hms-history.sqlite3` (private Dateirechte).
+- Gezählt werden u. a. Erscheinen, aus einem vollständigen HMS-Snapshot
+  Verschwinden, Wiederauftreten und relevante Prioritätsänderungen.
+  Identische aufeinanderfolgende Snapshots erzeugen keine Ereignisflut.
+- Geschützter, paginierter GET-Zugriff:
+  `/api/v1/status/hms-history`. Die Anzeige markiert
+  **Pi-Empfangszeiten**; das sind nicht automatisch DJI-Ereigniszeiten.
+- „Nicht mehr gemeldet“ ist **kein Nachweis**, dass ein technischer
+  Defekt sicher behoben wurde. Ein wieder erschienener Code ist ein
+  eigener Zustandswechsel.
+- Es entstehen keine zusätzlichen MQTT-Schreibrechte, Flugbefehle,
+  Rohdaten-Dumps oder öffentlich zugänglichen Gerätekennungen.
+
+Die separaten [HMS-Code- und Übersetzungsregeln](dji-cloudapi-hms.md)
+gelten weiterhin. Die Chronik ist nicht identisch mit dem
+Frischeindikator des OSD-Datenstroms.
+
