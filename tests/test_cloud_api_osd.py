@@ -232,3 +232,55 @@ def test_invalid_state_is_atomic_and_never_imports_secrets(ingest):
                              envelope({"battery": {"capacity_percent": 200}}),
                              allow_state=True)
     assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == before
+
+
+def test_partial_position_is_ignored_without_losing_unrelated_fields():
+    aircraft = normalize_osd(DeviceType.AIRCRAFT, {"latitude": 49.2, "mode_code": 3})
+    assert aircraft == {"flight_mode_code": 3}
+    controller = normalize_osd(DeviceType.CONTROLLER, {
+        "longitude": 8.7, "capacity_percent": 75})
+    assert controller == {"battery_percent": 75}
+    complete = normalize_osd(DeviceType.AIRCRAFT, {
+        "latitude": 49.2, "longitude": 8.7})
+    assert complete == {"latitude": 49.2, "longitude": 8.7}
+
+
+def test_partial_position_does_not_change_existing_aircraft_or_rc_pair(ingest):
+    assert ingest.handle(topic(DRONE), envelope({
+        "mode_code": 3, "latitude": 49.1, "longitude": 8.5}))
+    before_clocks = dict(ingest.runtime.cloud_field_clocks[(CLOUD, "aeronexus", DRONE)])
+    assert ingest.handle(topic(DRONE), envelope({"latitude": 49.2, "mode_code": 9}))
+    drone = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
+    assert (drone.latitude, drone.longitude, drone.flight_mode_code) == (49.1, 8.5, 9)
+    after_clocks = ingest.runtime.cloud_field_clocks[(CLOUD, "aeronexus", DRONE)]
+    assert after_clocks["latitude"] == before_clocks["latitude"]
+    assert after_clocks["longitude"] == before_clocks["longitude"]
+    assert ingest.handle(topic(RC), envelope({
+        "capacity_percent": 90, "latitude": 49.3, "longitude": 8.6}))
+    assert ingest.handle(topic(RC), envelope({
+        "longitude": 8.9, "capacity_percent": 80}))
+    rc = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", RC)
+    assert (rc.latitude, rc.longitude, rc.battery_percent) == (49.3, 8.6, 80)
+
+
+def test_explicit_zero_zero_clears_position_without_making_up_coordinates(ingest):
+    assert ingest.handle(topic(DRONE), envelope({
+        "mode_code": 3, "latitude": 49.1, "longitude": 8.5}))
+    assert ingest.handle(topic(DRONE), envelope({
+        "latitude": 0, "longitude": 0}))
+    drone = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
+    assert drone.latitude is None and drone.longitude is None
+
+
+@pytest.mark.parametrize("partial", [
+    {"latitude": 91}, {"longitude": -181}, {"latitude": float("nan")},
+    {"longitude": float("inf")}, {"latitude": True},
+    {"longitude": "invalid"},
+])
+def test_invalid_partial_position_does_not_mutate_inventory(ingest, partial):
+    assert ingest.handle(topic(DRONE), envelope({
+        "mode_code": 3, "latitude": 49.1, "longitude": 8.5}))
+    before = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
+    assert not ingest.handle(topic(DRONE), envelope({
+        **partial, "mode_code": 9}))
+    assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == before
