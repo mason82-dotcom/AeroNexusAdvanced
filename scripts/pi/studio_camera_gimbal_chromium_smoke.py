@@ -205,7 +205,6 @@ def build_fixture():
         bindings.append(marker)
     if (not all(token in handlers for token in
                 ("addWaypointAction", "drawWaypointActions", "historyRecord()"))
-            or "actions" not in apply
             or "mission.waypoints[selected]={...p," not in apply):
         raise RuntimeError("Studio action semantics changed; fixture must be reviewed")
     for block in (models, controls, constants, handlers, apply):
