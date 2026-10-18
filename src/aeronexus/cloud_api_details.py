@@ -132,6 +132,8 @@ AIRCRAFT = {
     'home_longitude': ('home_longitude', number(-180, 180)),
     'total_flight_distance': ('total_flight_distance_m', number(0)),
     'height_limit': ('height_limit_m', number(0)),
+    'rth_altitude': ('rth_altitude_m', number(20, 500, integer=True)),
+    'rc_lost_action': ('rc_lost_action_code', number(0, 2, integer=True)),
     'is_near_area_limit': ('near_area_limit', switch),
     'is_near_height_limit': ('near_height_limit', switch),
     'night_lights_state': ('night_lights_on', switch),
@@ -212,6 +214,11 @@ CAPACITY = {
     'available_video_number': ('available_videos', COUNT),
     'coexist_video_number_max': ('simultaneous_videos', COUNT),
 }
+DISTANCE_LIMIT = {
+    'state': ('state_code', number(0, 1, integer=True)),
+    'distance_limit': ('distance_limit_m', number(15, 8000, integer=True)),
+    'is_near_distance_limit': ('near_limit', switch),
+}
 STORAGE = {'total': ('total_kib', COUNT), 'used': ('used_kib', COUNT)}
 OBSTACLES = {k: (k + '_enabled', switch) for k in ('horizon', 'upside', 'downside')}
 # DJI M3 uses wide/zoom, while M4 (e.g. RC Plus 2/M4T) uses vision.
@@ -265,6 +272,7 @@ def normalize_details(kind, data):
         for wire, target, schema in [('battery', 'battery', BATTERY),
                                      ('position_state', 'position', {'quality': ('quality_code', CODE)}),
                                      ('storage', 'storage', STORAGE),
+                                     ('distance_limit_status', 'distance_limit', DISTANCE_LIMIT),
                                      ('obstacle_avoidance', 'obstacle_avoidance', OBSTACLES)]:
             if wire in data and data[wire] is not None:
                 value = mapped(data[wire], schema)
@@ -333,6 +341,7 @@ def canonical_schema(mapping):
 DETAILS_SCHEMA = canonical_schema(COMMON | AIRCRAFT | RC) | {
  'battery': canonical_schema(BATTERY),
     'position': {'quality_code': CODE}, 'storage': canonical_schema(STORAGE),
+    'distance_limit': canonical_schema(DISTANCE_LIMIT),
     'obstacle_avoidance': canonical_schema(OBSTACLES), 'battery_packs': (canonical_schema(PACK), 8),
     'maintenance': (canonical_schema(MAINTENANCE), 16), 'payloads': ('payloads', canonical_schema(PAYLOAD)),
     'payload_control': (canonical_schema(PAYLOAD_CONTROL), 16),

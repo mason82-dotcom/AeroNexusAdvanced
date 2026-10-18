@@ -123,13 +123,24 @@ class CloudOsdIngest:
         self.ignored = 0
         self.outdated = 0
         self.last_message_at: datetime | None = None
+        # Anonymous, per-topic evidence; no SNs, coordinates or raw messages.
+        self.channel_counters = {
+            channel: {'accepted': 0, 'rejected': 0, 'ignored': 0, 'outdated': 0,
+                      'last_message_at': None}
+            for channel in ('osd', 'state')
+        }
         self.hms_accepted = 0
         self.hms_rejected = 0
         self.hms_ignored = 0
         runtime.inventory.add_project(Project(CLOUD, project_id, "AeroNexus (DJI Cloud API)"))
 
+    def _count_channel(self, channel: str | None, metric: str) -> None:
+        if channel in self.channel_counters:
+            self.channel_counters[channel][metric] += 1
+
     def handle(self, topic: str, payload: bytes, allow_state: bool = False) -> bool:
         inventory = self.runtime.inventory
+        channel = None
         try:
             serial, channel = topic_device(topic)
             if channel == "state" and not allow_state:
@@ -145,6 +156,7 @@ class CloudOsdIngest:
                 # aircraft OSD sample. Only augment previously seen devices.
                 if known is None:
                     self.ignored += 1
+                    self._count_channel(channel, 'ignored')
                     return False
                 kind = known.kind
                 if classified is not None and classified != kind:
@@ -153,6 +165,7 @@ class CloudOsdIngest:
                 kind = classified if classified is not None else (known.kind if known else None)
                 if kind is None:
                     self.ignored += 1
+                    self._count_channel(channel, 'ignored')
                     return False
                 if known is not None and kind != known.kind:
                     raise CloudOsdError("OSD device type conflicts with known device")
@@ -161,6 +174,7 @@ class CloudOsdIngest:
             fields = normalize_osd(kind, data)
             if not fields:
                 self.ignored += 1
+                self._count_channel(channel, 'ignored')
                 return False
             previous = inventory.telemetry(CLOUD, self.project_id, serial)
             base = {} if previous is None else {
@@ -172,6 +186,8 @@ class CloudOsdIngest:
             if not changed:
                 self.ignored += 1
                 self.outdated += 1
+                self._count_channel(channel, 'ignored')
+                self._count_channel(channel, 'outdated')
                 return False
             osd_clock = self.runtime.cloud_osd_clocks.get(key)
             renew_osd = channel == 'osd' and (
@@ -195,9 +211,12 @@ class CloudOsdIngest:
         except ValueError:
             # Covers CloudOsdError and all validation errors; content is not logged.
             self.rejected += 1
+            self._count_channel(channel, 'rejected')
             return False
         self.accepted += 1
+        self._count_channel(channel, 'accepted')
         self.last_message_at = utc_now()
+        self.channel_counters[channel]['last_message_at'] = self.last_message_at
         return True
 
 
@@ -370,4 +389,11 @@ class CloudMqttFeed:
             "ignored": self.ingest.ignored,
             "outdated": self.ingest.outdated,
             "last_message_at": utc_iso(self.ingest.last_message_at),
+            "channels": {
+                channel: {
+                    **{key: counters[key] for key in ('accepted', 'rejected', 'ignored', 'outdated')},
+                    'last_message_at': utc_iso(counters['last_message_at']),
+                }
+                for channel, counters in self.ingest.channel_counters.items()
+            },
         }
