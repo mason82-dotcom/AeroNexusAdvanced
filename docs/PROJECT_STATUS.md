@@ -1,6 +1,6 @@
 # AeroNexusAdvanced – Projektstatus
 
-**Dokumentationsstand: 18. Oktober 2026.** Dies ist eine **GitHub-/Entwicklungsbestandsaufnahme**, keine automatisierte Abfrage des produktiven Raspberry Pi. Die letzte unveränderte `main`-Basis bei dieser Prüfung war `3125225e8774ffb6aec3b10652776ddf5df52498` (Merge von PR #63: DJI Matrice-4-Kameraspeicher-OSD). Der tatsächliche Dienststand auf dem Pi muss separat ermittelt werden.
+**Dokumentationsstand: 18. Oktober 2026.** Dies ist eine **GitHub-/Entwicklungsbestandsaufnahme**, keine automatisierte Abfrage des produktiven Raspberry Pi. Die letzte unveränderte `main`-Basis bei dieser Prüfung war `999cb1b8b459612279092e36ecb5f69e36f46744` (Merge von PR #65: privater DJI-HMS-Ereignisverlauf; PR #63 ist bereits enthalten). Der tatsächliche Dienststand auf dem Pi muss separat ermittelt werden.
 
 Zur älteren detaillierten Entwicklungschronik: [Archiv 17.10.2026](archive/PROJECT_STATUS-2026-10-17.md). Frühere Testzahlen, damalige PR-Zustände und Behauptungen zu damals nicht durchgeführten Rollouts gelten ausschließlich für ihren jeweiligen Zeitpunkt.
 
