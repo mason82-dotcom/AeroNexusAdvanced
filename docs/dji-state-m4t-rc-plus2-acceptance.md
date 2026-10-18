@@ -39,6 +39,8 @@ Freigabe für Flugsteuerung.
   `distance_limit_status.distance_limit` (15–8000 m) werden validiert und
   als `cloud_details.distance_limit.state_code` und
   `cloud_details.distance_limit.distance_limit_m` rein lesend ausgegeben.
+  Zusätzlich werden `is_near_distance_limit`, `rth_altitude` und
+  `rc_lost_action` als validierte, rein lesende Sicherheitszustände übernommen.
 - Die anonymisierte `live_feed.channels.osd/state`-Diagnose zählt je Kanal
   `accepted`, `rejected`, `ignored`, `outdated` und gibt den Zeitpunkt
   des zuletzt akzeptierten Pakets aus. Bestehende Zähler bleiben erhalten.
@@ -122,7 +124,8 @@ dass das Feld im Beobachtungsfenster nicht gesehen wurde.
    Geräte, M4T-Payload-Hinweis `89-0-0`, GPS/RTK/Batterie.
 3. **State-Subscription ausdrücklich freigegeben:** vollständige
    MQTT-SubAck-Gewährung sowie ein **tatsächlich akzeptiertes** State-Ereignis
-   anhand `channels.state.accepted > 0`. Unveränderte Werte dürfen ausbleiben.
+   anhand `accepted_during_observation.state > 0`. Der kumulierte Wert
+   `channels.state.accepted` allein reicht hierfür nicht. Unveränderte Werte dürfen ausbleiben.
 4. **Feldabgleich:** Dokumentationsfeldnamen, Einheiten, Code-Enge, Kamera-
    Indizes und echte `field_status[].channel` prüfen; `position.quality=10`
    nicht mit RTK-`is_fixed` verwechseln.
