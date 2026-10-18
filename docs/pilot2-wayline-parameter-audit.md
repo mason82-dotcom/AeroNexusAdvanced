@@ -127,3 +127,30 @@ Merkmalen** berücksichtigt. Solange die Feldsemantik nicht gesondert gegen
 den neuen WPML-Stand belegt ist, lautet wpml_schema_semantics_verified=false,
 parameter_state=not_comparable und full_content_verified=false – selbst wenn
 die Wegpunktkoordinaten identisch sein sollten.
+
+## WPML-Aktionsstatistik (nur lesend)
+
+Ab der erweiterten Parameterdiagnose werden zusätzlich folgende aggregierte
+Zähler je KMZ ausgegeben:
+
+- action_type_counts: Häufigkeit der ausdrücklich dokumentierten DJI-Aktionsnamen
+  in den Wegpunkten, beispielsweise orientedShoot, panoShot, gimbalRotate,
+  takePhoto, startRecord und stopRecord.
+- unrecognized_action_count: Anzahl anderer, nicht eindeutig zugeordneter
+  Aktionstypen. **Unbekannte Aktionstexte werden nicht ausgegeben.**
+- start_action_type_counts: gesonderte Zählung dokumentierter Aktionen in
+  startActionGroup.
+- start_action_count und unrecognized_start_action_count: Umfang und unbekannte
+  Einträge der Startaktionsgruppen.
+
+Die zuvor ausgewiesene Zahl other_action_count zählt ausschließlich andere
+als takePhoto-Funktionen innerhalb der Wegpunkte. Darunter können DJI-
+Fotoaktionen wie orientedShoot fallen: photo_action_count=0 besagt daher
+NICHT, dass keine Aufnahmen vorgesehen sind.
+
+Es handelt sich ausschließlich um eine Klassifikation der Aktionsnamen.
+Reihenfolge, Auslöser, Kamera- und Nutzlastparameter sowie
+Firmware-Kompatibilität werden nicht validiert. Die WPML-1.0.6-Semantik
+bleibt ungeprüft; kein automatischer Upload oder Flugsteuerungsbefehl.
+Die Liste der bekannten Aktionsnamen stammt aus DJI WPML Common Element:
+https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
