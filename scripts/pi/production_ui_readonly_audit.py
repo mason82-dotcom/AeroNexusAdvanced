@@ -271,6 +271,23 @@ def check_preview(client: ReadOnlyClient, listing: dict[str, Any] | None) -> Aud
     return AuditResult("media_preview", "PASS", "small image header readable; decode unverified")
 
 
+def find_preview_listing(client: ReadOnlyClient,
+                         listing: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Search bounded JPEG/PNG/WebP metadata only if primary listing has no match."""
+    if choose_preview(listing):
+        return listing
+    for path in PREVIEW_SEARCH_PATHS:
+        try:
+            stat, mime, body, excess = client.read(path, max_bytes=MAX_JSON)
+            audit, candidate = classify_api("dji_media", stat, mime, body, excess,
+                                            optional=True)
+            if audit.state == "PASS" and choose_preview(candidate):
+                return candidate
+        except (ValueError, OSError, URLError, ssl.SSLError, TimeoutError):
+            continue
+    return listing
+
+
 def run(client: ReadOnlyClient, *, sample_media: bool = False) -> list[AuditResult]:
     results: list[AuditResult] = []
     listing = None
@@ -292,19 +309,7 @@ def run(client: ReadOnlyClient, *, sample_media: bool = False) -> list[AuditResu
                                  "TLS/network/source unavailable")
         results.append(result)
     if sample_media:
-        if choose_preview(listing) is None:
-            for path in PREVIEW_SEARCH_PATHS:
-                try:
-                    stat, mime, body, excess = client.read(path, max_bytes=MAX_JSON)
-                    audit, candidate = classify_api(
-                        "dji_media", stat, mime, body, excess, optional=True
-                    )
-                    if audit.state == "PASS" and choose_preview(candidate):
-                        listing = candidate
-                        break
-                except (ValueError, OSError, URLError, ssl.SSLError, TimeoutError):
-                    continue
-        results.append(check_preview(client, listing))
+        results.append(check_preview(client, find_preview_listing(client, listing)))
     return results
 
 
