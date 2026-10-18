@@ -302,6 +302,84 @@ def test_xml_position_bucket_divides_six_placemark_anchors_without_coordinates()
         assert private not in serialized
 
 
+def test_group_span_readonly_xml_classification_and_index_bounds():
+    from xml.etree import ElementTree as ET
+    from aeronexus.wpml_export import WPML_NS
+    W = "{" + WPML_NS + "}"
+    group = ET.Element(W + "actionGroup")
+    waypoint = ET.Element(W + "Placemark")
+    ET.SubElement(waypoint, W + "index").text = "1"
+    ET.SubElement(group, W + "actionGroupStartIndex").text = "1"
+    ET.SubElement(group, W + "actionGroupEndIndex").text = "1"
+    assert av._group_xml_span_relation(group, waypoint, W) == "single_at_anchor"
+    group.find(W + "actionGroupEndIndex").text = "3"
+    assert av._group_xml_span_relation(group, waypoint, W) == "range_starts_at_anchor"
+    group.find(W + "actionGroupStartIndex").text = "2"
+    assert av._group_xml_span_relation(group, waypoint, W) == "range_starts_elsewhere"
+    group.find(W + "actionGroupEndIndex").text = "2"
+    assert av._group_xml_span_relation(group, waypoint, W) == "single_elsewhere"
+    group.find(W + "actionGroupEndIndex").text = "1"
+    assert av._group_xml_span_relation(group, waypoint, W) == "reversed_span"
+    group.find(W + "actionGroupEndIndex").text = "65536"
+    assert av._group_xml_span_relation(group, waypoint, W) == "missing_or_invalid_span"
+    group.find(W + "actionGroupEndIndex").text = "3"
+    waypoint.find(W + "index").text = "private-location-SECRET"
+    assert av._group_xml_span_relation(group, waypoint, W) == "unresolved_placemark_index"
+
+
+def test_span_audit_classifies_group_status_without_leaking_indices():
+    # Synthetic AeroNexus fixture exports a same-index reachPoint action
+    # group, but the anonymous actuator name remains untrusted.
+    raw = archive("privateUnusedActuator", version="1.0.6")
+    with_field = with_substituted_action(
+        raw,
+        "<wpml:actionActuatorFuncParam>",
+        "<wpml:actionActuatorFuncParam><wpml:secretField>NEVER-EXPOSE-ME</wpml:secretField>",
+    )
+    report = av._aggregate_action_records(
+        [(1, with_field)], parameter_hints=True,
+        field_aliases=True, span_audit=True)
+    assert report["results"][0]["unknown_field_xml_span_by_route"] == [
+        {"P01": {"single_at_anchor": 1}},
+    ]
+    assert report["unknown_field_aliases"][0]["actions_with_field"] == 1
+    assert "single_at_anchor" in json.dumps(report)
+    for sensitive in ("privateUnusedActuator", "secretField", "NEVER-EXPOSE-ME"):
+        assert sensitive not in json.dumps(report)
+    assert report["flight_compatibility_verified"] is False
+
+
+def test_span_audit_range_not_confused_with_anchor_or_execution():
+    raw = archive("secretCompanyActuator")
+    modified = with_substituted_action(
+        raw,
+        "<wpml:actionGroupEndIndex>0</wpml:actionGroupEndIndex>",
+        "<wpml:actionGroupEndIndex>1</wpml:actionGroupEndIndex>",
+    )
+    modified = with_substituted_action(
+        modified,
+        "<wpml:actionActuatorFuncParam>",
+        "<wpml:actionActuatorFuncParam><wpml:otherPrivateField>PRIVATE-ABC</wpml:otherPrivateField>",
+    )
+    report = av._aggregate_action_records(
+        [(1, modified)], parameter_hints=True,
+        field_aliases=True, span_audit=True)
+    assert report["results"][0]["unknown_field_xml_span_by_route"] == [
+        {"P01": {"range_starts_at_anchor": 1}},
+    ]
+    assert "PRIVATE-ABC" not in json.dumps(report)
+
+
+def test_span_audit_opt_in_only():
+    with pytest.raises(ValueError, match="span audit requires field aliases"):
+        av._aggregate_action_records(
+            [(1, archive())], parameter_hints=True, span_audit=True)
+    data = av._aggregate_action_records(
+        [(1, param_archive(unknown_tag=True))], parameter_hints=True,
+        field_aliases=True)
+    assert "unknown_field_xml_span_by_route" not in data["results"][0]
+
+
 def test_position_buckets_require_field_aliases_and_are_off_by_default():
     with pytest.raises(ValueError, match="require field aliases"):
         av._aggregate_action_records(
