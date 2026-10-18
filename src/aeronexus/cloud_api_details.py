@@ -98,6 +98,8 @@ def control_source_category(value):
         return 'controller_a'
     if value == 'B':
         return 'controller_b'
+    if not re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', value):
+        raise ValueError('Invalid control source syntax')
     return 'browser' if _UUID.fullmatch(value) else 'other'
 
 
@@ -287,7 +289,14 @@ def normalize_details(kind, data):
         if payloads:
             result['payloads'] = payloads
         if 'payloads' in data:
-            result['payload_control'] = array(data['payloads'], PAYLOAD_CONTROL, 16)
+            payload_control = array(data['payloads'], PAYLOAD_CONTROL, 16)
+            # Ignore legacy/unknown-only payload objects, but never register
+            # a partial control record without the documented payload index.
+            if any('payload_index' not in item for item in payload_control):
+                if any(item for item in payload_control):
+                    raise ValueError('Payload control missing payload index')
+            else:
+                result['payload_control'] = payload_control
         if 'cameras' in data:
             cameras = data['cameras']
             if not isinstance(cameras, list) or len(cameras) > 16:
