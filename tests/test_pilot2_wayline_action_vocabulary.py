@@ -228,6 +228,44 @@ def test_repeated_field_name_is_counted_per_action_without_leaking_values():
     assert info["flight_compatibility_verified"] is False
 
 
+def test_route_scoped_field_multiplicity_matches_library_totals():
+    once = param_archive(unknown_tag=True)
+    repeated = with_substituted_action(
+        once, "<wpml:vendorSecretTag>NEVER-EXPOSE-ABC789</wpml:vendorSecretTag>",
+        "<wpml:vendorSecretTag>NEVER-EXPOSE-ABC789</wpml:vendorSecretTag>"
+        "<wpml:vendorSecretTag>ANOTHER-PRIVATE-VALUE</wpml:vendorSecretTag>")
+    result = av._aggregate_action_records(
+        [(1, once), (2, repeated)],
+        parameter_hints=True, field_aliases=True)
+    assert result["results"][0]["unknown_field_multiplicity_by_route"] == [
+        {"P01": {"1": 1}}
+    ]
+    assert result["results"][1]["unknown_field_multiplicity_by_route"] == [
+        {"P01": {"2": 1}}
+    ]
+    total = sum(
+        int(mult) * occurrences
+        for item in result["results"]
+        for route in item["unknown_field_multiplicity_by_route"]
+        for counts in route.values()
+        for mult, occurrences in counts.items()
+    )
+    assert total == 3
+    assert result["unknown_field_aliases"][0]["occurrences"] == total
+    serialized = json.dumps(result)
+    assert "vendorSecretTag" not in serialized
+    assert "ANOTHER-PRIVATE-VALUE" not in serialized
+    assert result["full_content_verified"] is False
+
+
+def test_default_action_report_does_not_expose_route_field_multiplicity():
+    out = av._aggregate_action_records([(1, param_archive(unknown_tag=True))])
+    assert "unknown_field_multiplicity_by_route" not in out["results"][0]
+    out = av._aggregate_action_records(
+        [(1, param_archive(unknown_tag=True))], parameter_hints=True)
+    assert "unknown_field_multiplicity_by_route" not in out["results"][0]
+
+
 def test_field_aliases_require_explicit_parameter_hints():
     with pytest.raises(ValueError, match="require parameter hints"):
         av._aggregate_action_records(
