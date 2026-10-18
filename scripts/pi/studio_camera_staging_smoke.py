@@ -48,10 +48,16 @@ class StagingSmokeError(RuntimeError):
 
 def isolated_env(workspace: Path, checkout: Path, host: str = "192.168.178.63") -> dict:
     """Pass no deployment credentials, tokens, proxy variables, or .env to staging."""
+    # Never expose the user's real HOME to the test server. Several read-only
+    # adapters look for credential/session files under ~/.config by default.
+    # A disposable HOME prevents touching those files even during page loads.
+    isolated_home = workspace.parent / "home"
+    isolated_home.mkdir(mode=0o700, exist_ok=True)
     clean = {key: os.environ[key] for key in
-             ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR")
+             ("PATH", "LANG", "LC_ALL", "TZ")
              if key in os.environ}
     clean.update({
+        "HOME": str(isolated_home),
         "PYTHONPATH": str(checkout / "src"),
         "PYTHONDONTWRITEBYTECODE": "1",
         "AERONEXUS_WORKSPACE_DIR": str(workspace),
