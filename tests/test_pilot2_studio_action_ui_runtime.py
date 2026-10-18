@@ -153,3 +153,25 @@ def test_ui_diagnostic_is_explicit_opt_in_and_tab_switch_clears():
         page.index("let pilot2ActionController=null"):
         page.index("function waylineSourceState(")
     ]
+
+
+
+def test_studio_actions_do_not_enable_flight_or_write_controls():
+    page = render_studio()
+    section = page[page.index("async function loadPilot2ActionSummary()"):
+                   page.index("function waylineSourceState(")]
+    assert "identified_types" in section
+    assert "export_supported" not in section or "Flugkompatibilität" in section
+    assert 'method:"POST"' not in section
+    assert "innerHTML" not in section
+
+
+
+def test_studio_renders_documented_catalog_without_raw_html():
+    page = render_studio()
+    block = page[page.index("async function loadPilot2ActionSummary()"):
+                 page.index("function waylineSourceState(")]
+    assert "documented_types" in block
+    assert "DJI WPML: dokumentierte Aktionstypen" in block
+    assert "cardText(docCard" in block
+    assert "innerHTML" not in block

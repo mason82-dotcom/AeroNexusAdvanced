@@ -600,3 +600,81 @@ def test_partial_bad_archive_reports_only_sanitized_index():
     assert result["checked"] == 2
     assert result["results"][1] == {"index": 2, "state": "unavailable_or_unsupported"}
     assert "password-SHOULD-NOT-LEAK" not in json.dumps(result)
+
+
+
+@pytest.mark.parametrize("action_name", [
+    "setFocusType", "startSmartOblique", "stopSmartOblique",
+    "startContinuousShooting", "stopContinuousShooting",
+    "startTimeLapse", "stopTimeLapse",
+])
+def test_observed_pilot2_enum_is_named_but_not_claimed_documented(action_name):
+    report = av._aggregate_action_records([
+        (1, archive(action_name, version="1.0.6")),
+    ])
+    assert report["recognized_action_total"] == 0
+    assert report["unknown_action_total"] == 1  # legacy non-documented metric
+    assert report["identified_action_total"] == 1
+    assert report["unresolved_action_total"] == 0
+    assert report["identified_types"] == [{
+        "name": action_name, "alias": "A01",
+        "occurrences": 1, "file_count": 1,
+    }]
+    assert report["full_content_verified"] is False
+    assert report["flight_compatibility_verified"] is False
+
+
+def test_mixed_observed_and_unrecognized_actions_stay_separate_and_private():
+    report = av._aggregate_action_records([
+        (1, archive("startSmartOblique", version="1.0.6")),
+        (2, archive("genuinelyPrivateEnum", version="1.0.6")),
+    ])
+    assert report["identified_action_total"] == 1
+    assert report["unresolved_action_total"] == 1
+    assert report["unknown_action_total"] == 2
+    assert "genuinelyPrivateEnum" not in json.dumps(report)
+
+
+
+def test_documented_types_are_counted_without_marking_flight_compatibility():
+    report = av._aggregate_action_records([
+        (1, archive("takePhoto")),
+        (2, archive("startRecord", version="1.0.6")),
+        (3, archive("stopRecord", version="1.0.6")),
+    ])
+    assert report["documented_type_counts"] == {
+        "startRecord": 1, "stopRecord": 1, "takePhoto": 1,
+    }
+    assert report["recognized_action_total"] == 3
+    assert report["identified_action_total"] == 0
+    assert report["full_content_verified"] is False
+    assert report["flight_compatibility_verified"] is False
+
+
+
+def test_observed_pilot2_fields_are_presence_only_not_generic_unknown_names():
+    raw = archive("startSmartOblique", version="1.0.6")
+    extra = (
+        b"<wpml:smartObliqueCycleMode>PRIVATE-VALUE</wpml:smartObliqueCycleMode>"
+        b"<wpml:smartObliquePoint>PRIVATE-COORDINATE</wpml:smartObliquePoint>"
+        b"<wpml:smartObliquePoint>PRIVATE-SECOND</wpml:smartObliquePoint>"
+    )
+    changed = BytesIO()
+    with ZipFile(BytesIO(raw)) as src, ZipFile(changed, "w") as dst:
+        for filename in src.namelist():
+            content = src.read(filename)
+            if filename == "wpmz/waylines.wpml":
+                content = content.replace(
+                    b"<wpml:actionActuatorFuncParam>",
+                    b"<wpml:actionActuatorFuncParam>" + extra, 1)
+            dst.writestr(filename, content)
+    output = av._aggregate_action_records(
+        [(1, changed.getvalue())], parameter_hints=True, field_aliases=True)
+    one = output["anonymous_types"][0]
+    assert one["parameter_category_counts"]["pilot2_smart_oblique_unverified"] == 1
+    assert "unclassified_fields_present" not in one["parameter_category_counts"]
+    assert output["unknown_field_aliases"] == []
+    encoded = json.dumps(output)
+    for secret in ("PRIVATE-VALUE", "PRIVATE-COORDINATE", "PRIVATE-SECOND"):
+        assert secret not in encoded
+    assert output["flight_compatibility_verified"] is False

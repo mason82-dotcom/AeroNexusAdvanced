@@ -17,6 +17,7 @@ from .pilot2_wayline_parameters import (
     KNOWN_WPML_SCHEMAS, MAX_ACTIONS, MAX_ELEMENTS, MAX_FEATURES, _read_xml,
 )
 from .pilot2_wayline_preview import _download_kmz
+from .pilot2_action_catalog import PILOT2_OBSERVED_ACTIONS
 
 
 MAX_ENUM_LENGTH = 120
@@ -56,6 +57,12 @@ PARAMETER_FIELD_CATEGORIES = {
     "hoverTime": "hover",
     "aircraftHeading": "aircraft",
     "aircraftPathMode": "aircraft",
+    # Pilot 2 WPML 1.0.6 fields observed in genuine waylines. These are
+    # presence-only labels, NOT DJI-documented schema or safe parameter enums.
+    "cameraFocusType": "pilot2_focus_type_unverified",
+    "smartObliqueCycleMode": "pilot2_smart_oblique_unverified",
+    "smartObliquePoint": "pilot2_smart_oblique_unverified",
+    "minShootInterval": "pilot2_interval_unverified",
 }
 MAX_PARAM_FIELDS_PER_ACTION = 64
 
@@ -262,6 +269,12 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
     # Per-invocation names only. Neither mapping is serialized, hashed or persisted.
     field_names_to_aliases = {}
     field_totals = {}
+    # Static-name Pilot 2 catalogue and per-KMZ occurrence counts. These are
+    # separate from the legacy anonymous/non-documented diagnostics.
+    identified_counts = Counter()
+    documented_counts = Counter()
+    identified_files = {}
+    identified_aliases = {}
     totals = {}
     results = []
     for index, kmz in archives:
@@ -284,6 +297,7 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                  xml_span, xml_index_delta) in route:
                 if raw_name in DOCUMENTED_ACTION_TYPES:
                     recognized[raw_name] += 1
+                    documented_counts[raw_name] += 1
                     known_total += 1
                     continue
                 # None is not a secret; still use a neutral alias.
@@ -292,6 +306,10 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                         raise LocalWaylineError("unsupported_geometry")
                     aliases[raw_name] = "A" + str(len(aliases) + 1).zfill(2)
                 alias = aliases[raw_name]
+                if raw_name in PILOT2_OBSERVED_ACTIONS:
+                    identified_counts[raw_name] += 1
+                    identified_files.setdefault(raw_name, set()).add(index)
+                    identified_aliases[raw_name] = alias
                 unknown_total += 1
                 unknown_by_alias[alias] += 1
                 if alias not in totals:
@@ -428,7 +446,19 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                 sorted(item["unknown_field_alias_counts"].items()))
             entry["foreign_namespace_field_count"] = item["foreign_namespace_field_count"]
         safe_totals.append(entry)
+    identified_types = [
+        {"name": name, "alias": identified_aliases[name],
+         "occurrences": count, "file_count": len(identified_files[name])}
+        for name, count in sorted(identified_counts.items())
+    ]
     output = {"anonymous_types": safe_totals, "results": results,
+              "documented_type_counts": dict(sorted(documented_counts.items())),
+              "identified_types": identified_types,
+              "identified_action_total": sum(identified_counts.values()),
+              "unresolved_action_total": (
+                  sum(x["unknown_action_count"] for x in results)
+                  - sum(identified_counts.values())
+              ),
               "unknown_action_total": sum(x["unknown_action_count"] for x in results),
               "recognized_action_total": sum(x["recognized_action_count"] for x in results),
               "alias_scope": "single_invocation_only",
@@ -492,6 +522,10 @@ async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False,
         "reported_total": inventory.get("reported_total"),
         "checked": len(seen) + len(results),
         "anonymous_types": report["anonymous_types"],
+        "identified_types": report["identified_types"],
+        "documented_type_counts": report["documented_type_counts"],
+        "identified_action_total": report["identified_action_total"],
+        "unresolved_action_total": report["unresolved_action_total"],
         "unknown_action_total": report["unknown_action_total"],
         "recognized_action_total": report["recognized_action_total"],
         "alias_scope": report["alias_scope"],

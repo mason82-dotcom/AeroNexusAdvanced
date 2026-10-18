@@ -1629,10 +1629,36 @@ async function loadPilot2ActionSummary(){
       throw new Error("Diagnoseformat unvollständig oder nicht schreibgeschützt.");
     }
     const count=Number(data.checked)||0;
+    const identified=Array.isArray(data.identified_types)?data.identified_types:[];
+    const identifiedCount=data.identified_actions===undefined?0:data.identified_actions;
+    const unresolvedCount=data.unresolved_actions===undefined
+      ?data.unknown_actions:data.unresolved_actions;
+    if(!Number.isSafeInteger(identifiedCount)||identifiedCount<0||
+       !Number.isSafeInteger(unresolvedCount)||unresolvedCount<0||
+       identifiedCount+unresolvedCount!==data.unknown_actions||
+       identified.length>7){
+      throw new Error("Unvollständige DJI-Aktionsklassifizierung.");
+    }
     status.className="status";
     status.textContent=count+" Waylines geprüft · "+clean(data.recognized_actions)+
-      " Aktionen in der bekannten Typenliste und "+clean(data.unknown_actions)+
-      " nicht zugeordnete Aktionsvorkommen. WPML-Semantik und Flugkompatibilität nicht bestätigt.";
+      " dokumentierte Aktionsvorkommen · "+clean(identifiedCount)+
+      " bekannte Pilot-2-Bezeichner (nur lesend) · "+clean(unresolvedCount)+
+      " unbekannte Vorkommen. WPML-Semantik und Flugkompatibilität nicht bestätigt.";
+    if(Array.isArray(data.documented_types)&&data.documented_types.length){
+      const docCard=els("article","wayline-card");
+      cardText(docCard,"h2","","DJI WPML: dokumentierte Aktionstypen");
+      for(const entry of data.documented_types.slice(0,14)){
+        cardText(docCard,"p","muted",clean(entry.label)+" ("+clean(entry.name)+"): "+clean(entry.occurrences));
+      }
+      list.appendChild(docCard);
+    }
+    for(const entry of identified){
+      const card=els("article","wayline-card");
+      cardText(card,"h2","",clean(entry.label)+" · "+clean(entry.name));
+      cardText(card,"p","",clean(entry.occurrences)+" Vorkommen · "+clean(entry.file_count)+" Cloud-Dateien");
+      cardText(card,"p","muted","Pilot-2-WPML-Bezeichner identifiziert · Parameter und Flugkompatibilität ungeprüft");
+      list.appendChild(card);
+    }
     for(const entry of data.anonymous_types.slice(0,128)){
       const card=els("article","wayline-card");
       cardText(card,"h2","",clean(entry.alias));
@@ -1642,7 +1668,7 @@ async function loadPilot2ActionSummary(){
       cardText(card,"p","muted","Auslöser: "+triggers);
       list.appendChild(card);
     }
-    cardText(list,"p","note","Nur anonymisierte Zähler. Kein unbearbeitetes WPML, keine Koordinaten, keine Übertragbarkeits- oder Flugfreigabe.");
+    cardText(list,"p","note","Dokumentierte und beobachtete DJI-Bezeichner sind keine Export- oder Flugfreigabe. Keine Roh-WPML, Koordinaten oder Parameterwerte.");
   }catch(err){
     if(serial!==pilot2ActionRequest)return;
     status.className="status error";
