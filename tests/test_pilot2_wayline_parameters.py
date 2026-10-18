@@ -148,6 +148,60 @@ def test_embedded_drone_model_conflict_blocks_parameter_equal_claim():
     assert r["parameter_matches"] == {}
 
 
+def test_documented_action_types_are_counted_but_never_executed():
+    changed = modified_kmz(
+        b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
+        b"<wpml:actionActuatorFunc>orientedShoot</wpml:actionActuatorFunc>",
+    )
+    result = report(mission(), changed)
+    assert result["action_type_counts"] == {"orientedShoot": 1}
+    assert result["unrecognized_action_count"] == 0
+    assert result["photo_action_count"] == 0
+    assert result["other_action_count"] == 1
+    assert result["parameter_matches"]["takePhotoPositions"] is None
+    assert result["full_content_verified"] is False
+
+
+def test_unrecognized_action_payload_is_never_returned():
+    action = "sensitive-user-defined-action"
+    changed = modified_kmz(
+        b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
+        ("<wpml:actionActuatorFunc>" + action +
+         "</wpml:actionActuatorFunc>").encode(),
+    )
+    result = report(mission(), changed)
+    assert result["unrecognized_action_count"] == 1
+    assert result["action_type_counts"] == {}
+    assert action not in json.dumps(result)
+    assert result["parameter_matches"]["takePhotoPositions"] is None
+
+
+def test_start_group_action_types_are_counted_separately():
+    extra = (b"<Folder><wpml:startActionGroup><wpml:action>"
+             b"<wpml:actionActuatorFunc>startRecord</wpml:actionActuatorFunc>"
+             b"</wpml:action></wpml:startActionGroup>")
+    data = modified_kmz(b"<Folder>", extra)
+    result = report(mission(), data)
+    assert result["start_action_type_counts"] == {"startRecord": 1}
+    assert result["start_action_count"] == 1
+    assert result["unrecognized_start_action_count"] == 0
+    assert result["action_type_counts"] == {"takePhoto": 1}
+    assert result["route_start_actions_present"] is True
+    assert result["parameter_matches"]["takePhotoPositions"] is None
+    assert result["full_content_verified"] is False
+
+
+def test_wpml_106_action_summary_does_not_claim_semantic_validation():
+    data = modified_kmz(b"http://www.dji.com/wpmz/1.0.2",
+                        b"http://www.dji.com/wpmz/1.0.6")
+    result = report(mission(), data)
+    assert result["action_type_counts"] == {"takePhoto": 1}
+    assert result["wpml_schema_version"] == "1.0.6"
+    assert result["wpml_schema_semantics_verified"] is False
+    assert result["parameter_state"] == "not_comparable"
+    assert result["full_content_verified"] is False
+
+
 def test_unknown_actions_never_report_camera_match():
     kmz = modified_kmz(b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
                        b"<wpml:actionActuatorFunc>rotateYaw</wpml:actionActuatorFunc>")
