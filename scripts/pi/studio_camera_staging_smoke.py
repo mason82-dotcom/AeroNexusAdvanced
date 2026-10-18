@@ -340,8 +340,10 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_previe
             if route_preview:
                 connection_svg = page.locator(
                     "#map .leaflet-overlay-pane svg path[stroke='#c18aff']").count()
-                if connection_svg != count - 1:
+                if turn_radius is None and connection_svg != count - 1:
                     raise StagingSmokeError("Staging schematic connector SVG mismatch")
+                if turn_radius is not None and connection_svg != 0:
+                    raise StagingSmokeError("Obsolete straight connectors shown in turn mode")
                 route_metrics = page.locator("#survey-route-metrics")
                 if (not route_metrics.is_visible()
                         or "ungeprüfte Verbindungen" not in route_metrics.inner_text()
