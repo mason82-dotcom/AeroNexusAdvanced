@@ -15,27 +15,38 @@ Entwicklungsbranches verwenden. Es ist keine Aktualisierung oder
 Neustart des systemd-Dienstes nötig.
 
 ```bash
-cd ~/Projekte/AeroNexusAdvanced-wpml-offline
-test "$(git branch --show-current)" = "test/wpml-pilot2-offline-acceptance-20261019" || exit 1
-test -z "$(git status --porcelain)" || exit 1
-test -x .venv/bin/python || exit 1
+cd ~/Projekte/AeroNexusAdvanced
+git fetch origin test/wpml-pilot2-offline-acceptance-20261019
+git fetch origin
+git worktree add --detach \
+  "$HOME/Projekte/AeroNexusAdvanced-wpml-offline" \
+  origin/test/wpml-pilot2-offline-acceptance-20261019
 
-PYTHONPATH="$PWD/src" .venv/bin/python -m pytest -q \
+cd ~/Projekte/AeroNexusAdvanced-wpml-offline
+test "$(git rev-parse HEAD)" = \
+  "$(git rev-parse origin/test/wpml-pilot2-offline-acceptance-20261019)" || exit 1
+test -z "$(git status --porcelain)" || exit 1
+PYTHON="$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python"
+test -x "$PYTHON" || exit 1
+
+PYTHONPATH="$PWD/src" "$PYTHON" -m pytest -q \
   tests/test_wpml_export.py \
   tests/test_wpml_pilot2_offline_acceptance.py
 
 OUTPUT="$HOME/wpml-pilot2-offline-$(date +%Y%m%d-%H%M%S)"
-PYTHONPATH="$PWD/src" .venv/bin/python \
+PYTHONPATH="$PWD/src" "$PYTHON" \
   scripts/pi/wpml_pilot2_offline_acceptance.py \
   --output-dir "$OUTPUT"
 
 ls -la "$OUTPUT"
-PYTHONPATH="$PWD/src" .venv/bin/python -m json.tool \
-  "$OUTPUT/offline-verification.json"
+"$PYTHON" -m json.tool "$OUTPUT/offline-verification.json"
 ```
 
-Voraussetzung: separate vorhandene Checkout-Umgebung mit Python und dem
-installierten Projekt. Das Skript erstellt **nur** ein neues Verzeichnis
+Voraussetzung: das Projekt-Venv enthält `pytest`. Der separate Git-Worktree
+verwendet es ausschließlich als Python-Laufzeit, lädt aber per
+`PYTHONPATH` ausschließlich den eigenen Entwicklungsstand. Weder
+Produktiv-Checkout noch systemd-Dienst werden aktualisiert. 
+Das Skript erstellt **nur** ein neues Verzeichnis
 (Modus 0700), zwei KMZ-Dateien und einen JSON-Prüfbericht (Dateimodus 0600).
 Vorhandene Ausgabeverzeichnisse werden verweigert, nicht überschrieben.
 Die generierten Dateien werden niemals zu Git hinzugefügt.
