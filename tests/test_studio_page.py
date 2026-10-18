@@ -137,10 +137,11 @@ def test_fresh_mission_map_starts_in_76694_forst_at_town_zoom():
     assert 'setView([51.16,10.45],6)' not in page
 
 
-def test_map_uses_esri_satellite_by_default_and_handles_osm_block():
+def test_map_uses_osm_streets_by_default_and_handles_osm_block():
     page = render_studio()
-    assert '<option value="satellite" selected>' in page
-    assert 'mapTile=mapTiles.satellite.addTo(map);' in page
+    assert '<option value="street" selected>' in page
+    assert 'mapTile=mapTiles.street.addTo(map);' in page
+    assert 'mapTile=mapTiles.satellite.addTo(map);' not in page
     assert 'referrerPolicy:"strict-origin-when-cross-origin"' in page
     assert 'mapTiles.street.on("tileerror"' in page
     assert 'setMapLayer("satellite")' in page
