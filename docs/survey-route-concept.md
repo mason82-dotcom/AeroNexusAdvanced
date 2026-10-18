@@ -87,3 +87,29 @@ PYTHONPATH=src .venv/bin/python -m pytest -q \
 Tests benötigen ausschließlich synthetische Polygone,
 verändern keine Benutzer-Missionen und verbinden sich nicht mit DJI.
 Der neue PR bleibt bis zu isolierten Chromium-/Pi-Prüfungen ein Draft.
+
+## Isolierter End-to-End-Test auf dem Raspberry Pi
+
+Der bestehende Kamera-Staging-Test besitzt jetzt den optionalen Schalter
+`--route-preview`. Er startet den Testserver nur unter `127.0.0.1:18081`
+und verwendet ein temporäres HOME und synthetische Geo-/Missionsdaten.
+Browser-POST-Anfragen sind ausschließlich für den nicht persistierenden
+Preview-Endpunkt erlaubt.
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced-pr72
+export AERONEXUS_CHROMIUM_BIN=/usr/bin/chromium
+export AERONEXUS_LEAFLET_TEST_ASSETS="$HOME/.cache/aeronexusadvanced/leaflet-1.9.4"
+~/Projekte/AeroNexusAdvanced-browser-venv/bin/python \
+  scripts/pi/studio_camera_staging_smoke.py \
+  --server-python ~/Projekte/AeroNexusAdvanced/.venv/bin/python \
+  --route-preview --require-tiles \
+  --screenshot /tmp/aeronexus-route-staging.png
+```
+
+Der Browser muss 100 % von mindestens 95 % abgeprüfter sichtbarer
+Kartenabdeckung erreichen (95 % ist die Mindestschwelle). Außerdem
+muss er orange Messstreifen und lila Verbindungslinien sowie eine
+theoretische Rechenzeit darstellen. Er prüft explizit
+`mission_ready=false` und `clearance_verified=false`.
+Kein Export und kein Deployment werden ausgelöst.
