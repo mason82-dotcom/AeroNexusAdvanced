@@ -235,10 +235,15 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool):
             if blocked:
                 raise StagingSmokeError("Blocked unexpected external/mutating browser requests")
             if require_tiles:
-                tile_count = page.locator(
-                    "#map img.leaflet-tile-loaded").count()
-                if tile_count == 0:
-                    raise StagingSmokeError("No real map tile loaded (network needed)")
+                # Vector rendering and raster delivery complete independently.
+                # Give real Esri/OSM tiles time to arrive before asserting.
+                try:
+                    page.wait_for_function(
+                        "() => document.querySelector('#map img.leaflet-tile-loaded') !== null",
+                        timeout=15000)
+                except Exception:
+                    raise StagingSmokeError(
+                        "No real map tile loaded within 15 s (network needed)") from None
             screenshot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(screenshot), timeout=15000)
             print("Staging browser: PASS / real API + real Leaflet SVG")
