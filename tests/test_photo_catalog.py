@@ -146,6 +146,12 @@ def test_api_endpoints_and_validation(client):
     r = client.get(f"/api/v1/photos?model=M3E&flight={flights[0]['id']}", headers=HEADERS)
     assert r.status_code == 200 and r.json()["total"] == 2
     assert client.get("/api/v1/photos/map?model=M3E", headers=HEADERS).json()["total"] == 3
+    limited = client.get("/api/v1/photos/map?model=M3E&limit=1", headers=HEADERS)
+    assert limited.status_code == 200
+    assert limited.json()["total"] == 3
+    assert len(limited.json()["items"]) <= 1
+    for bad_limit in ("0", "-1", "10001", "bogus"):
+        assert client.get(f"/api/v1/photos/map?limit={bad_limit}", headers=HEADERS).status_code == 422
     for bad in ("model=M3E%27--", "camera=" + "x" * 40, "flight=nothex"):
         assert client.get("/api/v1/photos?" + bad, headers=HEADERS).status_code == 422
     assert client.get("/api/v1/photos/map?flight=abc", headers=HEADERS).status_code == 422

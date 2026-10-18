@@ -59,7 +59,13 @@ def test_preview_accepts_only_bounded_opaque_readable_images():
     item = {"id": id_, "mime": "image/jpeg", "size_bytes": 240,
             "previewable": True}
     assert audit.choose_preview({"media": [item]}) == id_
-    for new in ({"id": "../file"}, {"size_bytes": 900_000},
+    assert audit.choose_preview({"media": [{**item, "size_bytes": 8_000_000}]}) == id_
+    assert audit.API_CHECKS[[x[1] for x in audit.API_CHECKS].index("photo_map")][0] == (
+        "/api/v1/photos/map?limit=10"
+    )
+    assert len(audit.PREVIEW_SEARCH_PATHS) == 4
+    assert all(path.startswith("/api/v1/studio/dji-media?q=.") for path in audit.PREVIEW_SEARCH_PATHS)
+    for new in ({"id": "../file"}, {"size_bytes": 40_000_000},
                 {"mime": "video/mp4"}, {"previewable": False}):
         assert audit.choose_preview({"media": [{**item, **new}]}) is None
     class FakeClient:
@@ -75,8 +81,41 @@ def test_audit_does_not_allow_arbitrary_media_or_external_urls():
     assert "POST" not in source
     assert "print(" not in source
     assert "media_id" in inspect.getsource(audit.ReadOnlyClient.preview)
-    assert audit.RejectRedirect().redirect_request(None, None, 302,
-                                                     "moved", {}, "https://example.com") if False else True
     with pytest.raises(ValueError, match="redirect"):
         audit.RejectRedirect().redirect_request(None, None, 302,
                                                  "moved", {}, "https://example.com")
+
+def test_preview_fallback_uses_only_reviewed_metadata_search_paths():
+    import json
+    media = {"id": "b" * 64, "mime": "image/jpeg", "size_bytes": 12_000_000,
+             "previewable": True}
+    class Client:
+        paths = []
+        def read(self, path, *, max_bytes):
+            self.paths.append(path)
+            assert path in audit.PREVIEW_SEARCH_PATHS
+            assert max_bytes == audit.MAX_JSON
+            if path.endswith(".jpg&limit=100"):
+                return 200, "application/json", json.dumps(
+                    {"total": 1, "media": [media]}).encode(), False
+            return 200, "application/json", b'{"total":0,"media":[]}', False
+        def preview(self, media_id):
+            assert media_id == media["id"]
+            return 200, "image/jpeg", bytes.fromhex("ff d8 ff"), True
+    client = Client()
+    chosen = audit.find_preview_listing(client, {"media": []})
+    assert chosen == {"total": 1, "media": [media]}
+    assert client.paths == list(audit.PREVIEW_SEARCH_PATHS[:1])
+    assert audit.check_preview(client, chosen).state == "PASS"
+    client.paths.clear()
+    assert audit.find_preview_listing(client, chosen) is chosen
+    assert not client.paths
+
+
+def test_photo_map_bounded_payload_schema():
+    status, data = audit.classify_api(
+        "photo_map", 200, "application/json",
+        b'{"items":[{"latitude":49.1,"longitude":8.5}],"total":1000,"without_position":0}',
+        False, optional=True)
+    assert status.state == "PASS"
+    assert len(data["items"]) == 1

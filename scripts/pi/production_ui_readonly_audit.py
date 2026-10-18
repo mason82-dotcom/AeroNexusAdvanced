@@ -50,7 +50,7 @@ API_CHECKS = (
     ("/api/v1/media/sync", "media_sync", False),
     ("/api/v1/photos/summary", "photo_summary", False),
     ("/api/v1/photos?limit=5", "photo_list", False),
-    ("/api/v1/photos/map", "photo_map", False),
+    ("/api/v1/photos/map?limit=10", "photo_map", False),
     ("/api/v1/thermal/status", "thermal_status", False),
     ("/api/v1/thermal/images?limit=5", "thermal_images", False),
     ("/api/v1/thermal/flights", "thermal_flights", False),
@@ -75,7 +75,7 @@ FIELDS = {
     "media_sync": (),
     "photo_summary": (),
     "photo_list": (),
-    "photo_map": (),
+    "photo_map": ("items", "total", "without_position"),
     "thermal_status": ("sdk", "thermal_images"),
     "thermal_images": (),
     "thermal_flights": ("flights",),
@@ -89,6 +89,16 @@ FIELDS = {
 MAX_HTML = 1_500_000
 MAX_JSON = 1_000_000
 MAX_PREVIEW_BYTES = 24
+# Match the backend's browser preview policy (32 MiB); we read only 24 bytes.
+MAX_IMAGE_CANDIDATE_BYTES = 32 * 1024 * 1024
+# Suffix search is only attempted for --sample-media if the newest list has no
+# eligible image. Each search is limited to 100 index metadata records.
+PREVIEW_SEARCH_PATHS = (
+    "/api/v1/studio/dji-media?q=.jpg&limit=100",
+    "/api/v1/studio/dji-media?q=.jpeg&limit=100",
+    "/api/v1/studio/dji-media?q=.png&limit=100",
+    "/api/v1/studio/dji-media?q=.webp&limit=100",
+)
 
 
 class RejectRedirect(HTTPRedirectHandler):
@@ -126,7 +136,9 @@ class ReadOnlyClient:
             self.headers["Authorization"] = "Bearer " + token
 
     def read(self, path: str, *, max_bytes: int = MAX_JSON) -> tuple[int, str, bytes, bool]:
-        if path not in {x[0] for x in HTML_CHECKS} | {x[0] for x in API_CHECKS}:
+        if path not in ({x[0] for x in HTML_CHECKS}
+                        | {x[0] for x in API_CHECKS}
+                        | set(PREVIEW_SEARCH_PATHS)):
             raise ValueError("Unreviewed read path")
         return self._read_reviewed(path, max_bytes)
 
@@ -225,7 +237,7 @@ def classify_api(label: str, status: int, mime: str, body: bytes,
 def choose_preview(data: dict[str, Any] | None) -> str | None:
     if not isinstance(data, dict):
         return None
-    for item in data.get("media", [])[:10]:
+    for item in data.get("media", [])[:100]:
         if not isinstance(item, dict):
             continue
         media_id = item.get("id")
@@ -233,7 +245,7 @@ def choose_preview(data: dict[str, Any] | None) -> str | None:
         size = item.get("size_bytes")
         if (isinstance(media_id, str) and re.fullmatch(r"[0-9a-f]{64}", media_id)
                 and mime in ("image/jpeg", "image/png", "image/webp")
-                and isinstance(size, int) and 0 < size <= 512 * 1024
+                and isinstance(size, int) and 0 < size <= MAX_IMAGE_CANDIDATE_BYTES
                 and item.get("previewable") is True):
             return media_id
     return None
@@ -242,7 +254,7 @@ def choose_preview(data: dict[str, Any] | None) -> str | None:
 def check_preview(client: ReadOnlyClient, listing: dict[str, Any] | None) -> AuditResult:
     media_id = choose_preview(listing)
     if media_id is None:
-        return AuditResult("media_preview", "SKIP", "no eligible small indexed image")
+        return AuditResult("media_preview", "SKIP", "no eligible indexed browser-preview image")
     try:
         status, mime, data, _ = client.preview(media_id)
     except (OSError, ValueError, URLError, ssl.SSLError, TimeoutError):
@@ -257,6 +269,23 @@ def check_preview(client: ReadOnlyClient, listing: dict[str, Any] | None) -> Aud
     if not mime.lower().startswith("image/") or not magic:
         return AuditResult("media_preview", "FAIL", "image media type/signature mismatch")
     return AuditResult("media_preview", "PASS", "small image header readable; decode unverified")
+
+
+def find_preview_listing(client: ReadOnlyClient,
+                         listing: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Search bounded JPEG/PNG/WebP metadata only if primary listing has no match."""
+    if choose_preview(listing):
+        return listing
+    for path in PREVIEW_SEARCH_PATHS:
+        try:
+            stat, mime, body, excess = client.read(path, max_bytes=MAX_JSON)
+            audit, candidate = classify_api("dji_media", stat, mime, body, excess,
+                                            optional=True)
+            if audit.state == "PASS" and choose_preview(candidate):
+                return candidate
+        except (ValueError, OSError, URLError, ssl.SSLError, TimeoutError):
+            continue
+    return listing
 
 
 def run(client: ReadOnlyClient, *, sample_media: bool = False) -> list[AuditResult]:
@@ -280,7 +309,7 @@ def run(client: ReadOnlyClient, *, sample_media: bool = False) -> list[AuditResu
                                  "TLS/network/source unavailable")
         results.append(result)
     if sample_media:
-        results.append(check_preview(client, listing))
+        results.append(check_preview(client, find_preview_listing(client, listing)))
     return results
 
 
@@ -290,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
                         default=Path.home() / "Projekte" / "AeroNexusAdvanced",
                         help="Deployed directory with existing .env and config/pki/ca.crt")
     parser.add_argument("--sample-media", action="store_true",
-                        help="Also read <= 24 bytes of one eligible indexed small image")
+                        help="Check <= 24 response bytes of one indexed, browser-safe image")
     args = parser.parse_args(argv)
     try:
         client = configured_client(args.instance_dir.resolve())

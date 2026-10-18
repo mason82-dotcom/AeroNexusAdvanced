@@ -360,6 +360,7 @@ def photo_map(request: Request, response: Response,
               model: str | None = Query(default=None, max_length=32),
               camera: str | None = Query(default=None, max_length=32),
               flight: str | None = Query(default=None, max_length=64),
+              limit: int = Query(default=10000, ge=1, le=10000),
               authorization: str | None = Header(default=None)) -> dict:
     """Capture positions and flat-terrain footprints derived from EXIF focal length."""
     catalog = _photo_catalog(request, authorization)
@@ -368,7 +369,7 @@ def photo_map(request: Request, response: Response,
         raise HTTPException(status_code=422, detail="Invalid flight id")
     _no_cache(response)
     try:
-        return catalog.map_items(model=model, camera=camera, flight=flight)
+        return catalog.map_items(model=model, camera=camera, flight=flight, limit=limit)
     except (OSError, sqlite3.Error, DjiMediaError) as exc:
         raise HTTPException(status_code=503, detail="Photo catalogue unavailable") from exc
 

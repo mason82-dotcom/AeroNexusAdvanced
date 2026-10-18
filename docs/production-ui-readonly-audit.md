@@ -40,3 +40,22 @@ visuelle Mobil-Usability-Abnahme über das echte HTTPS-Frontend.
 
 Kein Systemd-Neustart, kein Git-Update an der Installation und keine
 Schreiboperation. Tests sind bewusst rein informativ und diagnostisch.
+
+## Verbesserung der zwei SKIPs aus der Pi-Abnahme
+
+`photo_map` prüft `GET /api/v1/photos/map?limit=10` statt einer
+potenziell über 1 MiB großen Gesamtkartenantwort. Voraussetzung ist
+ein AeroNexus-Server mit dem neuen optionalen `limit`-Parameter; bis
+zur kontrollierten Installation dieses Backend-Updates kann der alte
+Server weiter die vollständige Karte liefern und die Prüfung bleibt
+`SKIP`.
+
+`--sample-media` akzeptiert indexierte Browser-Vorschauen bis zur
+serverseitigen 32-MiB-Grenze, liest aber weiterhin **höchstens 24 Bytes**
+des HTTP-Responses. Wenn unter den neuesten zehn Objekten kein Kandidat
+liegt, erfolgen bis zu vier zusätzliche begrenzte Suchabfragen nach
+JPEG/PNG/WebP-Endungen (je 100 Metadatensätze). Sind keine geeigneten
+Bilder im Index, bleibt die Prüfung korrekt `SKIP`.
+
+Kein Download auf Festplatte. Ein positiver Header-Test ist keine
+vollständige Bilddekodierung im Browser.

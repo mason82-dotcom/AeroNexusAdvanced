@@ -58,3 +58,15 @@ M4T/M3T), fließen in Thermal-Liste, Thermal-Karte und Flugauswertung ein.
 `model` und `camera` sind auf `[A-Za-z0-9_]{1,32}` begrenzt, `flight` ist eine
 64-stellige Hex-ID. Antworten enthalten keine Objektschlüssel. Das Original
 öffnet sich über `/api/v1/studio/dji-media/{id}/file`.
+
+## Kleine, begrenzte Kartenabfrage für Diagnose
+
+Für schreibgeschützte Abnahmen kann zusätzlich `limit` (1 bis 10000) an
+`GET /api/v1/photos/map` angehängt werden. Ohne Parameter bleibt der
+bisherige Standard von 10000 erhalten, sodass die UI keine neue
+Paginierung braucht. Beispiel: `/api/v1/photos/map?limit=10`.
+
+`total` meldet weiterhin die Gesamtanzahl der gefundenen Datensätze;
+`items`, `without_position` und `position_outliers` beziehen sich
+auf die ausgewählte Stichprobe. Die Ausreißerbewertung einer kleinen
+Stichprobe kann von der kompletten Flugübersicht abweichen.
