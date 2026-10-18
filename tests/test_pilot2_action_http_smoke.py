@@ -81,6 +81,27 @@ def test_smoke_rejects_offline_reader_failure_without_network_or_dji_write():
         asyncio.run(smoke.run_smoke(reader=Reader()))
 
 
+def test_smoke_rejects_partial_http_inventory():
+    class Reader:
+        async def read(self):
+            result = _safe_report()
+            result["total"] = 8
+            return result
+    with pytest.raises(RuntimeError, match="incomplete or invalid checked inventory"):
+        asyncio.run(smoke.run_smoke(reader=Reader()))
+
+
+def test_smoke_cli_suppresses_unexpected_sensitive_exception(monkeypatch, capsys):
+    def fail():
+        raise OSError("PRIVATE-PILOT2-SIGNED-URL-DO-NOT-LOG")
+    monkeypatch.setattr(smoke, "run_smoke", fail)
+    assert smoke.main() == 1
+    captured = capsys.readouterr()
+    assert "PRIVATE-PILOT2" not in captured.out + captured.err
+    assert "Traceback" not in captured.err
+    assert "details suppressed" in captured.err
+
+
 def test_smoke_script_explicitly_uses_in_process_asgi_without_listener():
     source = _SCRIPT.read_text()
     assert "ASGITransport(app=app_module.app)" in source
