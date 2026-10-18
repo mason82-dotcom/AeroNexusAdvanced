@@ -51,7 +51,7 @@ Für einen neuen positiven Nachweis müssen die [produktiven GET-API-Prüfungen]
 1. Pilot-2-Wayline-Direktupload (PR #44) bis zur kontrollierten Backend-End-to-End-Prüfung nicht aktivieren oder als sicher freigegeben darstellen.
 2. KMZ/WPML-Export und gerätespezifische Kamera-/Gimbal-Aktionen müssen vor realem Flug in DJI Pilot 2 und am jeweiligen Modell geprüft werden.
 3. Nach Code- oder UI-Änderungen produktiven HTTPS-/Chromium-Test mit echter CA erneut durchführen, ohne unbeabsichtigte POST-/DELETE-Aufrufe.
-4. DJI-HMS-Katalog, OSD-/State-Frische, M4-Kamerawerte und optionaler Media-/MinIO-Abgleich hängen vom tatsächlich installierten Code und der echten Quelle ab.
+4. Der mit PR #65 ergänzte HMS-Verlauf in einer lokalen privaten SQLite-Datei (geschützte GET-API \`/api/v1/status/hms-history\`, maximal 3.000 Übergänge) ist auf GitHub gemergt, aber sein Rollout auf dem Pi muss separat geprüft werden. DJI-HMS-Katalog, OSD-/State-Frische, M4-Kamerawerte und optionaler Media-/MinIO-Abgleich hängen vom tatsächlich installierten Code und der echten Quelle ab.
 5. Für den Raspberry Pi die Hauptarbeitskopie, `.env`, TLS-Schlüssel, lokale `cloud-server/`-Daten sowie MinIO-/Docker-Volumes nicht mit Git-Aufräumkommandos löschen.
 
 ## Wiederaufnahme ohne Datenverlust
