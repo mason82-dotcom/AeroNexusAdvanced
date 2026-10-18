@@ -137,7 +137,7 @@ COCKPIT_HTML = r"""
       <p class="module-note">Zeitstempel und Kanal pro DJI-Eigenschaft; keine erneute Aktivierung abgelaufener Werte.</p>
       <div class="cockpit-fieldlist" id="cockpit-fields"></div></section>
   </div>
-  <p class="cockpit-legend">„Live“ bedeutet: Daten aktuell laut Backend und Gerät aktuell als online bestätigt.
+  <p class="cockpit-legend">„Live“ bedeutet: Gerät online, Quelle und Einzelfeld höchstens 15 Sekunden alt. Die Server-Frischegrenze kann großzügiger sein.
     Ohne gültige Positionsdaten wird keine Position gezeichnet. HMS kann aus einem anderen Datenpfad stammen;
     eine OSD-Verbindung bestätigt keine flugsichere Verbindung.</p>
 </section>
@@ -149,6 +149,7 @@ let cockpitRows=[],cockpitChosen="",cockpitError=null;
 let cockpitOptionsSignature=null;
 const cockpitHistory=new Map();
 const cockpitMaxSamples=60;
+const cockpitLiveLimitSeconds=15;
 function cockpitKey(d){return JSON.stringify([d.provider,d.project_id,d.device_id]);}
 function cockpitNumber(v,dec=0,unit=""){
   return typeof v==="number"&&Number.isFinite(v)
@@ -169,12 +170,20 @@ function cockpitClock(dev,path){
   return null;
 }
 function cockpitIsLive(dev){
-  return dev&&dev.freshness==="fresh"&&dev.online===true;
+  const age=dev&&dev.age_seconds;
+  return Boolean(dev&&dev.freshness==="fresh"&&dev.online===true
+    &&typeof age==="number"&&Number.isFinite(age)
+    &&age>=0&&age<=cockpitLiveLimitSeconds);
 }
 function cockpitRead(dev,path){
   if(!cockpitIsLive(dev))return null;
   const clock=cockpitClock(dev,path);
-  if(clock&&clock.freshness!=="fresh")return null;
+  if(clock){
+    if(clock.freshness!=="fresh")return null;
+    const ages=[clock.age_seconds,clock.source_age_seconds]
+      .filter(x=>typeof x==="number"&&Number.isFinite(x));
+    if(!ages.length||Math.max(...ages)>cockpitLiveLimitSeconds)return null;
+  }
   const raw=cockpitPath(dev.telemetry||{},path);
   return raw===undefined?null:raw;
 }
@@ -187,6 +196,7 @@ function cockpitStatusText(dev){
   if(dev.freshness==="unknown_age")return "Zeit unbekannt";
   if(dev.online===false)return "Gerät offline";
   if(dev.online!==true)return "Online-Status unbekannt";
+  if(!cockpitIsLive(dev))return "OSD-Empfang älter als 15 s";
   return "Live · Empfang bestätigt";
 }
 function cockpitSourceLabel(category){
@@ -446,10 +456,12 @@ function cockpitRenderFields(dev){
   entries.slice(0,250).forEach(([key,clock])=>{
     const row=cardEl(root,"div","cockpit-fieldrow");
     cardEl(row,"span","",key);
-    const state=clock.freshness==="fresh"?"Frisch":clock.freshness==="stale"?"Veraltet":"Uhrfehler";
-    const label=cardEl(row,"span",clock.freshness==="fresh"?"fresh":clock.freshness==="stale"?"stale":"skew",state);
     const age=typeof clock.source_age_seconds==="number"?
-      clock.source_age_seconds:clock.age_seconds;
+      Math.max(clock.source_age_seconds,clock.age_seconds||0):clock.age_seconds;
+    const expired=clock.freshness==="fresh"&&(typeof age!=="number"||age>cockpitLiveLimitSeconds);
+    const state=clock.freshness==="stale"?"Veraltet":clock.freshness!=="fresh"?"Uhrfehler":
+      expired?"Nicht live":"Aktuell";
+    cardEl(row,"span",state==="Aktuell"?"fresh":state==="Uhrfehler"?"skew":"stale",state);
     cardEl(row,"span","muted",(clock.channel||"–").toUpperCase()+" · "+
       (typeof age==="number"?Math.floor(age)+" s":"–"));
   });
