@@ -68,10 +68,54 @@ COUNT = number(0, 2**53 - 1, integer=True)
 CODE = number(0, 2**31 - 1, integer=True)
 PERCENT = number(0, 100)
 ANGLE = number(-360, 360)
+DRC_STATE = number(0, 2, integer=True)
+LINK_QUALITY = number(0, 5, integer=True)
+
+
+def link_quality(value):
+    """DJI uses 65535 as unavailable in some RC wire examples; never show 65535/5."""
+    if value == 65535 or value == '65535':
+        return None
+    return LINK_QUALITY(value)
+
+
+_SOURCE_CATEGORIES = frozenset({'unassigned', 'controller_a', 'controller_b',
+                                'browser', 'other'})
+_UUID = re.compile(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\Z')
+
+
+def control_source_category(value):
+    """Report control authority kind without ever retaining browser UUIDs."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > 64 or any(ord(c) < 32 for c in value):
+        raise ValueError('Invalid control source')
+    if value in _SOURCE_CATEGORIES:  # canonical validation is idempotent
+        return value
+    if value == '':
+        return 'unassigned'
+    if value == 'A':
+        return 'controller_a'
+    if value == 'B':
+        return 'controller_b'
+    return 'browser' if _UUID.fullmatch(value) else 'other'
+
+
+def authorization_count(value):
+    """Do not expose raw cloud authorization strings or identifiers to the UI."""
+    if type(value) is int and 0 <= value <= 16:
+        return value  # canonical validation
+    if not isinstance(value, list) or len(value) > 16:
+        raise ValueError('Invalid cloud authorization list')
+    if any(not isinstance(item, str) or not 1 <= len(item) <= 64
+           or any(ord(c) < 32 for c in item) for item in value):
+        raise ValueError('Invalid cloud authorization entry')
+    return len(value)
 
 # wire key: (canonical key, parser). Unknown enums are retained as numeric
 # codes, never guessed into labels. Wind's wire unit is 0.1 m/s, not m/s.
 AIRCRAFT = {
+    'control_source': ('control_source_category', control_source_category),
     'attitude_head': ('heading_deg', ANGLE),
     'attitude_roll': ('roll_deg', ANGLE),
     'attitude_pitch': ('pitch_deg', ANGLE),
@@ -107,20 +151,30 @@ PACK = {
     'type': ('type_code', CODE), 'sub_type': ('subtype_code', CODE),
     'firmware_version': ('firmware_version', text),
 }
+RC = {
+    'height': ('controller_height_m', number()),
+    'drc_state': ('drc_link_state_code', DRC_STATE),
+    'cloud_control_auth': ('cloud_control_authorization_count', authorization_count),
+}
 WIRELESS = {
     'dongle_number': ('dongle_count', COUNT),
     '4g_link_state': ('cellular_link_state_code', CODE),
     'sdr_link_state': ('sdr_link_state_code', CODE),
     'link_workmode': ('link_workmode_code', CODE),
-    'sdr_quality': ('sdr_quality', CODE), '4g_quality': ('cellular_quality', CODE),
-    '4g_uav_quality': ('cellular_aircraft_quality', CODE),
-    '4g_gnd_quality': ('cellular_ground_quality', CODE),
+    'sdr_quality': ('sdr_quality', link_quality), '4g_quality': ('cellular_quality', link_quality),
+    '4g_uav_quality': ('cellular_aircraft_quality', link_quality),
+    '4g_gnd_quality': ('cellular_ground_quality', link_quality),
     'sdr_freq_band': ('sdr_frequency_ghz', number(0, 100)),
     '4g_freq_band': ('cellular_frequency_ghz', number(0, 100)),
 }
 PAYLOAD = {
     'gimbal_pitch': ('gimbal_pitch_deg', ANGLE), 'gimbal_roll': ('gimbal_roll_deg', ANGLE),
     'gimbal_yaw': ('gimbal_yaw_deg', ANGLE), 'zoom_factor': ('zoom_factor', number(0, 1000)),
+}
+PAYLOAD_CONTROL = {
+    'payload_index': ('payload_index', payload_index),
+    'control_source': ('control_source_category', control_source_category),
+    'firmware_version': ('firmware_version', text),
 }
 CAMERA = {
     **PAYLOAD, 'payload_index': ('payload_index', payload_index),
@@ -196,7 +250,7 @@ def camera(data):
 
 def normalize_details(kind, data):
     aircraft = kind == 'aircraft'
-    result = mapped(data, COMMON | (AIRCRAFT if aircraft else {'height': ('controller_height_m', number())}))
+    result = mapped(data, COMMON | (AIRCRAFT if aircraft else RC))
     if aircraft:
         for wire, target, schema in [('battery', 'battery', BATTERY),
                                      ('position_state', 'position', {'quality': ('quality_code', CODE)}),
@@ -227,12 +281,15 @@ def normalize_details(kind, data):
             raise ValueError("Too many Cloud API payloads")
         if payloads:
             result['payloads'] = payloads
+        if 'payloads' in data:
+            result['payload_control'] = array(data['payloads'], PAYLOAD_CONTROL, 16)
         if 'cameras' in data:
             cameras = data['cameras']
             if not isinstance(cameras, list) or len(cameras) > 16:
                 raise ValueError("Invalid camera array")
             result['cameras'] = [camera(row) for row in cameras]
-        indexes = list(payloads) + [row.get('payload_index') for row in result.get('cameras', [])]
+        indexes = (list(payloads) + [row.get('payload_index') for row in result.get('cameras', [])]
+                   + [row.get('payload_index') for row in result.get('payload_control', [])])
         models = {PAYLOAD_MODELS[index] for index in indexes if index in PAYLOAD_MODELS}
         if len(models) == 1:
             result['aircraft_model_hint'] = models.pop()
@@ -256,11 +313,12 @@ def canonical_schema(mapping):
     return {name: parse for name, parse in mapping.values()}
 
 
-DETAILS_SCHEMA = canonical_schema(COMMON | AIRCRAFT) | {
-    'controller_height_m': number(), 'battery': canonical_schema(BATTERY),
+DETAILS_SCHEMA = canonical_schema(COMMON | AIRCRAFT | RC) | {
+ 'battery': canonical_schema(BATTERY),
     'position': {'quality_code': CODE}, 'storage': canonical_schema(STORAGE),
     'obstacle_avoidance': canonical_schema(OBSTACLES), 'battery_packs': (canonical_schema(PACK), 8),
     'maintenance': (canonical_schema(MAINTENANCE), 16), 'payloads': ('payloads', canonical_schema(PAYLOAD)),
+    'payload_control': (canonical_schema(PAYLOAD_CONTROL), 16),
     'cameras': (canonical_schema(CAMERA) | {
         'ir_metering_point': canonical_schema(METER_POINT),
         'ir_metering_area': canonical_schema(METER_AREA) | {
