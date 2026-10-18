@@ -612,3 +612,32 @@ fehlerhafte Upstream-Texte niemals als private URLs, Tokens oder
 Originalparameter in die Konsole gelangen. Dazu existieren gezielte
 Regressionstests. Ergebnis und CI gelten nur für den Entwicklungsstand;
 es wurde kein laufender Service verändert.
+
+### Studio-JavaScript-Laufzeittest vor dem HTTPS-Deployment
+
+Der opt-in Button "Aktionsdiagnose laden" wurde um einen Test erweitert,
+der genau den in der Studio-HTML-Seite eingebetteten JavaScript-Block
+unter Node.js mit einer minimalen DOM-Nachbildung ausführt:
+
+~~~bash
+WT="$HOME/Projekte/AeroNexusAdvanced-pr46"
+PY="$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python"
+cd "$WT" || exit 1
+PYTHONPATH="$WT/src" "$PY" -m pytest -q \
+ tests/test_pilot2_studio_action_ui_runtime.py \
+ tests/test_pilot2_action_http_smoke.py \
+ tests/test_pilot2_action_summary.py
+~~~
+
+Der Laufzeittest prüft, dass die Diagnose nicht schon beim Rendern
+geladen wird, dass ein manueller GET die acht anonymisierten
+Wayline-Summen darstellt, dass vermeintliches HTML nur als Text
+erscheint, dass Verifikations-/Flugfreigabewerte niemals unbemerkt
+übernommen werden und dass verspätete Antworten nach Tabwechsel
+oder neuer Anfrage nicht die aktuelle Anzeige überschreiben.
+
+**Wichtig:** Ein Node-DOM-Test ist ein Laufzeit- und
+Regressionstest des echten JS-Blocks, aber kein echter Chromium-
+oder HTTPS-Browser-Abnahmetest. Der Pi-Produktionsserver wird
+nicht berührt. Weder die neue UI noch die Diagnoseroute werden
+damit in den laufenden Dienst ausgerollt.
