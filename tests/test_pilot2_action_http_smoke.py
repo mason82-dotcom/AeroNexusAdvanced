@@ -52,7 +52,7 @@ def test_smoke_enforces_two_unauthorized_denials_without_scanning(monkeypatch):
     assert result["unknown_actions"] == 6
     # Two authorized calls; requests lacking a valid bearer never reach reader.
     assert fake.calls == 2
-    assert appmod.app.state.pilot2_action_summary is old
+    assert getattr(appmod.app.state, "pilot2_action_summary", None) is old
     assert smoke.os.environ["AERONEXUS_STATUS_TOKEN"] == prior
     assert "A01" not in json.dumps(result)
     assert "anonymous_types" not in result
