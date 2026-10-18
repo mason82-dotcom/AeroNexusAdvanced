@@ -149,6 +149,37 @@ def _group_xml_span_relation(group, waypoint, prefix):
     return "single_elsewhere" if start == end else "range_starts_elsewhere"
 
 
+def _group_xml_index_delta_bucket(group, waypoint, prefix, route_indices):
+    """Only a coarse difference of source WPML indices, never flight distance.
+
+    Requires a unique, consecutive set of declared wpml:index elements in the
+    same Folder, with both actionGroup endpoints contained in that set.
+    """
+    start = _uint16_element(group, prefix + "actionGroupStartIndex")
+    end = _uint16_element(group, prefix + "actionGroupEndIndex")
+    anchor = _uint16_element(waypoint, prefix + "index")
+    if start is None or end is None or anchor is None:
+        return "missing_or_invalid_index"
+    if end < start:
+        return "reversed_span"
+    if route_indices is None:
+        return "unreliable_folder_indices"
+    if start not in route_indices or end not in route_indices:
+        return "endpoint_outside_folder"
+    if start != anchor:
+        return "starts_elsewhere"
+    delta = end - start
+    if delta == 0:
+        return "same_index"
+    if delta == 1:
+        return "one_index_step"
+    if delta <= 4:
+        return "two_to_four_index_steps"
+    if delta <= 16:
+        return "five_to_sixteen_index_steps"
+    return "over_sixteen_index_steps"
+
+
 def _archive_action_records(kmz):
     """Read allowlisted namespace and executable Folder action groups only.
 
@@ -181,8 +212,17 @@ def _archive_action_records(kmz):
                 seen_actions += 1
                 records.append(("start", trigger, _text_or_missing(
                     action.find(W + "actionActuatorFunc")), _action_param_hints(action, W),
-                    "start_group", "start_group_not_applicable"))
+                    "start_group", "start_group_not_applicable",
+                    "start_group_not_applicable"))
         placemarks = folder.findall(K + "Placemark")
+        indexes = [_uint16_element(place, W + "index") for place in placemarks]
+        route_indices = (
+            set(indexes) if (
+                indexes and all(i is not None for i in indexes)
+                and len(set(indexes)) == len(indexes)
+                and max(indexes) - min(indexes) + 1 == len(indexes)
+            ) else None
+        )
         for position, waypoint in enumerate(placemarks):
             waypoints += 1
             if waypoints > MAX_ELEMENTS:
@@ -198,7 +238,8 @@ def _archive_action_records(kmz):
                     records.append(("waypoint", trigger, _text_or_missing(
                         action.find(W + "actionActuatorFunc")), _action_param_hints(action, W),
                         _xml_placement_bucket(position, len(placemarks)),
-                        _group_xml_span_relation(group, waypoint, W)))
+                        _group_xml_span_relation(group, waypoint, W),
+                        _group_xml_index_delta_bucket(group, waypoint, W, route_indices)))
         if seen_actions > MAX_ACTIONS:
             raise LocalWaylineError("invalid_archive")
         records_by_route.append(records)
@@ -207,7 +248,7 @@ def _archive_action_records(kmz):
 
 def _aggregate_action_records(archives, *, parameter_hints=False,
                               field_aliases=False, position_buckets=False,
-                              span_audit=False):
+                              span_audit=False, span_length_buckets=False):
     """Aggregate only anonymous enums, field occurrence counts and opt-in XML position buckets."""
     if field_aliases and not parameter_hints:
         raise ValueError("field aliases require parameter hints")
@@ -215,6 +256,8 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
         raise ValueError("position buckets require field aliases")
     if span_audit and not field_aliases:
         raise ValueError("span audit requires field aliases")
+    if span_length_buckets and not span_audit:
+        raise ValueError("span length buckets require span audit")
     aliases = {}  # Raw strings confined to this stack frame and never serialized.
     # Per-invocation names only. Neither mapping is serialized, hashed or persisted.
     field_names_to_aliases = {}
@@ -227,6 +270,7 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
         route_field_multiplicities = []
         route_field_position_buckets = []
         route_field_span_statuses = []
+        route_field_index_deltas = []
         unknown_total = 0
         known_total = 0
         for route in routes:
@@ -234,8 +278,10 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
             field_multiplicity_by_alias = {}
             field_positions_by_alias = {}
             field_spans_by_alias = {}
+            field_index_deltas_by_alias = {}
             recognized = Counter()
-            for location, trigger, raw_name, hints, xml_bucket, xml_span in route:
+            for (location, trigger, raw_name, hints, xml_bucket,
+                 xml_span, xml_index_delta) in route:
                 if raw_name in DOCUMENTED_ACTION_TYPES:
                     recognized[raw_name] += 1
                     known_total += 1
@@ -309,6 +355,14 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                                     field_spans_by_alias[fid] = Counter()
                                 # Per action, not per occurrence of a repeated field.
                                 field_spans_by_alias[fid][xml_span] += 1
+                            if span_length_buckets:
+                                if fid not in field_index_deltas_by_alias:
+                                    field_index_deltas_by_alias[fid] = {}
+                                if xml_index_delta not in field_index_deltas_by_alias[fid]:
+                                    field_index_deltas_by_alias[fid][xml_index_delta] = Counter()
+                                # Cross-tabulate action-group index delta
+                                # with per-action Pxx multiplicity, not raw positions.
+                                field_index_deltas_by_alias[fid][xml_index_delta][str(count)] += 1
             route_counts.append(dict(sorted(unknown_by_alias.items())))
             if field_aliases:
                 route_field_multiplicities.append({
@@ -328,6 +382,15 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                     fid: dict(sorted(statuses.items()))
                     for fid, statuses in sorted(field_spans_by_alias.items())
                 })
+            if span_length_buckets:
+                route_field_index_deltas.append({
+                    fid: {
+                        size: dict(sorted(multiplicities.items(),
+                                          key=lambda item: int(item[0])))
+                        for size, multiplicities in sorted(deltas.items())
+                    }
+                    for fid, deltas in sorted(field_index_deltas_by_alias.items())
+                })
         result_item = {
             "index": index,
             "state": "connected",
@@ -343,6 +406,8 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
             result_item["unknown_field_xml_placement_by_route"] = route_field_position_buckets
         if span_audit:
             result_item["unknown_field_xml_span_by_route"] = route_field_span_statuses
+        if span_length_buckets:
+            result_item["unknown_field_xml_index_delta_by_route"] = route_field_index_deltas
         results.append(result_item)
     safe_totals = []
     for alias in aliases.values():
@@ -386,7 +451,8 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
 
 async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False,
                                      field_aliases=False, position_buckets=False,
-                                     span_audit=False, inventory_reader=None,
+                                     span_audit=False, span_length_buckets=False,
+                                     inventory_reader=None,
                                      kmz_reader=None, credentials_loader=None):
     if type(limit) is not int or not 1 <= limit <= 8:
         raise ValueError("invalid limit")
@@ -416,7 +482,8 @@ async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False,
     try:
         report = _aggregate_action_records(
             seen, parameter_hints=parameter_hints, field_aliases=field_aliases,
-            position_buckets=position_buckets, span_audit=span_audit)
+            position_buckets=position_buckets, span_audit=span_audit,
+            span_length_buckets=span_length_buckets)
     except (LocalWaylineError, ValueError, KeyError, TypeError):
         return {"inventory_state": "unsupported_geometry", "results": results}
     # Index is intentionally only the index in the verified inventory.
@@ -451,6 +518,8 @@ def main():
                         help="Grobe XML-Verankerung (erstes/mittleres/letztes Routendrittel)")
     parser.add_argument("--span-audit", action="store_true",
                         help="Nur Status der XML-actionGroup-Start-/End-Indizes zählen")
+    parser.add_argument("--span-length-buckets", action="store_true",
+                        help="Grobe Differenz der XML-Start-/End-Indizes ohne Rohwerte")
     args = parser.parse_args()
     if args.field_aliases and not args.parameter_hints:
         parser.error("--field-aliases erfordert --parameter-hints")
@@ -458,11 +527,14 @@ def main():
         parser.error("--position-buckets erfordert --parameter-hints --field-aliases")
     if args.span_audit and not args.field_aliases:
         parser.error("--span-audit erfordert --parameter-hints --field-aliases")
+    if args.span_length_buckets and not args.span_audit:
+        parser.error("--span-length-buckets erfordert --span-audit")
     try:
         report = asyncio.run(diagnose_action_vocabulary(
             limit=args.limit, parameter_hints=args.parameter_hints,
             field_aliases=args.field_aliases, position_buckets=args.position_buckets,
-            span_audit=args.span_audit))
+            span_audit=args.span_audit,
+            span_length_buckets=args.span_length_buckets))
     except KeyboardInterrupt:
         return 130
     print(json.dumps(report, ensure_ascii=False, indent=2))
