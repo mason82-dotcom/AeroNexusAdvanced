@@ -588,6 +588,7 @@ function cockpitSelectRows(rows){
 }
 function cockpitUnavailable(reason){
   cockpitError=reason||"Geschützte Geräte-API nicht erreichbar";
+  cockpitHistory.clear(); // Never bridge gaps in a relative GNSS trail after an API outage.
   cockpitSelectRows([]);
   cockpitPaint(null);
 }
@@ -627,7 +628,8 @@ function cockpitPaint(dev){
     byId("cockpit-track-info").textContent="Noch keine gültigen Live-Positionspunkte.";
     return;
   }
-  if(live)cockpitRecord(dev);
+  if(!live)cockpitHistory.delete(cockpitKey(dev)); // Prevent false continuous trails after offline/stale.
+  else cockpitRecord(dev);
   cockpitRenderNavigation(dev);
   cockpitRenderEnergy(dev);
   cockpitRenderRadio(dev);
