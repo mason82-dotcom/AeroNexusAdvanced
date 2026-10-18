@@ -185,7 +185,15 @@ def check_browser(ca: Path, chosen: dict, expected_count: int,
             page.route("**/*", allow_only_read_and_preview)
             page.goto(ORIGIN + "/studio", wait_until="domcontentloaded", timeout=20000)
             page.locator('nav button[data-tab="geo-pane"]').click()
-            page.locator("#survey-object option").last.wait_for(timeout=12000)
+            # Native <option> nodes are often not considered "visible" by
+            # Playwright even when the parent <select> is visible. Wait for
+            # the actual saved polygon ID to appear in the DOM instead.
+            page.wait_for_function(
+                """polygon_id => {
+                    const select = document.querySelector('#survey-object');
+                    return !!select && Array.from(select.options).some(
+                        option => option.value === polygon_id);
+                }""", arg=chosen["id"], timeout=12000)
             page.locator("#survey-object").select_option(chosen["id"], timeout=12000)
             page.locator("#survey-spacing").fill(str(spacing))
             page.locator("#survey-bearing").fill(str(bearing))
