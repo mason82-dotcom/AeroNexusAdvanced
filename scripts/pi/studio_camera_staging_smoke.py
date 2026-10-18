@@ -229,7 +229,8 @@ def validate_result(data: dict) -> tuple[int, float, dict]:
     return count, float(distance), camera
 
 
-def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_preview: bool = False):
+def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_preview: bool = False,
+                turn_radius: float | None = None):
     from playwright.sync_api import sync_playwright
     configured = os.environ.get("AERONEXUS_CHROMIUM_BIN", "").strip()
     chromium = shutil.which(configured) if configured else next(
@@ -289,6 +290,9 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_previe
                 page.locator("#survey-route-enabled").check()
                 page.locator("#survey-route-speed").fill("5")
                 page.locator("#survey-route-hold").fill("5")
+                if turn_radius is not None:
+                    page.locator("#survey-turn-enabled").check()
+                    page.locator("#survey-turn-radius").fill(str(turn_radius))
             with page.expect_response(
                 lambda r: r.request.method == "POST"
                   and r.url == origin + "/api/v1/studio/survey/preview",
@@ -314,6 +318,18 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_previe
                         or any(c.get("clearance_verified") is not False
                                for c in route_plan["connectors"])):
                     raise StagingSmokeError("Invalid schematic route or safety flags")
+            turn_plan = route_plan.get("turn_geometry") if route_plan else None
+            if turn_radius is not None:
+                if (not isinstance(turn_plan, dict)
+                        or turn_plan.get("kind") != "geometric-turn-analysis"
+                        or turn_plan.get("radius_m") != turn_radius
+                        or turn_plan.get("ready_for_flight") is not False
+                        or turn_plan.get("terrain_verified") is not False
+                        or turn_plan.get("obstacles_verified") is not False
+                        or turn_plan.get("battery_verified") is not False
+                        or turn_plan.get("rth_verified") is not False
+                        or len(turn_plan.get("connections", [])) != count - 1):
+                    raise StagingSmokeError("Invalid turn geometry or unverified safety flags")
             seen_preview.append(True)
             expected_layers = count + (count - 1 if route_preview else 0)
             page.wait_for_function(
@@ -324,8 +340,10 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_previe
             if route_preview:
                 connection_svg = page.locator(
                     "#map .leaflet-overlay-pane svg path[stroke='#c18aff']").count()
-                if connection_svg != count - 1:
+                if turn_radius is None and connection_svg != count - 1:
                     raise StagingSmokeError("Staging schematic connector SVG mismatch")
+                if turn_radius is not None and connection_svg != 0:
+                    raise StagingSmokeError("Obsolete straight connectors shown in turn mode")
                 route_metrics = page.locator("#survey-route-metrics")
                 if (not route_metrics.is_visible()
                         or "ungeprüfte Verbindungen" not in route_metrics.inner_text()
@@ -338,6 +356,24 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_previe
             panel = page.locator("#survey-camera-metrics").inner_text()
             if "GSD" not in panel or "Fotos" not in panel:
                 raise StagingSmokeError("GSD or photo estimate missing in UI")
+            if turn_radius is not None:
+                available = turn_plan["geometry_available_count"]
+                exits = turn_plan["polygon_exit_count"]
+                good_curves = page.locator(
+                    "#map .leaflet-overlay-pane svg path[stroke='#58cee7']").count()
+                # Every infeasible or boundary-exiting connection is rendered
+                # in warning red; no silently claimed valid turn.
+                warning_curves = page.locator(
+                    "#map .leaflet-overlay-pane svg path[stroke='#fa7777']").count()
+                if good_curves != available - exits:
+                    raise StagingSmokeError("2D turn SVG count inconsistent")
+                if good_curves + warning_curves != count - 1:
+                    raise StagingSmokeError("2D turn warning SVG count inconsistent")
+                turn_metrics = page.locator("#survey-turn-metrics")
+                if (not turn_metrics.is_visible()
+                        or "Geometrische 2D-Bögen" not in turn_metrics.inner_text()
+                        or "Keine Kollisions-" not in turn_metrics.inner_text()):
+                    raise StagingSmokeError("Turn analysis UI warnings missing")
             if blocked:
                 raise StagingSmokeError("Blocked unexpected external/mutating browser requests")
             if require_tiles:
@@ -387,6 +423,14 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_previe
                 print("Connection length:", route_plan["connector_distance_m"], "m")
                 print("Duration estimate:", route_plan["estimated_duration_s"], "s")
                 print("Mission/clearance verified:", False)
+            if turn_radius is not None:
+                print("Turn radius (geometry only):", turn_plan["radius_m"], "m")
+                print("Constructible curves:", turn_plan["geometry_available_count"])
+                print("Unconstructible curves:", turn_plan["geometry_rejected_count"])
+                print("Approximate polygon exits:", turn_plan["polygon_exit_count"])
+                print("Curve distance:", turn_plan["curve_total_distance_m"])
+                print("Curve time estimate:", turn_plan["estimated_duration_s"])
+                print("Flight/terrain/obstacle/battery/RTH verified:", False)
             print("Screenshot:", screenshot)
         finally:
             browser.close()
@@ -403,9 +447,14 @@ def main(argv=None):
                         help="Fail unless a real map tile loaded")
     parser.add_argument("--route-preview", action="store_true",
                         help="Also test optional schematic connectors and duration; never upload a mission")
+    parser.add_argument("--turn-radius", type=float, default=None,
+                        help="Optional geometric turn radius (2–30 m), requires --route-preview")
     parser.add_argument("--screenshot", type=Path,
                         default=Path("/tmp/aeronexus-camera-staging.png"))
     args = parser.parse_args(argv)
+    if args.turn_radius is not None:
+        if not args.route_preview or not math.isfinite(args.turn_radius) or not 2 <= args.turn_radius <= 30:
+            parser.error("--turn-radius requires --route-preview and a radius of 2–30 m")
     checkout = Path(__file__).resolve().parents[2]
     try:
         with tempfile.TemporaryDirectory(prefix="aeronexus-camera-stage-") as base:
@@ -414,7 +463,7 @@ def main(argv=None):
             with staging_server(args.server_python, checkout, workspace, args.port) as origin:
                 print("Staging server: healthy on loopback only")
                 run_browser(origin, args.screenshot, args.require_tiles,
-                            route_preview=args.route_preview)
+                            route_preview=args.route_preview, turn_radius=args.turn_radius)
         print("Staging process stopped; synthetic workspace cleaned")
         return 0
     except (StagingSmokeError, OSError, ValueError) as exc:

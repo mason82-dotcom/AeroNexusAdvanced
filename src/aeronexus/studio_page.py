@@ -332,11 +332,17 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <label>Rechengeschwindigkeit (m/s)<input id="survey-route-speed" type="number" min="1" max="15" step="0.5" value="5"></label>
 <label>Rechenpause je Verbindung (s)<input id="survey-route-hold" type="number" min="0" max="60" step="1" value="5"></label>
 </div>
+<label><input id="survey-turn-enabled" type="checkbox" disabled> Geometrische Wendebögen und Polygon-Austritte prüfen (nur 2D-Skizze)</label>
+<div id="survey-turn-options" hidden>
+<label>Geometrischer Bogenradius (m)<input id="survey-turn-radius" type="number" min="2" max="30" step="0.5" value="5"></label>
+<p class="note">Tangentiale Kreisbögen, keine real geprüfte Flugmechanik. Rot markierte Bögen können das Polygon verlassen. Keine Kollisionsfreiheit, Hindernisprüfung oder Freigabe.</p>
+</div>
 <p class="note">Gestrichelte violette Linien sind geradlinige Skizzen, keine sicheren Wendemanöver. Sie können außerhalb des Polygons liegen. Keine Gelände-, Hindernis-, Akku- oder Flugfreigabe.</p>
 </div>
 <button id="survey-generate" class="primary" style="width:100%">Flugstreifen berechnen</button>
 <div id="survey-camera-metrics" class="note" role="status" hidden></div>
 <div id="survey-route-metrics" class="note" role="status" hidden></div>
+<div id="survey-turn-metrics" class="note" role="status" hidden></div>
 <div id="survey-message" class="note" role="status">Nur unabhängige parallele Flugstreifen, keine verbundenen Flugwege. Keine Hindernis- oder Geländefreigabe.</div>
 <hr><h2>Gelände aus GeoTIFF</h2>
 <label>DEM-GeoTIFF (max. 8 MiB)<input type="file" id="terrain-file" accept=".tif,.tiff,image/tiff"></label>
@@ -2192,7 +2198,10 @@ function updateSurveyCameraMode(){
 function updateSurveyRouteMode(){
   const enabled=$("survey-route-enabled").checked;
   $("survey-route-fields").hidden=!enabled;
+  $("survey-turn-enabled").disabled=!enabled;
+  $("survey-turn-options").hidden=!enabled||!$("survey-turn-enabled").checked;
   $("survey-route-metrics").hidden=true;
+  $("survey-turn-metrics").hidden=true;
 }
 async function surveyPreview(){
   const row=geoObjects.find(x=>x.id===$("survey-object").value);
@@ -2205,9 +2214,13 @@ async function surveyPreview(){
     height_agl_m:Number($("survey-height-agl").value),
     side_overlap_pct:Number($("survey-side-overlap").value),
     front_overlap_pct:Number($("survey-front-overlap").value)};
-  if($("survey-route-enabled").checked)payload.route={
-    speed_mps:Number($("survey-route-speed").value),
-    turn_delay_s:Number($("survey-route-hold").value)};
+  if($("survey-route-enabled").checked){
+    payload.route={
+      speed_mps:Number($("survey-route-speed").value),
+      turn_delay_s:Number($("survey-route-hold").value)};
+    if($("survey-turn-enabled").checked)
+      payload.route.turn_radius_m=Number($("survey-turn-radius").value);
+  }
   const r=await api("/api/v1/studio/survey/preview",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(payload)});
@@ -2217,10 +2230,26 @@ async function surveyPreview(){
     data.legs.forEach(segment=>L.polyline(segment.map(p=>[p.latitude,p.longitude]),{
       color:"#ffab70",weight:3,dashArray:"5 5"}).addTo(surveyLayer));
     if(data.route_preview){
-      data.route_preview.connectors.forEach(link=>L.polyline([
-        [link.start.latitude,link.start.longitude],[link.end.latitude,link.end.longitude]],{
-        color:"#c18aff",weight:3,dashArray:"2 8"
-      }).bindTooltip("Nur skizzierte, ungeprüfte Verbindung").addTo(surveyLayer));
+      const turnLinks=data.route_preview.turn_geometry?.connections||null;
+      data.route_preview.connectors.forEach((link,index)=>{
+        const curve=turnLinks?.[index];
+        if(curve?.geometry_available&&curve.curve_points.length>1){
+          L.polyline(curve.curve_points.map(p=>[p.latitude,p.longitude]),{
+            color:curve.polygon_exit_detected?"#fa7777":"#58cee7",
+            weight:3,dashArray:"4 6"
+          }).bindTooltip(curve.polygon_exit_detected
+            ?"2D-Wendeskizze verlässt das Polygon; nicht fliegen"
+            :"Ungeprüfter geometrischer Bogen; keine Flugfreigabe").addTo(surveyLayer);
+        }else{
+          L.polyline([
+            [link.start.latitude,link.start.longitude],
+            [link.end.latitude,link.end.longitude]],{
+            color:turnLinks?"#fa7777":"#c18aff",weight:3,dashArray:"2 8"
+          }).bindTooltip(turnLinks
+            ?"Kein geometrischer Bogen möglich; keine Flugfreigabe"
+            :"Nur skizzierte, ungeprüfte Verbindung").addTo(surveyLayer);
+        }
+      });
     }
     if(data.legs.length)map.fitBounds(L.latLngBounds(data.legs.flat().map(p=>[p.latitude,p.longitude])),{
       padding:[50,50],maxZoom:17});
@@ -2252,6 +2281,20 @@ async function surveyPreview(){
     routeMetrics.hidden=false;
   }else{
     routeMetrics.hidden=true;
+  }
+  const turnMetrics=$("survey-turn-metrics"),turns=data.route_preview?.turn_geometry;
+  if(turns){
+    turnMetrics.textContent="Geometrische 2D-Bögen: "+
+      turns.geometry_available_count+"/"+turns.connections.length+
+      " darstellbar · "+turns.polygon_exit_count+" Polygon-Austritte (Näherung) · "+
+      (turns.geometry_complete
+        ?formatRouteDistance(turns.curve_total_distance_m)+" gerundete Gesamtstrecke · "+
+         Math.ceil(turns.estimated_duration_s/60)+" min theoretische Zeit"
+        :"nicht alle Bögen geometrisch möglich; keine vollständige Bogen-Zeitschätzung")+
+      ". Keine Kollisions-, Gelände-, Akku- oder Flugfreigabe.";
+    turnMetrics.hidden=false;
+  }else{
+    turnMetrics.hidden=true;
   }
   $("survey-message").textContent=data.leg_count+" getrennte Flugstreifen · "+
     formatRouteDistance(data.distance_m)+
@@ -2958,6 +3001,7 @@ function wire(){
   $("survey-camera").addEventListener("change",updateSurveyCameraMode);
   updateSurveyCameraMode();
   $("survey-route-enabled").addEventListener("change",updateSurveyRouteMode);
+  $("survey-turn-enabled").addEventListener("change",updateSurveyRouteMode);
   updateSurveyRouteMode();
   $("survey-generate").addEventListener("click",()=>surveyPreview().catch(err=>$("survey-message").textContent=err.message));
   $("geophoto-media").addEventListener("change",showGeoPhotoFields);
