@@ -553,3 +553,46 @@ Getestet mit pytest und gezielten negativen Fixtures:
 parallel ausgelöste Abrufe (ein Scan), Cache-Ablauf, Credentials-Wechsel,
 abgewiesene Viewer-Anfragen, doppelte Aliasse, inkonsistente
 Metadaten und verschwundene Browseransichten.
+
+### Isolierter HTTP-End-to-End-Smoketest ohne laufenden Server anzufassen
+
+Der erfolgreiche Pi-Livetest prüfte das Python-Reader-Objekt direkt
+(8/8 Waylines, 70 bekannte Texttypen, 579 unbekannte Aktionsvorkommen).
+Die folgende separate Abnahme prüft die echte FastAPI-HTTP-Route
+über einen rein prozessinternen ASGI-Transport:
+
+~~~bash
+(
+ set -euo pipefail
+ WT="$HOME/Projekte/AeroNexusAdvanced-pr46"
+ PY="$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python"
+ cd "$WT"
+ PYTHONPATH="$WT/src" "$PY" -m pytest -q \
+   tests/test_pilot2_action_http_smoke.py \
+   tests/test_pilot2_action_summary.py
+ PYTHONPATH="$WT/src" "$PY" \
+   scripts/pi/pilot2_studio_action_http_smoke.py
+)
+~~~
+
+Das Skript ruft /api/v1/studio/pilot2/action-summary zuerst ohne
+Token und mit ungültigem Token auf und erwartet zweimal HTTP 401,
+anschließend mit einem ausschließlich im Prozess erzeugten
+temporären Bearer-Token HTTP 200. Geprüft werden außerdem No-Store,
+explizit unverifizierte WPML-Semantik/Flugkompatibilität und
+konsistente Antworten bei erneutem Abruf aus dem Sitzungs-Cache.
+
+Die echte Pilot-2-Inventur und KMZ-Analyse werden dabei weiterhin
+ausschließlich über die bestehenden lokalen GET-Pfade ausgeführt.
+Der Test importiert die vorhandene App und verwendet httpx.ASGITransport,
+ohne uvicorn/HTTP-Socket, MQTT-/Polling-Lifespan, systemd-Neustart,
+Produktionsdeploy, Dateischreiben, Drohnenbefehle oder Missionsupload.
+Es wird weder ein vorhandenes Dashboard-Token angezeigt noch geändert:
+die temporäre Tokenumgebung existiert ausschließlich innerhalb des
+Python-Prozesses.
+
+**Abgrenzung:** Dieser Test bestätigt das Authentifizierungs- und
+Routingverhalten des Entwicklungsbranchs im Prozess, nicht die
+HTTPS-/Reverse-Proxy-Konfiguration des produktiv laufenden Servers
+oder einen tatsächlichen Browser-Smoke. Ein späteres Live-Deployment
+bedarf eines gesonderten, bewussten Schritts.
