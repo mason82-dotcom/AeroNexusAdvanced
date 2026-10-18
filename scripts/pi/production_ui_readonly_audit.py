@@ -130,13 +130,13 @@ class ReadOnlyClient:
             raise ValueError("Unreviewed read path")
         return self._read_reviewed(path, max_bytes)
 
-    def _read_reviewed(self, path: str, max_bytes: int) -> tuple[int, str, bytes, bool]:
+    def _read_reviewed(self, path: str, max_bytes: int, *, partial: bool = False) -> tuple[int, str, bytes, bool]:
         # All calls use this single audited GET-only transport.
         request = Request(self.base + path, headers=self.headers, method="GET")
         try:
             with self._opener.open(request, timeout=self.timeout) as response:
                 size = response.headers.get("Content-Length")
-                if size and size.isdigit() and int(size) > max_bytes:
+                if not partial and size and size.isdigit() and int(size) > max_bytes:
                     return response.status, response.headers.get("Content-Type", ""), b"", True
                 body = response.read(max_bytes + 1)
                 return (response.status, response.headers.get("Content-Type", ""),
@@ -150,7 +150,7 @@ class ReadOnlyClient:
         # Explicit opt-in only; GET of a small, already-indexed browser-safe
         # object. This is a binary signature check, NOT image rendering.
         return self._read_reviewed(
-            f"/api/v1/studio/dji-media/{media_id}/file", MAX_PREVIEW_BYTES
+            f"/api/v1/studio/dji-media/{media_id}/file", MAX_PREVIEW_BYTES, partial=True
         )
 
 
