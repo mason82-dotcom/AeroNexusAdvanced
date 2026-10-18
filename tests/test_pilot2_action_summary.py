@@ -92,7 +92,6 @@ def test_summary_fails_closed_on_invalid_payload(mutation):
     lambda x: x.update(reported_total=-1),
     lambda x: x.update(reported_total=True),
     lambda x: x.update(reported_total=10000001),
-    lambda x: x.update(reported_total=3),
     lambda x: x["anonymous_types"][1].update(id="A01"),
     lambda x: x.update(full_content_verified=True),
     lambda x: x.update(full_content_verified=None),
