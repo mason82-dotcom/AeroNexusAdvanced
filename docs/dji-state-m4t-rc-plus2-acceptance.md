@@ -429,6 +429,44 @@ solche Kanalwechsel als auch auf Prozess-/Worker-Neustarts und
 Geräteinventar-Neuaufbau prüfen. Keine DJI-Steuerbefehle
 zur künstlichen State-Erzeugung auslösen.
 
+### Produktive Geräte- und Zeitabnahme nach erneutem Dienststart (19.10.2026)
+
+Der Betreiber hat an der geschützten produktiven HTTPS-API folgende
+**frische Feldherkunft** nachgewiesen (Feldnamen, keine Werte/IDs):
+
+| Gerät | Kanonischer Feldpfad | Kanal | Frische |
+|---|---|---|---|
+| Fluggerät | `cloud_details.rth_mode_code` | `state` | `fresh` |
+| Fluggerät | `cloud_details.firmware_version` | `osd` | `fresh` |
+| Controller | `cloud_details.cloud_control_authorization_count` | `state` | `fresh` |
+| Controller | `cloud_details.live_capacity.available_videos` | `state` | `fresh` |
+| Controller | `cloud_details.live_capacity.simultaneous_videos` | `state` | `fresh` |
+| Controller | `cloud_details.firmware_version` | `state` | `fresh` |
+
+Nicht beobachtet: `cloud_details.current_rth_mode_code` und
+`cloud_details.control_source_category` am Fluggerät. Da State
+änderungsgetriggert ist, wird daraus keine fehlende Capability abgeleitet.
+
+**Produktivdienst:** `MainPID=1233466`, `ExecMainStartTimestamp=`
+`2026-10-19 00:22:37 CEST`, `NRestarts=0`. Der neuere Startzeitpunkt
+gegenüber dem vorherigen Dienst-PID belegt, dass ein neuer Prozess
+angelaufen ist. `NRestarts=0` bezieht sich auf automatische
+Service-Neustarts und widerlegt keinen manuell ausgelösten Neustart.
+Diese Neuanlage des flüchtigen RAM-Inventars ist eine plausible Erklärung
+für die zeitweise abweichenden `field_status`-Mengen.
+
+**Hostzeit:** `NTP=yes`, `NTPSynchronized=yes`;
+das bestätigt die Synchronisation der Pi-Uhr, nicht automatisch
+die Uhren von Aircraft oder Controller.
+
+**Nachweisgrenze:** Die sechs Zeilen bestätigen kanalgetrennte
+Feldherkunft und Frische im Produktionsdienst, aber noch keinen
+Werteregressionstest gegen den DJI-Herstellervertrag für die
+Matrice 4T / RC Plus 2. Das fehlerfreie 120-s-Decoder-Audit
+(120 OSD + 33 State) lief in einem separaten Observer-Inventar.
+Die produktive getrennte `live_feed.channels`-Zählung wird erst
+nach kontrolliertem Deployment von PR #68 verfügbar.
+
 ## Verbindliche Hardwareabnahme (noch offen)
 
 1. **RC Plus 2 allein eingeschaltet:** tatsächlicher RC-OSD-Eingang,
