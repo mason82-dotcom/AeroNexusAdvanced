@@ -135,3 +135,34 @@ def test_required_cli_ca_and_parameter_validation():
     assert smoke.main(["--ca", "/never/a/real/ca.crt"]) == 1
     with pytest.raises(SystemExit):
         smoke.main(["--ca", "ca.crt", "--spacing", "0"])
+
+
+def test_hidden_native_option_is_accepted_by_browser_wait():
+    """Regression: Chromium never considers native <option> visibly rendered."""
+    import shutil
+    playwright_api = pytest.importorskip("playwright.sync_api")
+    chromium = (shutil.which("chromium") or shutil.which("chromium-browser")
+                or shutil.which("google-chrome"))
+    if chromium is None:
+        pytest.skip("Chromium unavailable")
+    polygon_id = "00000000-0000-4000-8000-000000000001"
+    with playwright_api.sync_playwright() as pw:
+        browser = pw.chromium.launch(
+            executable_path=chromium, headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"])
+        try:
+            page = browser.new_page()
+            page.set_content(
+                '<select id="survey-object" style="display:none">'
+                '<option value="">Polygon auswählen</option></select>')
+            page.evaluate(
+                """id => {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = 'Saved polygon';
+                    document.querySelector('#survey-object').appendChild(option);
+                }""", polygon_id)
+            assert not page.locator(f'option[value="{polygon_id}"]').is_visible()
+            smoke.wait_for_polygon_option(page, polygon_id)
+        finally:
+            browser.close()
