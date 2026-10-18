@@ -170,3 +170,45 @@ def test_staging_chromium_calls_real_local_api_with_leaflet(monkeypatch, tmp_pat
         assert screenshot.is_file() and screenshot.stat().st_size > 3000
     assert len(list((workspace / "geo_objects").glob("*.json"))) == 1
     assert not list((workspace / "missions").iterdir())
+
+
+
+def test_raster_coverage_detects_missing_map_tiles():
+    """A single successful tile must not pass a mostly blank map screenshot."""
+    import shutil
+    playwright_api = pytest.importorskip("playwright.sync_api")
+    chromium = (shutil.which("chromium") or shutil.which("chromium-browser")
+                or shutil.which("google-chrome"))
+    if chromium is None:
+        pytest.skip("Chromium unavailable")
+    # Known 1x1 PNG in the pinned Leaflet Chromium test suite.
+    tile = ("data:image/png;base64,"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4"
+            "z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==")
+    with playwright_api.sync_playwright() as pw:
+        browser = pw.chromium.launch(
+            executable_path=chromium, headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"])
+        try:
+            page = browser.new_page(viewport={"width": 600, "height": 500})
+            page.set_content(
+                '<div id="map" style="width:400px;height:300px;position:relative">'
+                '<div class="leaflet-tile-pane">'
+                '<img class="leaflet-tile leaflet-tile-loaded" '
+                'id="tile" style="position:absolute;top:0;left:0;'
+                'width:200px;height:300px" src="' + tile + '">'
+                '</div></div>')
+            page.locator("#tile").evaluate("(img) => img.decode()")
+            incomplete = page.evaluate(staging.TILE_COVERAGE_JS)
+            assert incomplete["loaded"] == 1
+            assert incomplete["coverage"] == pytest.approx(.5, abs=.01)
+            page.locator("#tile").evaluate(
+                "(img) => {img.style.width = '400px';}")
+            complete = page.evaluate(staging.TILE_COVERAGE_JS)
+            assert complete["coverage"] == 1.0
+            page.locator("#tile").evaluate(
+                "(img) => img.classList.remove('leaflet-tile-loaded')")
+            not_loaded = page.evaluate(staging.TILE_COVERAGE_JS)
+            assert not_loaded["coverage"] == 0
+        finally:
+            browser.close()
