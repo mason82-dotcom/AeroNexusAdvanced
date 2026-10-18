@@ -97,7 +97,7 @@ __COCKPIT_STYLE__
 <header>
 <div><div class="eyebrow">DJI Monitoring · Nur Lesen</div><h1>AeroNexusAdvanced</h1>
 <div class="subtle">Live-Telemetrie-Cockpit · Flugbefehle deaktiviert · <a href="/studio" style="color:#9cd2ff">Mission Studio für Chrome ↗</a> · <a href="/operations" style="color:#9cd2ff">Operations Center ↗</a> · <a href="/thermal" style="color:#9cd2ff">Thermal ↗</a> · <a href="/multispectral" style="color:#9cd2ff">Multispektral ↗</a> · <a href="/results" style="color:#9cd2ff">Ergebnisraster ↗</a></div></div>
-<div class="meta">Automatische Anzeigeaktualisierung: __INTERVAL_SECONDS__ s<br>
+<div class="meta">Zusammenfassung: __INTERVAL_SECONDS__ s · Cockpit: bis 5 s<br>
 <span id="timestamp">Noch keine Daten</span><br>
 <span id="feed">Live-Feed: –</span></div>
 </header>
@@ -156,6 +156,7 @@ __COCKPIT_HTML__
 const intervalMs = __INTERVAL_MILLISECONDS__;
 let sessionEpoch=0;
 let devicesRequest=0;
+let deviceFetchActive=false;
 let catalogRequest=0;
 const byId = id => document.getElementById(id);
 const asText = value => value === null || value === undefined ? "–" : String(value);
@@ -448,6 +449,8 @@ async function updateCloud() {
   } catch (error) {byId("cloud-overall").textContent="Cloud-Server-Status nicht abrufbar: "+error.message;}
 }
 async function updateDevices() {
+  if(deviceFetchActive)return;
+  deviceFetchActive=true;
   const epoch=sessionEpoch,request=++devicesRequest;
   try {
     const r=await fetch("/api/v1/status/devices?limit=200",{cache:"no-store"});
@@ -489,6 +492,8 @@ async function updateDevices() {
     byId("device-info").textContent="Keine Gerätedaten verfügbar.";
     byId("message").textContent="Details nicht verfügbar ("+e.message+").";
     cockpitUnavailable("geschützte Telemetrie-API: "+e.message);
+  } finally {
+    deviceFetchActive=false;
   }
 }
 __COCKPIT_JS__
