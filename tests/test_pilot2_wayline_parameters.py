@@ -69,6 +69,41 @@ def test_generated_wpml_fields_match_but_never_complete_content():
     assert not any(x in encoded for x in ("49.12", "8.5,", "Private survey", WAYLINE, CREDS.access_token))
 
 
+def test_exact_dji_wpml_106_readonly_supported_but_never_certified_equal():
+    modern = modified_kmz(
+        b"http://www.dji.com/wpmz/1.0.2",
+        b"http://www.dji.com/wpmz/1.0.6")
+    info = pm.classify_wpml_structure(modern)
+    assert info["recognized_wpml_schema_version"] == "1.0.6"
+    assert info["read_only_schema_supported"] is True
+    assert info["strict_header_compatible"] is False
+    audit = pm.parse_parameter_audit(modern)
+    assert audit["wpml_schema_version"] == "1.0.6"
+    assert audit["wpml_model_key"] == "0-99-1"
+    assert len(audit["routes"]) == 1
+    assert len(audit["routes"][0]["waypoints"]) == 2
+    result = report(mission(), modern)
+    assert result["geometry_result"] == "coordinates_equal"
+    assert result["wpml_schema_semantics_verified"] is False
+    assert result["parameter_state"] == "not_comparable"
+    assert result["parameter_matches"] == {}
+    assert result["full_content_verified"] is False
+
+
+def test_unknown_wpml_version_and_spoofed_namespace_still_fail_closed():
+    import pytest
+    from aeronexus.local_waylines import LocalWaylineError
+    for namespace in (b"http://www.dji.com/wpmz/1.0.9",
+                      b"http://malicious.example/wpmz/1.0.6"):
+        transformed = modified_kmz(
+            b"http://www.dji.com/wpmz/1.0.2", namespace)
+        info = pm.classify_wpml_structure(transformed)
+        assert info["recognized_wpml_schema_version"] == "unknown"
+        assert info["read_only_schema_supported"] is False
+        with pytest.raises(LocalWaylineError, match="unsupported_geometry"):
+            pm.parse_parameter_audit(transformed)
+
+
 def test_undocumented_altitude_frame_is_never_compared_numerically():
     kmz = modified_kmz(b"<wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode>",
                        b"<wpml:executeHeightMode>WGS84</wpml:executeHeightMode>")
