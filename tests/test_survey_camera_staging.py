@@ -210,5 +210,22 @@ def test_raster_coverage_detects_missing_map_tiles():
                 "(img) => img.classList.remove('leaflet-tile-loaded')")
             not_loaded = page.evaluate(staging.TILE_COVERAGE_JS)
             assert not_loaded["coverage"] == 0
+            # The map may extend off the Playwright viewport, e.g. below
+            # the fold. A tile needs to cover only the displayed slice.
+            page.locator("#tile").evaluate(
+                """img => {
+                    img.classList.add('leaflet-tile-loaded');
+                    img.style.width = '200px';
+                    img.style.left = '200px';
+                }""")
+            page.locator("#map").evaluate(
+                """el => {
+                    el.style.position='fixed';
+                    el.style.left='-200px';
+                    el.style.top='0px';
+                }""")
+            clipped = page.evaluate(staging.TILE_COVERAGE_JS)
+            assert clipped["coverage"] == 1.0
+            assert clipped["rasterArea"] == "200x300"
         finally:
             browser.close()
