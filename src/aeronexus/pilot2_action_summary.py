@@ -25,6 +25,8 @@ _ALLOWED_LOCATIONS = frozenset({"start", "waypoint"})
 
 def summarize_action_report(report):
     """Strict numeric/type allowlist; no freeform upstream/diagnostic fields."""
+    if not isinstance(report, dict):
+        return _empty("invalid_response")
     if report.get("inventory_state") != "connected":
         return _empty(report.get("inventory_state"))
     items = report.get("results")
@@ -39,7 +41,12 @@ def summarize_action_report(report):
         return _empty("incomplete_inventory")
     if report.get("checked") != len(items):
         return _empty("incomplete_inventory")
+    reported_total = report.get("reported_total")
+    if (type(reported_total) is not int
+            or reported_total < len(items) or reported_total > 10000000):
+        return _empty("invalid_response")
     safe_types = []
+    seen_aliases = set()
     unknown_sum = 0
     for item in types:
         if not isinstance(item, dict):
@@ -48,6 +55,7 @@ def summarize_action_report(report):
         count = item.get("occurrences")
         file_count = item.get("file_count")
         if (not isinstance(alias, str) or not _ALIAS.fullmatch(alias)
+                or alias in seen_aliases
                 or type(count) is not int or not 1 <= count <= 10000
                 or type(file_count) is not int or not 1 <= file_count <= len(items)):
             return _empty("invalid_response")
@@ -63,6 +71,7 @@ def summarize_action_report(report):
             return _empty("invalid_response")
         if sum(loc.values()) != count or sum(triggers.values()) != count:
             return _empty("invalid_response")
+        seen_aliases.add(alias)
         unknown_sum += count
         safe_types.append({
             "alias": alias, "occurrences": count,
@@ -94,12 +103,13 @@ def summarize_action_report(report):
             or report.get("unknown_action_total") != unknown_sum
             or report.get("recognized_action_total") != known_sum):
         return _empty("invalid_response")
-    if report.get("flight_compatibility_verified") is not False:
+    if (report.get("flight_compatibility_verified") is not False
+            or report.get("full_content_verified") is not False):
         return _empty("invalid_response")
     return {
         "state": "connected",
         "checked": len(items),
-        "total": report.get("reported_total") if type(report.get("reported_total")) is int else None,
+        "total": reported_total,
         "recognized_actions": known_sum,
         "unknown_actions": unknown_sum,
         "anonymous_types": safe_types,
@@ -118,7 +128,7 @@ def _empty(state):
              "unavailable", "incomplete_inventory", "invalid_response",
              "unsupported_geometry"}
     return {
-        "state": state if state in known else "unavailable",
+        "state": state if isinstance(state, str) and state in known else "unavailable",
         "checked": 0, "total": None,
         "recognized_actions": 0, "unknown_actions": 0,
         "anonymous_types": [], "waylines": [],
