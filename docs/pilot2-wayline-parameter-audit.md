@@ -310,3 +310,26 @@ beweisen keine WPML-1.0.6-Semantik und erlauben ausdrücklich keine
 Missionsexport-, Upload- oder Flugfreigabe.
 
 Ohne --field-aliases bleibt das vorherige Ergebnisformat erhalten.
+
+### Feldhäufigkeit je Aktionsinstanz
+
+Die Feld-Alias-Diagnose zeigt jetzt zusätzlich pro Pxx-Feldkennung:
+
+- actions_with_field: Anzahl der Aktionsinstanzen, in denen Pxx mindestens
+  einmal vorkommt.
+- multiplicity_per_action: Häufigkeitsverteilung je Aktionsinstanz,
+  beispielsweise {"1": 187, "2": 182}. Die Schlüssel sind ausschließlich
+  die Anzahl der gleichen XML-Feldelemente in genau einer Aktionsinstanz;
+  keinerlei Werte oder Originalfeldnamen werden ausgegeben.
+
+Hintergrund: In einer echten Pilot-2-Ausgabe kamen 551 P03-Feldinstanzen
+auf 369 A02-Aktionen. Aus der Gesamtzahl alleine ließ sich noch nicht
+ablesen, ob P03 mehrfach in einzelnen XML-Parametercontainern vorkommt
+oder nur manche Aktionen das Feld enthalten. Die neue Verteilung löst
+genau diese Mehrdeutigkeit, ohne Werte zu lesen oder zu veröffentlichen.
+
+Die Ausgabe bleibt eine rein strukturelle Metadatenanalyse.
+Insbesondere gilt weder ein mehrfaches Feld noch die Kopplung an
+betweenAdjacentPoints als Bestätigung einer ausführbaren oder
+übertragbaren DJI-Funktion. Nur GET-Zugriffe; kein O4, kein Upload,
+keine Flugsteuerung.
