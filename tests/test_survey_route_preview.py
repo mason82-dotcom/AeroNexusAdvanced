@@ -155,7 +155,8 @@ def test_studio_route_controls_are_opt_in_and_keeps_osm_default():
         assert f'id="{component}"' in page
     assert 'id="survey-route-enabled" type="checkbox"' in page
     assert 'function updateSurveyRouteMode()' in page
-    assert 'if($("survey-route-enabled").checked)payload.route=' in page
+    assert 'if($("survey-route-enabled").checked){' in page
+    assert 'payload.route={' in page
     assert 'data.route_preview.connectors.forEach' in page
     assert 'mapTile=mapTiles.street.addTo(map);' in page
     assert 'mapTile=mapTiles.satellite.addTo(map);' not in page
