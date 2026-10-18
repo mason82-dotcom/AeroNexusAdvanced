@@ -214,6 +214,57 @@ MQTT-State-Nachricht am Broker unabhängig von deren Akzeptanz im Decoder.
 Das Tool muss nur bei am Boden stehendem Fluggerät verwendet werden; keine
 Flugeinstellungen zur künstlichen State-Erzeugung verändern.
 
+## Reale topic-seitige Messung und unabhängige Decoderabnahme
+
+Der temporäre MQTT-Observer wurde vom Betreiber erfolgreich am produktiven
+Broker ausgeführt, ohne Änderungen am laufenden Dienst:
+
+| Beobachtung | Ergebnis |
+|---|---:|
+| Subscriber-SUBACK für OSD und State | erfolgreich |
+| Beobachtungsfenster | 120 s |
+| OSD-Nachrichten im Fenster | **120** |
+| State-Nachrichten im Fenster | **20** |
+| Verbindungsunterbrechung | **nein** |
+
+Damit ist die tatsächliche **Zustellung von State-MQTT-Nachrichten** auch
+während des Beobachtungsfensters nachgewiesen. Diese Zahl sagt noch nichts
+darüber aus, wie viele Nachrichten die produktive Decoder-Instanz
+akzeptiert hat. Deren getrennte `live_feed.channels`-Zähler sind derzeit
+nicht deployed. Der produktive Dienst lief zum Zeitpunkt der Probe seit
+`2026-10-18 23:47:43 CEST` (MainPID 1131721); ob es ein tatsächlicher
+Prozessneustart zwischen den früheren API-Snapshots war, ist noch nicht
+lückenlos nachgewiesen.
+
+### Decodergegenprobe ohne Deployment und ohne Rohdatenexport
+
+Neu: `scripts/pi/dji_state_decoder_observer.py`. Diese Probe eröffnet
+einen zweiten, temporären und **nur lesenden** MQTT-Subscriber und führt
+die bereits lokal installierte kanonische `CloudOsdIngest`-Dekodierung in
+einem **isolierten RAM-Inventar** aus. Der Listener verarbeitet MQTT-Payloads
+nur im Speicher; er speichert und druckt **keine** Rohdaten, IDs, Positionen,
+Eigenschaftswerte oder Token. Die Terminalausgabe enthält nur aggregierte
+OSD-/State-Zähler für `accepted`, `ignored`, `rejected`, `outdated`,
+übermittelte Nachrichten und akzeptierte Geräteklassen.
+
+```bash
+cd ~/Projekte/AeroNexusAdvanced
+set -o pipefail
+git fetch origin pull/68/head
+git show FETCH_HEAD:scripts/pi/dji_state_decoder_observer.py \
+  | PYTHONPATH=src .venv/bin/python - --env-file .env --seconds 120
+```
+
+Der Test verändert weder die produktive `.env` noch EMQX noch den Dienst.
+**Wichtig:** Er führt den Decoder aus dem lokalen `src`-Checkout aus,
+nicht automatisch den Code von PR #68. Die Beobachtung beschreibt deshalb
+die **isolierte lokale Decoder-Reproduktion**, nicht die tatsächlichen
+Paketentscheidungen des parallelen produktiven Prozesses. Ein positiver
+State-Empfang bei `state_accepted=0` würde auf unbekannte Geräte,
+nicht unterstützte State-Properties, Quellzeit-Reihenfolge oder
+Validierungsfehler hinweisen. Keine DJI-Einstellungen verändern, um
+ein Ereignis künstlich zu erzeugen.
+
 ## Verbindliche Hardwareabnahme (noch offen)
 
 1. **RC Plus 2 allein eingeschaltet:** tatsächlicher RC-OSD-Eingang,
