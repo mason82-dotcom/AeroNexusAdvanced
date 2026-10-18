@@ -283,7 +283,7 @@ die Installation des oben beschriebenen Korrekturstands.
 
 ## Bestätigter Pi-Stand und Grenzen
 
-Der [Checkpoint vom 17.10.2026](../project-checkpoint-2026-10-17.md) hält die
+Der [Checkpoint vom 17.10.2026](project-checkpoint-2026-10-17.md) hält die
 frühere Phase-21-Abnahme fest: 6.095 DJI-Medien, Katalog-API und JPEG-Vorschau
 funktionieren auf dem Pi. Diese Abnahme gilt nicht automatisch für diesen
 Konsolidierungsbranch. Kein neues Pi-Deployment oder Dienstneustart erfolgt.
