@@ -79,6 +79,15 @@ python -m pip check
 python -m pytest -q
 ```
 
+## Repository maintenance
+
+For the current GitHub branch inventory, safe pruning of fully integrated
+remote branches, and important production-state protections, see
+[Repository maintenance](docs/REPOSITORY_MAINTENANCE.md).
+The pruning script reports candidates by default and only deletes eligible
+remote branches after explicit interactive confirmation. It does not touch
+DJI/MinIO data or the running Pi service.
+
 ## Tokenfreier HTTPS-LAN-Betrieb (Phase 14)
 
 In `/status` und `/studio` gibt es **keine Token-Eingabefelder** mehr.
