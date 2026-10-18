@@ -108,7 +108,15 @@ def _render(template: str, code: str, args: Mapping, *, dock: bool) -> str:
     def variable(match):
         marker = match.group()
         if marker == "%alarmid":
-            return code
+            # DJI specifies args.alarm_id, which is distinct from the HMS
+            # code used to select the message. Never invent a missing ID.
+            alarm_id = args.get("alarm_id", args.get("alarmid"))
+            if type(alarm_id) is int and 0 <= alarm_id <= 0xFFFFFFFF:
+                return f"0x{alarm_id:08X}"
+            if isinstance(alarm_id, str) and re.fullmatch(
+                    r"(?:0[xX])?[0-9a-fA-F]{1,8}", alarm_id.strip()):
+                return f"0x{int(alarm_id.strip(), 16):08X}"
+            return "?"
         if marker in ("%index", "%sensor_index"):
             return str(sensor + 1) if sensor is not None else "?"
         if marker == "%component_index":
@@ -151,7 +159,9 @@ def _kind_for_message(item: Mapping, kind: str) -> str:
     if isinstance(device_type, str):
         match = re.fullmatch(r"([0-3])-[0-9]{1,4}-[0-9]{1,4}", device_type)
         if match:
-            return {"0": "aircraft", "1": "aircraft",
+            # DJI DeviceDomainEnum: 0=drone, 1=payload, 2=RC, 3=dock.
+            # Payload/RC are not silently translated as aircraft alarms.
+            return {"0": "aircraft", "1": "payload",
                     "2": "controller", "3": "dock"}[match.group(1)]
     return kind
 
@@ -197,17 +207,17 @@ def resolve_hms(item: Mapping, *, kind: str = "aircraft",
     entries = catalog()
     found = next(((key, entries[key.lower()]) for key in keys if key.lower() in entries), None)
     message = _clean(item.get("message"))
-    source = "upstream" if message else "unknown"
+    message_source = "upstream" if message else "unknown"
     if found:
         key, translated = found
         text = translated.get("de") or translated.get("en")
         if text:
             message = _render(text, code, args, dock=explicit_dock)
-            source = "dji-hms-catalog-de" if translated.get("de") else "dji-hms-catalog-en"
+            message_source = "dji-hms-catalog-de" if translated.get("de") else "dji-hms-catalog-en"
     return {
         "code": code, "level": severity(item.get("level")),
         "module": _module(item.get("module")), "message": message,
-        "message_source": source,
+        "message_source": message_source,
         "imminent": imminent, "in_the_sky": in_sky,
         "device_type": device_type,
         "device_domain": resolved_kind,
