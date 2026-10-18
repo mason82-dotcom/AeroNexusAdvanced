@@ -367,7 +367,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button id="wayline-preview-fit" hidden type="button" class="map-primary">Route zentrieren</button>
 <button id="cloud-overview-map-open" hidden type="button" class="map-primary" aria-pressed="false">Alle Cloud-Routen</button>
 <div id="map-tools-details" class="map-extra" style="display:contents">
-<select id="map-layer" class="map-extra" aria-label="Kartenstil"><option value="satellite" selected>Satellit (Esri)</option><option value="street">Straßenkarte (OSM)</option></select>
+<select id="map-layer" class="map-extra" aria-label="Kartenstil"><option value="street" selected>Straßenkarte (OSM)</option><option value="satellite">Satellit (Esri)</option></select>
 <button id="pilot2-map-toggle" class="map-extra" aria-pressed="false" title="Read-only Pilot-2-Kartenobjekte anzeigen">Pilot-2-Layer einblenden</button>
 <button id="wayline-preview-clear" hidden class="map-extra">Cloud-Vorschau schließen</button>
 <button id="map-zoom-in" class="map-extra">+</button><button id="map-zoom-out" class="map-extra">−</button>
@@ -383,7 +383,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
   <div id="cloud-overview-list" aria-label="Routen ein- oder ausblenden"></div>
   <p class="note cloud-overview-help">Linienlänge = horizontale WGS84-Segmentstrecke, keine Flugdistanz. Weiße Kreise: Linienanfang, farbige Kreise: Linienende. Keine Flugfreigabe oder Missionsänderung.</p>
 </section>
-<div class="map-info" id="map-info" role="status" aria-live="polite" data-minimized="false"><button id="map-info-chip" type="button" aria-expanded="false" aria-controls="map-info-detail">Karte · Hinweis anzeigen</button><span id="map-info-detail">Startpunkt: 76694 Forst (Baden). Satellitenkarte: © Esri und Datenanbieter; Straßenkarte: © OpenStreetMap-Mitwirkende. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</span></div>
+<div class="map-info" id="map-info" role="status" aria-live="polite" data-minimized="false"><button id="map-info-chip" type="button" aria-expanded="false" aria-controls="map-info-detail">Karte · Hinweis anzeigen</button><span id="map-info-detail">Startpunkt: 76694 Forst (Baden). Standard: Straßenkarte © OpenStreetMap-Mitwirkende; optional Satellitenkarte © Esri und Datenanbieter. Kartenkacheln extern, Missionen bleiben lokal auf dem Pi.</span></div>
 </section>
 <section class="pane" id="terrain-pane">
 <div class="terrain-stage">
@@ -712,10 +712,10 @@ function getMap(){
   mapTiles.satellite=L.tileLayer(SATELLITE_TILE_URL,{
     maxZoom:19,maxNativeZoom:19,attribution:"Tiles &copy; Esri and data providers"
   });
-  // OSM may return a 403 warning *as an image* with HTTP 200. Start with
-  // satellite imagery so a rejected OSM tile does not obstruct planning.
-  mapTile=mapTiles.satellite.addTo(map);
-  $("map-layer").value="satellite";
+  // Street maps are the global startup default; Esri imagery remains an
+  // optional basemap and a fallback for rejected/missing OSM tiles.
+  mapTile=mapTiles.street.addTo(map);
+  $("map-layer").value="street";
   mapTiles.street.on("tileerror",()=>{
     if(mapTile!==mapTiles.street)return;
     streetTileErrors++;
@@ -1177,9 +1177,11 @@ function csvShowMap(){
     return;
   }
   csvMap=L.map("csv-map").setView([HOME_VIEW.latitude,HOME_VIEW.longitude],15);
-  L.tileLayer(SATELLITE_TILE_URL,{maxZoom:19,maxNativeZoom:19,
-    attribution:"Tiles &copy; Esri and data providers"}).on("tileerror",()=>{
-      $("csv-map-message").textContent="Kartenbilder nicht verfügbar. Wegpunkte und Tabelle bleiben prüfbar.";
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
+    maxZoom:19,maxNativeZoom:19,referrerPolicy:"strict-origin-when-cross-origin",
+    attribution:"&copy; OpenStreetMap-Mitwirkende"
+  }).on("tileerror",()=>{
+      $("csv-map-message").textContent="Straßenkarten-Kacheln nicht verfügbar. Wegpunkte und Tabelle bleiben prüfbar.";
     }).addTo(csvMap);
   const points=csvPreview.waypoints.map(p=>[p.latitude,p.longitude]);
   L.polyline(points,{color:"#48a8f5",weight:3}).addTo(csvMap);
