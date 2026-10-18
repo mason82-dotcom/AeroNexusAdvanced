@@ -13,6 +13,7 @@ from .local_waylines import LocalWaylineError, credentials_path, load_credential
 from .pilot2_wayline_action_vocabulary import diagnose_action_vocabulary
 from .pilot2_action_catalog import (
     PILOT2_OBSERVED_ACTIONS, DOCUMENTED_ACTION_LABELS,
+    OFFLINE_WPML_EXPORT_ACTIONS,
 )
 
 
@@ -155,7 +156,8 @@ def summarize_action_report(report):
         documented_types = [
             {"name": name, "label": label,
              "occurrences": raw_documented.get(name, 0),
-             "status": "documented", "export_supported": name == "takePhoto"}
+             "status": "documented",
+             "export_supported": name in OFFLINE_WPML_EXPORT_ACTIONS}
             for name, label in DOCUMENTED_ACTION_LABELS.items()
         ]
     if (unknown_sum != total_unknown_files
