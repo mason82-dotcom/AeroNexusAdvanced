@@ -123,6 +123,10 @@ assert.equal(api.cockpitHistory.get(api.cockpitKey(first)).battery.length,1);
 api.renderCockpit([{...first,age_seconds:3}]);
 assert.equal(api.cockpitHistory.get(api.cockpitKey(first)).battery.length,1,
   "repeated source timestamp must not append artificial trend points");
+api.renderCockpit([{...first,age_seconds:25,online:true,freshness:"fresh"}]);
+assert.equal(el("cockpit-battery").textContent,"–",
+  "backend freshness at 25 seconds cannot be called cockpit-live");
+assert.notEqual(el("cockpit-live").dataset.state,"live");
 const stale={...first,freshness:"stale",online:null,
   telemetry:{...first.telemetry,battery_percent:86}};
 api.renderCockpit([stale]);
