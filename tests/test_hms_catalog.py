@@ -235,3 +235,12 @@ def test_official_gateway_alarm_contains_device_origin_metadata(catalog):
     assert result["source"] == "dji-cloud-hms"
     assert result["device_domain"] == "aircraft"
     assert result["message_source"] == "dji-hms-catalog-de"
+
+
+
+def test_flighthub_catalog_lookup_does_not_claim_gateway_origin(catalog):
+    decoded = resolve_hms(
+        {"code": "0x16100084", "level": "warning"},
+        kind="aircraft", source="flighthub")
+    assert decoded["source"] == "flighthub"
+    assert decoded["message"] == "Camera module error"

@@ -46,7 +46,7 @@ def _alert(item) -> dict | None:
     # Preserve already supplied FlightHub text and the legacy API shape;
     # only add catalog metadata when FlightHub left a code undescribed.
     if not native["message"]:
-        decoded = resolve_hms(native, kind="aircraft")
+        decoded = resolve_hms(native, kind="aircraft", source="flighthub")
         if decoded and decoded["message"]:
             return decoded
     return {

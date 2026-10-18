@@ -164,7 +164,8 @@ def _module(value) -> str | None:
     return None
 
 
-def resolve_hms(item: Mapping, *, kind: str = "aircraft") -> dict | None:
+def resolve_hms(item: Mapping, *, kind: str = "aircraft",
+                source: str = "dji-cloud-hms") -> dict | None:
     """Normalize one FlightHub or Cloud API alarm with no guessed code descriptions."""
     if not isinstance(item, Mapping):
         return None
@@ -210,7 +211,7 @@ def resolve_hms(item: Mapping, *, kind: str = "aircraft") -> dict | None:
         "imminent": imminent, "in_the_sky": in_sky,
         "device_type": device_type,
         "device_domain": resolved_kind,
-        "source": "dji-cloud-hms",
+        "source": source,
     }
 
 
