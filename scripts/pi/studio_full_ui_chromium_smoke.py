@@ -30,6 +30,13 @@ PRELUDE = r"""<script>
 "use strict";
 window.__uiErrors=[];
 window.__uiCalls=[];
+window.__uiBoundClicks=new Set();
+const originalAddEventListener=Element.prototype.addEventListener;
+Element.prototype.addEventListener=function(type,listener,options){
+  if(type==='click'&&this.tagName==='BUTTON'&&this.id)
+    window.__uiBoundClicks.add(this.id);
+  return originalAddEventListener.call(this,type,listener,options);
+};
 window.addEventListener('error',event=>window.__uiErrors.push(String(event.message)));
 window.addEventListener('unhandledrejection',event=>
   window.__uiErrors.push(String(event.reason?.message||event.reason)));
@@ -105,6 +112,11 @@ async function uiRun(){
   uiCheck(window.__uiErrors.length===0,'startup script errors: '+window.__uiErrors.join(';'));
   uiCheck(document.querySelectorAll('nav button[data-tab]').length===6,
     'missing one of six primary tabs');
+  const staticButtons=[...document.querySelectorAll('button[id]')];
+  uiCheck(staticButtons.length>=60,'unexpectedly missing Studio buttons');
+  const unwired=staticButtons.filter(button=>!window.__uiBoundClicks.has(button.id)
+    &&typeof button.onclick!=='function').map(button=>button.id);
+  uiCheck(unwired.length===0,'buttons without click handlers: '+unwired.join(','));
   uiCheck(document.getElementById('auth-message').textContent.includes('aktiv'),
     'synthetic workspace did not load');
   uiCheck(document.getElementById('gallery').textContent.includes('Synthetischer Testclip'),
