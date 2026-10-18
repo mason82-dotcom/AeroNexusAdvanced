@@ -356,7 +356,10 @@ function renderDeviceCards(devices) {
         if(alert.code)cardEl(entry,"code","hms-code","Code: "+alert.code);
         cardEl(entry,"div","hms-description",
           alert.message&&alert.message!==alert.code?alert.message:
-          "DJI hat für diesen HMS-Code keinen Beschreibungstext übermittelt.");
+          "Unbekannter HMS-Code – Beschreibung im DJI-Katalog nicht verfügbar.");
+        if(alert.module)cardEl(entry,"div","hms-secondary","Bereich: "+alert.module);
+        if(alert.message_source==="dji-hms-catalog-en")
+          cardEl(entry,"div","hms-secondary","DJI-Katalogtext auf Englisch (DE nicht verfügbar)");
       }
       if(alerts.length>5)cardEl(section,"div","hms-secondary",
         "Weitere "+(alerts.length-5)+" Meldung(en) in der technischen Tabelle.");
