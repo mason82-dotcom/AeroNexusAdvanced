@@ -37,6 +37,48 @@ def snapshot(ingest):
             ("accepted", "rejected", "ignored", "outdated")}
 
 
+# Fixed, non-sensitive labels. Never log original key names, topics or payload.
+REASONS = ("outdated", "state_before_osd", "unmapped_properties",
+           "invalid_envelope", "future_source_timestamp", "kind_conflict",
+           "invalid_field", "other")
+
+
+def categorize(known_kind, channel, payload, verdict, outdated, now_ms):
+    """Independently classify one decoder outcome without exposing DJI values.
+
+    Called only *after* the canonical decoder has made its decision.
+    A category is diagnostic, not an additional decoder acceptance rule.
+    """
+    if verdict == "accepted":
+        return None
+    if verdict == "ignored" and outdated:
+        return "outdated"
+    if verdict == "ignored" and channel == "state" and known_kind is None:
+        return "state_before_osd"
+
+    from aeronexus.cloud_api_osd import classify, normalize_osd, osd_envelope
+
+    try:
+        data, timestamp = osd_envelope(payload)
+    except ValueError:
+        return "invalid_envelope" if verdict == "rejected" else "other"
+    if verdict == "rejected" and timestamp is not None and timestamp > now_ms + 30000:
+        return "future_source_timestamp"
+    classified = classify(data)
+    if known_kind is not None and classified is not None and classified != known_kind:
+        return "kind_conflict" if verdict == "rejected" else "other"
+    kind = known_kind if known_kind is not None else classified
+    if kind is None:
+        return "other"
+    try:
+        fields = normalize_osd(kind, data)
+    except ValueError:
+        return "invalid_field" if verdict == "rejected" else "other"
+    if verdict == "ignored" and not fields:
+        return "unmapped_properties"
+    return "other"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
@@ -96,6 +138,10 @@ def main(argv=None):
                     outcomes[channel, "rejected_oversize"] += 1
                     return
 
+                from datetime import datetime, timezone
+                known = ingest.runtime.inventory._devices.get(
+                    (ProviderKind.CLOUD_API, settings.project_id, serial))
+                known_kind = known.kind if known is not None else None
                 before = snapshot(ingest)
                 # The production decoder is reused unmodified, but runs only
                 # against an isolated in-memory inventory in this observer.
@@ -103,8 +149,18 @@ def main(argv=None):
                 after = snapshot(ingest)
                 result = outcome(before, after)
                 outcomes[channel, result] += 1
-                if after["outdated"] > before["outdated"]:
+                is_outdated = after["outdated"] > before["outdated"]
+                if is_outdated:
                     outcomes[channel, "outdated"] += 1
+                if result in ("ignored", "rejected"):
+                    try:
+                        reason = categorize(
+                            known_kind, channel, msg.payload, result, is_outdated,
+                            int(datetime.now(timezone.utc).timestamp() * 1000),
+                        )
+                    except (TypeError, ValueError):
+                        reason = "other"
+                    outcomes[channel, "reason_" + reason] += 1
                 if channel == "state" and result == "accepted":
                     device = ingest.runtime.inventory._devices.get(
                         (ProviderKind.CLOUD_API, settings.project_id, serial))
@@ -154,6 +210,9 @@ def main(argv=None):
             for metric in ("accepted", "ignored", "rejected", "rejected_oversize",
                            "outdated", "unclassified"):
                 print(f"{channel}_{metric}:", outcomes[channel, metric])
+        print("=== DJI state decoder outcome reasons (privacy-safe) ===")
+        for name in REASONS:
+            print(f"state_reason_{name}:", outcomes["state", "reason_" + name])
         print("state_accepted_aircraft:", recognized["aircraft"])
         print("state_accepted_controller:", recognized["controller"])
         state_clocks = {
