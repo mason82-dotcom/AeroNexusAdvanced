@@ -1644,6 +1644,14 @@ async function loadPilot2ActionSummary(){
       " dokumentierte Aktionsvorkommen · "+clean(identifiedCount)+
       " bekannte Pilot-2-Bezeichner (nur lesend) · "+clean(unresolvedCount)+
       " unbekannte Vorkommen. WPML-Semantik und Flugkompatibilität nicht bestätigt.";
+    if(Array.isArray(data.documented_types)&&data.documented_types.length){
+      const docCard=els("article","wayline-card");
+      cardText(docCard,"h2","","DJI WPML: dokumentierte Aktionstypen");
+      for(const entry of data.documented_types.slice(0,14)){
+        cardText(docCard,"p","muted",clean(entry.label)+" ("+clean(entry.name)+"): "+clean(entry.occurrences));
+      }
+      list.appendChild(docCard);
+    }
     for(const entry of identified){
       const card=els("article","wayline-card");
       cardText(card,"h2","",clean(entry.label)+" · "+clean(entry.name));

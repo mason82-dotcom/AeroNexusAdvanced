@@ -293,3 +293,20 @@ def test_summary_rejects_invalid_observed_dji_mapping(mutation):
     report["unresolved_action_total"] = 3
     mutation(report)
     assert summarize_action_report(report)["state"] == "invalid_response"
+
+
+
+def test_documented_catalog_counts_are_allowlisted_and_complete():
+    report = fixture_report()
+    report["documented_type_counts"] = {"takePhoto": 7, "startRecord": 2}
+    clean = summarize_action_report(report)
+    assert clean["state"] == "connected"
+    assert len(clean["documented_types"]) == 14
+    assert sum(x["occurrences"] for x in clean["documented_types"]) == 9
+    assert [x["name"] for x in clean["documented_types"] if x["export_supported"]] == ["takePhoto"]
+    for entry in clean["documented_types"]:
+        assert entry["status"] == "documented"
+    report["documented_type_counts"] = {"totallyPrivateAction": 9}
+    assert summarize_action_report(report)["state"] == "invalid_response"
+    report["documented_type_counts"] = {"takePhoto": 10}
+    assert summarize_action_report(report)["state"] == "invalid_response"

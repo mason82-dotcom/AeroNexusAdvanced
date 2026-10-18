@@ -266,6 +266,7 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
     # Static-name Pilot 2 catalogue and per-KMZ occurrence counts. These are
     # separate from the legacy anonymous/non-documented diagnostics.
     identified_counts = Counter()
+    documented_counts = Counter()
     identified_files = {}
     identified_aliases = {}
     totals = {}
@@ -290,6 +291,7 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
                  xml_span, xml_index_delta) in route:
                 if raw_name in DOCUMENTED_ACTION_TYPES:
                     recognized[raw_name] += 1
+                    documented_counts[raw_name] += 1
                     known_total += 1
                     continue
                 # None is not a secret; still use a neutral alias.
@@ -444,6 +446,7 @@ def _aggregate_action_records(archives, *, parameter_hints=False,
         for name, count in sorted(identified_counts.items())
     ]
     output = {"anonymous_types": safe_totals, "results": results,
+              "documented_type_counts": dict(sorted(documented_counts.items())),
               "identified_types": identified_types,
               "identified_action_total": sum(identified_counts.values()),
               "unresolved_action_total": (
@@ -514,6 +517,7 @@ async def diagnose_action_vocabulary(*, limit=8, parameter_hints=False,
         "checked": len(seen) + len(results),
         "anonymous_types": report["anonymous_types"],
         "identified_types": report["identified_types"],
+        "documented_type_counts": report["documented_type_counts"],
         "identified_action_total": report["identified_action_total"],
         "unresolved_action_total": report["unresolved_action_total"],
         "unknown_action_total": report["unknown_action_total"],

@@ -11,7 +11,9 @@ import httpx
 
 from .local_waylines import LocalWaylineError, credentials_path, load_credentials
 from .pilot2_wayline_action_vocabulary import diagnose_action_vocabulary
-from .pilot2_action_catalog import PILOT2_OBSERVED_ACTIONS
+from .pilot2_action_catalog import (
+    PILOT2_OBSERVED_ACTIONS, DOCUMENTED_ACTION_LABELS,
+)
 
 
 CACHE_SECONDS = 90
@@ -142,6 +144,20 @@ def summarize_action_report(report):
         safe_files.append({"index": idx, "route_count": routes,
                            "schema": version, "known_actions": known,
                            "unknown_actions": unknown})
+    documented_types = []
+    raw_documented = report.get("documented_type_counts")
+    if raw_documented is not None:
+        if (not isinstance(raw_documented, dict)
+                or any(not isinstance(k, str) or k not in DOCUMENTED_ACTION_LABELS
+                       or type(v) is not int or v < 0 for k, v in raw_documented.items())
+                or sum(raw_documented.values()) != known_sum):
+            return _empty("invalid_response")
+        documented_types = [
+            {"name": name, "label": label,
+             "occurrences": raw_documented.get(name, 0),
+             "status": "documented", "export_supported": name == "takePhoto"}
+            for name, label in DOCUMENTED_ACTION_LABELS.items()
+        ]
     if (unknown_sum != total_unknown_files
             or report.get("unknown_action_total") != unknown_sum
             or report.get("recognized_action_total") != known_sum):
@@ -158,6 +174,7 @@ def summarize_action_report(report):
         "identified_actions": identified_count,
         "unresolved_actions": unknown_sum - identified_count,
         "identified_types": identified,
+        "documented_types": documented_types,
         "anonymous_types": safe_types,
         "waylines": safe_files,
         "read_only": True,
@@ -178,7 +195,8 @@ def _empty(state):
         "checked": 0, "total": None,
         "recognized_actions": 0, "unknown_actions": 0,
         "identified_actions": 0, "unresolved_actions": 0,
-        "identified_types": [], "anonymous_types": [], "waylines": [],
+        "identified_types": [], "documented_types": [],
+        "anonymous_types": [], "waylines": [],
         "read_only": True, "wpml_semantics_verified": False,
         "flight_compatibility_verified": False,
         "full_content_verified": False,

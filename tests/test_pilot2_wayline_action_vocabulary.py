@@ -633,3 +633,19 @@ def test_mixed_observed_and_unrecognized_actions_stay_separate_and_private():
     assert report["unresolved_action_total"] == 1
     assert report["unknown_action_total"] == 2
     assert "genuinelyPrivateEnum" not in json.dumps(report)
+
+
+
+def test_documented_types_are_counted_without_marking_flight_compatibility():
+    report = av._aggregate_action_records([
+        (1, archive("takePhoto")),
+        (2, archive("startRecord", version="1.0.6")),
+        (3, archive("stopRecord", version="1.0.6")),
+    ])
+    assert report["documented_type_counts"] == {
+        "startRecord": 1, "stopRecord": 1, "takePhoto": 1,
+    }
+    assert report["recognized_action_total"] == 3
+    assert report["identified_action_total"] == 0
+    assert report["full_content_verified"] is False
+    assert report["flight_compatibility_verified"] is False

@@ -164,3 +164,14 @@ def test_studio_actions_do_not_enable_flight_or_write_controls():
     assert "export_supported" not in section or "Flugkompatibilität" in section
     assert 'method:"POST"' not in section
     assert "innerHTML" not in section
+
+
+
+def test_studio_renders_documented_catalog_without_raw_html():
+    page = render_studio()
+    block = page[page.index("async function loadPilot2ActionSummary()"):
+                 page.index("function waylineSourceState(")]
+    assert "documented_types" in block
+    assert "DJI WPML: dokumentierte Aktionstypen" in block
+    assert "cardText(docCard" in block
+    assert "innerHTML" not in block
