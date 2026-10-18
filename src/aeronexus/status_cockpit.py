@@ -404,6 +404,8 @@ function cockpitRenderSafety(dev){
     ["Windgeschwindigkeit · DJI-Schätzung","cloud_details.wind_speed_mps",v=>cockpitNumber(v,1,"m/s")],
     ["Windrichtung (Code)","cloud_details.wind_direction_code"],
     ["Flughöhenlimit","cloud_details.height_limit_m",v=>cockpitNumber(v,0,"m")],
+    ["Entfernungsgrenze (Statuscode)","cloud_details.distance_limit.state_code"],
+    ["Entfernungsgrenze","cloud_details.distance_limit.distance_limit_m",v=>cockpitNumber(v,0,"m")],
     ["Nahe Gebietsgrenze","cloud_details.near_area_limit",v=>v?"Ja":"Nein"],
     ["Nahe Höhenlimit","cloud_details.near_height_limit",v=>v?"Ja":"Nein"],
     ["Nachtbeleuchtung","cloud_details.night_lights_on",v=>v?"An":"Aus"],
