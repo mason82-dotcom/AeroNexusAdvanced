@@ -144,4 +144,507 @@ COCKPIT_HTML = r"""
 """
 
 COCKPIT_JS = r"""
+/* Protected status endpoint -> local-only UI. No DJI control actions. */
+let cockpitRows=[],cockpitChosen="",cockpitError=null;
+const cockpitHistory=new Map();
+const cockpitMaxSamples=60;
+function cockpitKey(d){return JSON.stringify([d.provider,d.project_id,d.device_id]);}
+function cockpitNumber(v,dec=0,unit=""){
+  return typeof v==="number"&&Number.isFinite(v)
+    ? v.toFixed(dec)+(unit?" "+unit:""):null;
+}
+function cockpitPath(obj,path){
+  return path.split(".").reduce((o,key)=>o!==null&&o!==undefined?o[key]:undefined,obj);
+}
+function cockpitClock(dev,path){
+  const clocks=dev.field_status||{};
+  if(Object.prototype.hasOwnProperty.call(clocks,path))return clocks[path];
+  const parts=path.split(".");
+  while(parts.length>1){
+    parts.pop();
+    const key=parts.join(".");
+    if(Object.prototype.hasOwnProperty.call(clocks,key))return clocks[key];
+  }
+  return null;
+}
+function cockpitIsLive(dev){
+  return dev&&dev.freshness==="fresh"&&dev.online===true;
+}
+function cockpitRead(dev,path){
+  if(!cockpitIsLive(dev))return null;
+  const clock=cockpitClock(dev,path);
+  if(clock&&clock.freshness!=="fresh")return null;
+  const raw=cockpitPath(dev.telemetry||{},path);
+  return raw===undefined?null:raw;
+}
+function cockpitStatusText(dev){
+  if(!dev)return "Kein Gerät ausgewählt";
+  if(cockpitError)return "API nicht erreichbar";
+  if(dev.freshness==="stale")return "Telemetrie veraltet";
+  if(dev.freshness==="clock_skew")return "Quellzeit unplausibel";
+  if(dev.freshness==="missing")return "Keine Telemetrie";
+  if(dev.freshness==="unknown_age")return "Zeit unbekannt";
+  if(dev.online===false)return "Gerät offline";
+  if(dev.online!==true)return "Online-Status unbekannt";
+  return "Live · Empfang bestätigt";
+}
+function cockpitSourceLabel(category){
+  return ({controller_a:"Fernsteuerung A",controller_b:"Fernsteuerung B",
+    browser:"Cloud-Browser",unassigned:"Nicht zugewiesen",other:"Andere/unklar"})[category]||null;
+}
+function cockpitMode(dev){
+  if(dev.kind==="aircraft"){
+    const raw=cockpitRead(dev,"flight_mode_code");
+    return raw===null?null:(flightModes[raw]||"DJI-Code "+raw);
+  }
+  const code=cockpitRead(dev,"cloud_details.drc_link_state_code");
+  return code===null?null:({0:"DRC getrennt",1:"DRC-Aufbau",2:"DRC verbunden"})[code]||"DRC-Code "+code;
+}
+function cockpitRtk(dev){
+  const raw=cockpitRead(dev,"rtk_state");
+  if(raw===null)return null;
+  return ({'is_fixed:fixing_successful':"RTK-Fix", 'is_fixed:not_started':"Nicht gestartet",
+    'is_fixed:fixing':"Fix läuft",'is_fixed:fixing_failed':"Fix fehlgeschlagen"})[raw]||"RTK-Code vorhanden";
+}
+function cockpitAge(dev){
+  return dev&&typeof dev.age_seconds==="number"&&Number.isFinite(dev.age_seconds)&&dev.age_seconds>=0
+    ? Math.floor(dev.age_seconds)+" s":null;
+}
+function cockpitSetGauge(id,value,note){
+  byId("cockpit-"+id).textContent=value===null||value===undefined?"–":String(value);
+  byId("cockpit-"+id+"-note").textContent=note;
+}
+function cockpitRawValue(value){
+  if(value===null||value===undefined)return null;
+  if(typeof value==="boolean")return value?"Ein":"Aus";
+  if(typeof value==="number")return Number.isFinite(value)?String(value):null;
+  if(typeof value==="string")return value;
+  return null;
+}
+function cockpitItem(parent,label,value,note){
+  if(value===null||value===undefined||value==="")return;
+  const el=cardEl(parent,"div","cockpit-item");
+  cardEl(el,"span","",label);
+  cardEl(el,"b","",value);
+  if(note)cardEl(el,"small","",note);
+}
+function cockpitRowsFor(id,rows,dev){
+  const parent=byId(id);
+  parent.replaceChildren();
+  let count=0;
+  for(const [label,path,formatter] of rows){
+    const raw=cockpitRead(dev,path);
+    if(raw===null||raw===undefined)continue;
+    const val=formatter?formatter(raw):cockpitRawValue(raw);
+    if(val===null||val===undefined)continue;
+    const clock=cockpitClock(dev,path);
+    cockpitItem(parent,label,val,clock?clock.channel.toUpperCase():"");
+    count++;
+  }
+  if(!count)cardEl(parent,"p","cockpit-empty","Keine aktuell übermittelten Werte für diesen Bereich.");
+  return count;
+}
+function cockpitRenderNavigation(dev){
+  const fmt1=v=>cockpitNumber(v,1,"m");
+  cockpitRowsFor("cockpit-navigation",[
+    ["Höhe (Startbezug)","elevation_m",fmt1],
+    ["Höhe (DJI absolut)","height_m",fmt1],
+    ["Vertikalgeschwindigkeit","vertical_speed_mps",v=>cockpitNumber(v,2,"m/s")],
+    ["Horizontalgeschwindigkeit","horizontal_speed_mps",v=>cockpitNumber(v,2,"m/s")],
+    ["Home-Distanz","home_distance_m",v=>cockpitNumber(v,0,"m")],
+    ["GPS-Satelliten","gps_satellites"],["RTK-Satelliten","rtk_satellites"],
+    ["RTK-State","rtk_state"],
+    ["Positionsqualität (DJI-Code)","cloud_details.position.quality_code"],
+    ["Kurs","cloud_details.heading_deg",v=>cockpitNumber(v,1,"°")],
+    ["Nickwinkel","cloud_details.pitch_deg",v=>cockpitNumber(v,1,"°")],
+    ["Rollwinkel","cloud_details.roll_deg",v=>cockpitNumber(v,1,"°")],
+    ["Home-Breitengrad","cloud_details.home_latitude",v=>cockpitNumber(v,6,"°")],
+    ["Home-Längengrad","cloud_details.home_longitude",v=>cockpitNumber(v,6,"°")],
+    ["Gesamtflugstrecke","cloud_details.total_flight_distance_m",v=>cockpitNumber(v,0,"m")],
+    ["Flugzeit gesamt","total_flight_time_s",v=>cockpitNumber(v/3600,1,"h")],
+    ["Flugstarts","total_flight_sorties"],
+    ["Flugmodus-Code","flight_mode_code"],
+  ],dev);
+  const lat=cockpitRead(dev,"latitude"),lon=cockpitRead(dev,"longitude");
+  const valid=cockpitValidGps(lat,lon);
+  byId("cockpit-coordinates").textContent=valid?
+    "GPS (WGS84): "+lat.toFixed(6)+"°, "+lon.toFixed(6)+"° · Quelle: "+
+      (dev.provider==="dji-cloud-api"?"DJI MQTT OSD":"Gerätestatus"):
+    "Keine bestätigten aktuellen Koordinaten. GPS 0/0 wird nicht als Position ausgegeben.";
+}
+function cockpitRenderEnergy(dev){
+  const n=v=>cockpitNumber(v,1);
+  cockpitRowsFor("cockpit-energy",[
+    ["Akkustand","battery_percent",v=>cockpitNumber(v,0,"%")],
+    ["Spannung (erster Akku)","battery_voltage_mv",v=>cockpitNumber(v/1000,2,"V")],
+    ["Temperatur (erster Akku)","battery_temperature_c",v=>cockpitNumber(v,1,"°C")],
+    ["Restflugzeit","cloud_details.battery.remaining_flight_time_s",v=>cockpitNumber(v/60,1,"min")],
+    ["RTH-Reserve","cloud_details.battery.return_home_battery_percent",v=>cockpitNumber(v,0,"%")],
+    ["Landereserve","cloud_details.battery.landing_battery_percent",v=>cockpitNumber(v,0,"%")],
+    ["Warnschwelle","cloud_details.low_battery_warning_percent",v=>cockpitNumber(v,0,"%")],
+    ["Kritische Schwelle","cloud_details.critical_battery_warning_percent",v=>cockpitNumber(v,0,"%")],
+  ],dev);
+  const list=cockpitRead(dev,"cloud_details.battery_packs");
+  if(Array.isArray(list)){
+    const root=byId("cockpit-energy");
+    list.slice(0,8).forEach((pack,index)=>{
+      const at=pack.index===null||pack.index===undefined?index:pack.index;
+      cockpitItem(root,"Akku "+at+" · Kapazität",cockpitNumber(pack.capacity_percent,0,"%"));
+      cockpitItem(root,"Akku "+at+" · Spannung",cockpitNumber(pack.voltage_mv/1000,2,"V"));
+      cockpitItem(root,"Akku "+at+" · Temperatur",cockpitNumber(pack.temperature_c,1,"°C"));
+      cockpitItem(root,"Akku "+at+" · Zyklen",cockpitRawValue(pack.cycle_count));
+      cockpitItem(root,"Akku "+at+" · Firmware",cockpitRawValue(pack.firmware_version));
+    });
+  }
+}
+function cockpitRenderRadio(dev){
+  const q=v=>cockpitNumber(v,0,"/ 5");
+  cockpitRowsFor("cockpit-radio",[
+    ["RC-Höhe (DJI)","cloud_details.controller_height_m",v=>cockpitNumber(v,1,"m")],
+    ["Steuerquelle","cloud_details.control_source_category",cockpitSourceLabel],
+    ["DRC-Verbindungs-Code","cloud_details.drc_link_state_code"],
+    ["Cloud-Berechtigungen · Anzahl","cloud_details.cloud_control_authorization_count"],
+    ["SDR-Verbindung","cloud_details.wireless_link.sdr_link_state_code"],
+    ["4G-Verbindung","cloud_details.wireless_link.cellular_link_state_code"],
+    ["Link-Betriebsart","cloud_details.wireless_link.link_workmode_code"],
+    ["SDR-Qualität","cloud_details.wireless_link.sdr_quality",q],
+    ["4G-Qualität","cloud_details.wireless_link.cellular_quality",q],
+    ["4G · Drohne","cloud_details.wireless_link.cellular_aircraft_quality",q],
+    ["4G · Boden","cloud_details.wireless_link.cellular_ground_quality",q],
+    ["SDR-Frequenz","cloud_details.wireless_link.sdr_frequency_ghz",v=>cockpitNumber(v,2,"GHz")],
+    ["4G-Frequenz","cloud_details.wireless_link.cellular_frequency_ghz",v=>cockpitNumber(v,2,"GHz")],
+    ["Mobilfunk-Dongles","cloud_details.wireless_link.dongle_count"],
+    ["Livestream-Kapazität","cloud_details.live_capacity.available_videos"],
+    ["Max. parallele Streams","cloud_details.live_capacity.simultaneous_videos"],
+  ],dev);
+  const lives=cockpitRead(dev,"cloud_details.live_status");
+  if(Array.isArray(lives)){
+    const root=byId("cockpit-radio");
+    lives.slice(0,16).forEach((row,i)=>{
+      cockpitItem(root,"Stream "+(i+1)+" · Status",cockpitRawValue(row.status_code));
+      cockpitItem(root,"Stream "+(i+1)+" · Fehlercode",cockpitRawValue(row.error_code));
+      cockpitItem(root,"Stream "+(i+1)+" · Typ",cockpitRawValue(row.video_type));
+    });
+  }
+}
+function cockpitRenderCameras(dev){
+  const root=byId("cockpit-camera");root.replaceChildren();
+  const cams=cockpitRead(dev,"cloud_details.cameras");
+  if(!Array.isArray(cams)||!cams.length){
+    cardEl(root,"p","cockpit-empty","Keine aktuellen Kamerazustände übertragen.");
+    return;
+  }
+  cams.slice(0,16).forEach((cam,index)=>{
+    const title=cam.payload_index||"Kamera "+(index+1);
+    cockpitItem(root,"Kamera / Nutzlast",title);
+    for(const [key,label,fmt] of [
+      ["camera_mode_code","Modus"],["photo_state_code","Fotostatus"],
+      ["recording_state_code","Aufnahmestatus"],["record_time_s","Aufnahmezeit",v=>cockpitNumber(v,0,"s")],
+      ["remaining_photos","Verbleibende Fotos"],["remaining_record_time_s","Verbleibende Videozeit",v=>cockpitNumber(v,0,"s")],
+      ["zoom_factor","Zoom",v=>cockpitNumber(v,1,"×")],
+      ["ir_zoom_factor","IR-Zoom",v=>cockpitNumber(v,1,"×")],
+      ["gimbal_pitch_deg","Gimbal Pitch",v=>cockpitNumber(v,1,"°")],
+      ["gimbal_yaw_deg","Gimbal Yaw",v=>cockpitNumber(v,1,"°")],
+      ["ir_metering_mode_code","IR-Messmodus"],
+      ["wide_iso_code","Weitwinkel ISO-Code"],["zoom_iso_code","Tele ISO-Code"],
+      ["wide_focus_mode_code","Weitwinkel Fokuscode"],["zoom_focus_mode_code","Tele Fokuscode"]
+    ]){
+      if(cam[key]!==null&&cam[key]!==undefined)
+        cockpitItem(root,title+" · "+label,fmt?fmt(cam[key]):cockpitRawValue(cam[key]));
+    }
+    if(cam.ir_metering_point&&typeof cam.ir_metering_point.temperature_c==="number")
+      cockpitItem(root,title+" · IR Punkt",cockpitNumber(cam.ir_metering_point.temperature_c,1,"°C"));
+    const ir=cam.ir_metering_area;
+    if(ir){
+      cockpitItem(root,title+" · IR Mittel",cockpitNumber(ir.mean_temperature_c,1,"°C"));
+      for(const [key,label] of [["min_temperature_point","Min"],["max_temperature_point","Max"]]){
+        if(ir[key])cockpitItem(root,title+" · IR "+label,cockpitNumber(ir[key].temperature_c,1,"°C"));
+      }
+    }
+  });
+}
+function cockpitRenderPayload(dev){
+  const root=byId("cockpit-payload");root.replaceChildren();let count=0;
+  const payloads=cockpitRead(dev,"cloud_details.payloads");
+  if(payloads&&typeof payloads==="object"&&!Array.isArray(payloads)){
+    Object.entries(payloads).slice(0,16).forEach(([index,p])=>{
+      for(const [key,label,unit] of [
+        ["gimbal_pitch_deg","Pitch","°"],["gimbal_roll_deg","Roll","°"],
+        ["gimbal_yaw_deg","Yaw","°"],["zoom_factor","Zoom","×"]
+      ]){
+        const value=cockpitNumber(p&&p[key],1,unit);
+        if(value!==null){cockpitItem(root,index+" · "+label,value);count++;}
+      }
+    });
+  }
+  const controls=cockpitRead(dev,"cloud_details.payload_control");
+  if(Array.isArray(controls)){
+    controls.slice(0,16).forEach((p,i)=>{
+      const index=p.payload_index||"Nutzlast "+(i+1);
+      const source=cockpitSourceLabel(p.control_source_category);
+      if(source){cockpitItem(root,index+" · Steuerquelle",source);count++;}
+      if(p.firmware_version){cockpitItem(root,index+" · Firmware",p.firmware_version);count++;}
+    });
+  }
+  if(!count)cardEl(root,"p","cockpit-empty","Keine aktuellen Gimbal- oder Nutzlastwerte übertragen.");
+}
+function cockpitRenderSafety(dev){
+  cockpitRowsFor("cockpit-safety",[
+    ["Windgeschwindigkeit · DJI-Schätzung","cloud_details.wind_speed_mps",v=>cockpitNumber(v,1,"m/s")],
+    ["Windrichtung (Code)","cloud_details.wind_direction_code"],
+    ["Flughöhenlimit","cloud_details.height_limit_m",v=>cockpitNumber(v,0,"m")],
+    ["Nahe Gebietsgrenze","cloud_details.near_area_limit",v=>v?"Ja":"Nein"],
+    ["Nahe Höhenlimit","cloud_details.near_height_limit",v=>v?"Ja":"Nein"],
+    ["Nachtbeleuchtung","cloud_details.night_lights_on",v=>v?"An":"Aus"],
+    ["Hindernisse horizontal","cloud_details.obstacle_avoidance.horizon_enabled",v=>v?"Aktiv":"Inaktiv"],
+    ["Hindernisse oben","cloud_details.obstacle_avoidance.upside_enabled",v=>v?"Aktiv":"Inaktiv"],
+    ["Hindernisse unten","cloud_details.obstacle_avoidance.downside_enabled",v=>v?"Aktiv":"Inaktiv"],
+    ["RTH-Modus (Code)","cloud_details.rth_mode_code"],
+    ["Aktiver RTH-Modus","cloud_details.current_rth_mode_code"],
+    ["Flugmodusgrund (Code)","cloud_details.flight_mode_reason_code"],
+    ["Gang / Geschwindigkeitsstufe","cloud_details.gear_code"],
+    ["Firmwarestatus (Code)","cloud_details.firmware_upgrade_status_code"],
+    ["Kompatibilitätsstatus (Code)","cloud_details.firmware_compatible_status_code"],
+  ],dev);
+}
+function cockpitRenderHms(dev){
+  const root=byId("cockpit-hms");root.replaceChildren();
+  const alerts=Array.isArray(dev.health)?dev.health.slice(0,16):[];
+  if(!alerts.length){cardEl(root,"p","cockpit-empty",
+    "Keine HMS-Meldungen über diesen Datenpfad vorhanden. Das bedeutet nicht HMS-Entwarnung.");return;}
+  cardEl(root,"p","module-note","Zuletzt abgerufene HMS-Daten; Ereigniszeit und aktuelle Gültigkeit sind nicht belegt.");
+  alerts.forEach(alert=>{
+    const entry=cardEl(root,"div","hms-entry");
+    const level=alert.level==="warning"?"Warnung":alert.level==="reminder"?"Hinweis":"Information";
+    cardEl(entry,"b","",level+" · "+(alert.code||"DJI HMS"));
+    cardEl(entry,"p","hms-description",alert.message||"DJI übermittelte keinen Beschreibungstext.");
+  });
+}
+function cockpitRenderDiagnostics(dev){
+  const root=byId("cockpit-diagnostics");root.replaceChildren();
+  const rows=[
+    ["Gerät",dev.name||"Unbekannt"],["Typ",dev.kind==="aircraft"?"Fluggerät":"Fernsteuerung"],
+    ["Datenquelle",dev.provider],["Projekt",dev.project_id],["Gerätekennung",dev.device_id],
+    ["Aktualität",statusLabel(dev.freshness)],["Online",dev.online===true?"Ja":dev.online===false?"Nein":"Unbekannt"],
+    ["Eingangsalter",cockpitAge(dev)],["Letzter Empfang (UTC)",dev.received_at],
+    ["Firmware",cockpitRead(dev,"cloud_details.firmware_version")],
+    ["Modellhinweis",cockpitRead(dev,"cloud_details.aircraft_model_hint")],
+  ];
+  for(const [key,value] of rows)cockpitItem(root,key,value===null||value===undefined?"–":String(value));
+  if(dev.field_status&&Object.keys(dev.field_status).length)
+    cockpitItem(root,"DJI-Felder mit Zeitstatus",Object.keys(dev.field_status).length);
+}
+function cockpitRenderFields(dev){
+  const root=byId("cockpit-fields");root.replaceChildren();
+  const fields=dev.field_status||{};
+  const entries=Object.entries(fields).sort((a,b)=>a[0].localeCompare(b[0],"de"));
+  if(!entries.length){
+    cardEl(root,"p","cockpit-empty","Diese Quelle liefert keine Einzel-Feld-Zeitstempel. Es gilt die Gerätefrische.");
+    return;
+  }
+  entries.slice(0,250).forEach(([key,clock])=>{
+    const row=cardEl(root,"div","cockpit-fieldrow");
+    cardEl(row,"span","",key);
+    const state=clock.freshness==="fresh"?"Frisch":clock.freshness==="stale"?"Veraltet":"Uhrfehler";
+    const label=cardEl(row,"span",clock.freshness==="fresh"?"fresh":clock.freshness==="stale"?"stale":"skew",state);
+    const age=typeof clock.source_age_seconds==="number"?
+      clock.source_age_seconds:clock.age_seconds;
+    cardEl(row,"span","muted",(clock.channel||"–").toUpperCase()+" · "+
+      (typeof age==="number"?Math.floor(age)+" s":"–"));
+  });
+  if(entries.length>250)cardEl(root,"p","cockpit-empty","Weitere Felder in der technischen Tabelle.");
+}
+function cockpitValidGps(lat,lon){
+  return typeof lat==="number"&&Number.isFinite(lat)&&Math.abs(lat)<=90
+    &&typeof lon==="number"&&Number.isFinite(lon)&&Math.abs(lon)<=180
+    &&(lat!==0||lon!==0);
+}
+function cockpitMemory(dev){
+  const key=cockpitKey(dev);
+  if(!cockpitHistory.has(key))cockpitHistory.set(key,{battery:[],altitude:[],speed:[],positions:[]});
+  return cockpitHistory.get(key);
+}
+function cockpitSample(dev,path,series,val){
+  if(typeof val!=="number"||!Number.isFinite(val))return;
+  const clock=cockpitClock(dev,path);
+  const fingerprint=clock?
+    (clock.source_timestamp_ms===null||clock.source_timestamp_ms===undefined?
+      clock.received_at:String(clock.source_timestamp_ms)):dev.received_at;
+  if(!fingerprint)return;
+  if(series.length&&series[series.length-1].id===fingerprint)return;
+  series.push({id:fingerprint,value:val});
+  if(series.length>cockpitMaxSamples)series.shift();
+}
+function cockpitRecord(dev){
+  if(!cockpitIsLive(dev))return;
+  const memory=cockpitMemory(dev);
+  cockpitSample(dev,"battery_percent",memory.battery,cockpitRead(dev,"battery_percent"));
+  cockpitSample(dev,"elevation_m",memory.altitude,cockpitRead(dev,"elevation_m"));
+  cockpitSample(dev,"horizontal_speed_mps",memory.speed,cockpitRead(dev,"horizontal_speed_mps"));
+  const lat=cockpitRead(dev,"latitude"),lon=cockpitRead(dev,"longitude");
+  if(!cockpitValidGps(lat,lon))return;
+  const meta=cockpitClock(dev,"latitude");
+  const fingerprint=meta?(meta.source_timestamp_ms===null||meta.source_timestamp_ms===undefined?
+    meta.received_at:String(meta.source_timestamp_ms)):dev.received_at;
+  if(!fingerprint)return;
+  const positions=memory.positions;
+  if(positions.length&&positions[positions.length-1].id===fingerprint)return;
+  if(positions.length){
+    const prev=positions[positions.length-1];
+    const dx=(((lon-prev.lon+540)%360)-180)*111320*Math.cos(lat*Math.PI/180);
+    const dy=(lat-prev.lat)*111320;
+    if(Math.hypot(dx,dy)>50000)positions.length=0; // new track, no spurious 50 km leap
+  }
+  positions.push({lat,lon,id:fingerprint});
+  if(positions.length>120)positions.shift();
+}
+function cockpitSvgElement(tag,attributes,root){
+  const el=document.createElementNS("http://www.w3.org/2000/svg",tag);
+  for(const [key,value] of Object.entries(attributes))el.setAttribute(key,String(value));
+  root.appendChild(el);
+  return el;
+}
+function cockpitRenderTrack(dev){
+  const svg=byId("cockpit-track");svg.replaceChildren();
+  if(!cockpitIsLive(dev)){
+    byId("cockpit-track-info").textContent="Keine bestätigte Live-Verbindung. Verlauf ist pausiert.";
+    return;
+  }
+  const positions=cockpitMemory(dev).positions;
+  if(!positions.length){
+    byId("cockpit-track-info").textContent="Noch keine gültigen Live-Positionspunkte empfangen.";
+    return;
+  }
+  const zero=positions[0];
+  const xy=positions.map(p=>({
+    x:(((p.lon-zero.lon+540)%360)-180)*111320*Math.cos(zero.lat*Math.PI/180),
+    y:(p.lat-zero.lat)*111320
+  }));
+  const xs=xy.map(p=>p.x),ys=xy.map(p=>p.y);
+  const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  const span=Math.max(maxX-minX,maxY-minY,30);
+  const midX=(minX+maxX)/2,midY=(minY+maxY)/2;
+  const projected=xy.map(p=>[240+(p.x-midX)*400/span,105-(p.y-midY)*175/span]);
+  if(projected.length>1)cockpitSvgElement("polyline",{
+    points:projected.map(p=>p.join(",")).join(" "),class:"trail"},svg);
+  const last=projected[projected.length-1];
+  cockpitSvgElement("circle",{cx:last[0],cy:last[1],r:6,class:"marker"},svg);
+  byId("cockpit-track-info").textContent=positions.length+
+    " gültige Punkte · relativer Verlauf, kein Kartenhintergrund · mindestens "+
+    Math.round(span)+" m Darstellungsbreite";
+}
+function cockpitRenderTrends(dev){
+  const root=byId("cockpit-trends");root.replaceChildren();
+  if(!cockpitIsLive(dev)){
+    cardEl(root,"p","cockpit-empty","Kein aktueller Live-Stream; Browser-Trends werden nicht fortgeschrieben.");
+    return;
+  }
+  const memory=cockpitMemory(dev);
+  for(const [key,title,unit] of [["battery","Akku","%"],["altitude","Höhe Startbezug","m"],
+                                  ["speed","Horizontalgeschwindigkeit","m/s"]]){
+    const series=memory[key],wrapper=cardEl(root,"div","");
+    const heading=cardEl(wrapper,"div","cockpit-chart-title");
+    cardEl(heading,"span","",title);
+    cardEl(heading,"b","",series.length?cockpitNumber(series[series.length-1].value,1,unit):"–");
+    const svg=cardEl(wrapper,"svg","cockpit-chart");
+    svg.setAttribute("viewBox","0 0 420 70");
+    svg.setAttribute("aria-label",title+" · bisherige Live-Messpunkte");
+    if(series.length>1){
+      const nums=series.map(p=>p.value),min=Math.min(...nums),max=Math.max(...nums);
+      const scale=Math.max(max-min,1);
+      const pts=nums.map((value,i)=>[8+i*404/(nums.length-1),60-(value-min)*48/scale]);
+      cockpitSvgElement("path",{d:pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+","+
+        p[1].toFixed(1)).join(" "),class:"trend"},svg);
+    }
+  }
+}
+function cockpitSelectRows(rows){
+  cockpitRows=Array.isArray(rows)?rows:[];
+  const select=byId("cockpit-device"),old=cockpitChosen||select.value;
+  const ordered=[...cockpitRows].sort((a,b)=>
+    (a.kind==="aircraft"?0:1)-(b.kind==="aircraft"?0:1)
+    ||String(a.name||"").localeCompare(String(b.name||""),"de"));
+  select.replaceChildren();
+  for(const dev of ordered){
+    const opt=document.createElement("option");
+    opt.value=cockpitKey(dev);
+    opt.textContent=(dev.kind==="aircraft"?"Drohne · ":"RC · ")+
+      (dev.name||"Unbenannt")+" · "+dev.provider;
+    select.appendChild(opt);
+  }
+  if(!ordered.length){
+    const opt=document.createElement("option");opt.value="";opt.textContent="Keine Geräte verfügbar";
+    select.appendChild(opt);cockpitChosen="";
+    return null;
+  }
+  cockpitChosen=ordered.some(x=>cockpitKey(x)===old)?old:cockpitKey(ordered[0]);
+  select.value=cockpitChosen;
+  return ordered.find(x=>cockpitKey(x)===cockpitChosen);
+}
+function cockpitUnavailable(reason){
+  cockpitError=reason||"Geschützte Geräte-API nicht erreichbar";
+  cockpitSelectRows([]);
+  cockpitPaint(null);
+}
+function cockpitPaint(dev){
+  const live=cockpitIsLive(dev)&&!cockpitError;
+  const tag=byId("cockpit-live");
+  tag.dataset.state=cockpitError?"error":live?"live":dev&&dev.online===false?"offline":"stale";
+  tag.textContent=dev?cockpitStatusText(dev):cockpitError?"API nicht erreichbar":"Keine Geräte";
+  const banner=byId("cockpit-banner");
+  banner.dataset.tone=live?"good":cockpitError?"bad":"warn";
+  banner.textContent=cockpitError?"Keine Livewerte: "+cockpitError+". Bereits angezeigte Werte wurden zurückgesetzt.":
+    !dev?"Keine angeschlossenen Geräte in der freigegebenen lokalen Telemetriequelle.":
+    live?"Live-Telemetrie: "+(dev.name||"Gerät")+" · "+dev.provider+
+      " · nur bestätigte, frische Messwerte.":
+    cockpitStatusText(dev)+": Livewerte ausgeblendet; gespeicherte Werte bleiben nur in der technischen Historie.";
+  const get=p=>dev?cockpitRead(dev,p):null;
+  cockpitSetGauge("battery",cockpitNumber(get("battery_percent"),0,"%"),
+    live?"Geräteakku · aktueller Empfang":"Kein bestätigter Livewert");
+  cockpitSetGauge("mode",dev?cockpitMode(dev):null,
+    live?"DJI-Statuscode zugeordnet":"Kein bestätigter Livewert");
+  cockpitSetGauge("altitude",cockpitNumber(get("elevation_m"),1,"m"),
+    live?"DJI Startbezug":"Kein bestätigter Livewert");
+  cockpitSetGauge("speed",cockpitNumber(get("horizontal_speed_mps"),1,"m/s"),
+    live?"Horizontal":"Kein bestätigter Livewert");
+  cockpitSetGauge("rtk",dev?cockpitRtk(dev):null,
+    live?"GNSS-Zustand · RTK nie aus Satelliten geschätzt":"Kein bestätigter Livewert");
+  cockpitSetGauge("age",live?cockpitAge(dev):null,
+    dev?"Frische: "+statusLabel(dev.freshness):"Noch kein Empfang");
+  if(!dev){
+    for(const id of ["cockpit-navigation","cockpit-energy","cockpit-radio","cockpit-camera",
+      "cockpit-payload","cockpit-safety","cockpit-hms","cockpit-diagnostics","cockpit-fields","cockpit-trends"]){
+      const el=byId(id);el.replaceChildren();
+      cardEl(el,"p","cockpit-empty","Keine gültigen Geräte-Livewerte.");
+    }
+    byId("cockpit-coordinates").textContent="Keine bestätigten aktuellen Koordinaten.";
+    byId("cockpit-track").replaceChildren();
+    byId("cockpit-track-info").textContent="Noch keine gültigen Live-Positionspunkte.";
+    return;
+  }
+  if(live)cockpitRecord(dev);
+  cockpitRenderNavigation(dev);
+  cockpitRenderEnergy(dev);
+  cockpitRenderRadio(dev);
+  cockpitRenderCameras(dev);
+  cockpitRenderPayload(dev);
+  cockpitRenderSafety(dev);
+  cockpitRenderHms(dev);
+  cockpitRenderDiagnostics(dev);
+  cockpitRenderFields(dev);
+  cockpitRenderTrack(dev);
+  cockpitRenderTrends(dev);
+}
+function renderCockpit(rows){
+  cockpitError=null;
+  const selected=cockpitSelectRows(rows);
+  cockpitPaint(selected);
+}
+byId("cockpit-device").onchange=function(){
+  cockpitChosen=this.value;
+  const chosen=cockpitRows.find(row=>cockpitKey(row)===cockpitChosen);
+  cockpitPaint(chosen||null);
+};
+byId("cockpit-refresh").onclick=()=>updateDevices();
+
 """
