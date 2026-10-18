@@ -51,3 +51,29 @@ Aktionen/Parameter. Keine automatische Übernahme beliebiger Pilot-2-KMZ.
 Flugkompatibilitätsfreigabe. Noch erforderlich: Pi-Live-Abnahme, Kontrolle
 mit DJI Pilot 2 bei jedem tatsächlich verwendeten Modell/Payload/Firmware,
 separater Abnahmeschritt vor produktivem Rollout.
+
+### Chromium-Abnahme der tatsächlichen Kamera-/Gimbal-Studio-Handler
+
+Die neuen Funktionen werden zusätzlich mit einem isolierten, echten
+Chromium-DOM-Lauf validiert. Der Smoke extrahiert dafür *unverändert*
+die Steuerelemente, JS-Controller, Event-Bindings und den
+Wegpunkt-Übernehmen-Handler aus \`render_studio()\`.
+
+Getestet werden Modellwechsel aller sechs Profile, M3TA-Sperre,
+Fokus/Zoom/Pitch-Parameter und Anzeige, Filmaufnahme-Start/Stopp,
+unzulässige Werte, Löschen, Undo-Historienaufruf, Erhalt der Aktionen
+bei einer Koordinatenänderung, Segmentaktion am letzten Wegpunkt
+und Text-gegen-HTML-Sicherheit.
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src \
+  "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+  scripts/pi/studio_camera_gimbal_chromium_smoke.py
+~~~
+
+Der Test läuft mit synthetischen Missionen in einer temporären
+\`file://\`-Seite ohne DJI-Cloud-Zugang, Netzwerkzugriff, HTTPS-Listener
+oder laufenden Studio-Dienst. **Kein produktiver HTTPS-Browser-End-to-End-Test**
+und keine Hardware-/Firmwareinteroperabilität. Der produktive Pi wird
+nicht verändert.
