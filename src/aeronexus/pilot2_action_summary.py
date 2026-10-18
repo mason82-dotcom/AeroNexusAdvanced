@@ -45,6 +45,11 @@ def summarize_action_report(report):
     if (type(reported_total) is not int
             or reported_total < len(items) or reported_total > 10000000):
         return _empty("invalid_response")
+    # The Studio summary must not present a bounded sample as a complete
+    # compatible Cloud library. The CLI may examine a partial sample, but
+    # this viewer endpoint is deliberately all-or-nothing.
+    if reported_total != len(items):
+        return _empty("incomplete_inventory")
     safe_types = []
     seen_aliases = set()
     unknown_sum = 0
