@@ -278,6 +278,38 @@ def test_invalid_m3_camera_properties_rejected(camera):
         normalize_osd(DeviceType.AIRCRAFT, {'cameras': [camera]})
 
 
+
+def test_m4t_vision_camera_storage_is_valid_osd_and_canonical(feed):
+    # DJI RC Plus 2/M4 family: vision replaces M3's wide/zoom enum naming.
+    sample = {
+        'mode_code': 3, 'battery': {'capacity_percent': 82},
+        'cameras': [{
+            'payload_index': '89-0-0',
+            'photo_storage_settings': ['current', 'vision', 'ir'],
+            'video_storage_settings': ['vision', 'ir'],
+        }],
+    }
+    assert push(feed, sample), 'valid M4T OSD must not be rejected atomically'
+    tele = view(feed)['telemetry']
+    assert tele['battery_percent'] == 82
+    details = tele['cloud_details']
+    assert details['cameras'][0]['photo_storage_settings'] == ['current', 'vision', 'ir']
+    assert details['cameras'][0]['video_storage_settings'] == ['vision', 'ir']
+    assert validate_details(details) == details
+    assert view(feed)['freshness'] == 'fresh'
+
+
+@pytest.mark.parametrize('field', ['photo_storage_settings', 'video_storage_settings'])
+@pytest.mark.parametrize('invalid', [['secret'], 'vision', [42], ['vision'] * 5])
+def test_m4_storage_enum_stays_strict(field, invalid):
+    sample = {'mode_code': 3, 'cameras': [{
+        'payload_index': '89-0-0', field: invalid
+    }]}
+    with pytest.raises(ValueError, match='Invalid camera storage settings'):
+        normalize_osd(DeviceType.AIRCRAFT, sample)
+
+
+
 def test_rc_plus2_drc_and_auth_without_sensitive_permission_values(feed):
     assert push(feed, {'capacity_percent': 80, 'drc_state': 2,
                        'cloud_control_auth': ['flight', 'payload'],
