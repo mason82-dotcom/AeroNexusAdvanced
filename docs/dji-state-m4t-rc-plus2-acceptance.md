@@ -420,9 +420,13 @@ nachgewiesen. `stale` betrifft die einzelne ereignisgesteuerte
 Eigenschaft, nicht zwangsläufig die frischen periodischen OSD-Felder.
 Aus dem Fehlen von Fluggerät-State-Feldern in einem einzelnen Snapshot
 folgt kein nachgewiesener Decoderfehler. Die Feld-Zeitstempel bleiben
-innerhalb eines Prozesslaufs bei bloßem Altern erhalten; falls ein
-früher bereits vorhandener Feldpfad verschwindet, Prozess-/Worker-Neustarts
-und Geräteinventar-Neuaufbau gesondert prüfen. Keine DJI-Steuerbefehle
+innerhalb eines Prozesslaufs bei bloßem Altern erhalten. Allerdings speichert
+`field_status` jeweils den **letzten schreibenden Kanal je Feldpfad**:
+Aktualisiert OSD einen zuvor von State gesetzten Feldpfad, kann dessen
+`channel` auf `osd` wechseln, ohne dass die Eigenschaft verschwindet.
+Bei einer scheinbar verschwundenen State-Herkunft daher sowohl auf
+solche Kanalwechsel als auch auf Prozess-/Worker-Neustarts und
+Geräteinventar-Neuaufbau prüfen. Keine DJI-Steuerbefehle
 zur künstlichen State-Erzeugung auslösen.
 
 ## Verbindliche Hardwareabnahme (noch offen)
