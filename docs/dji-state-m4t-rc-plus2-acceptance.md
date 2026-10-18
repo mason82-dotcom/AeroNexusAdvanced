@@ -54,6 +54,12 @@ Freigabe für Flugsteuerung.
 
 ## Konfigurations- und ACL-Abnahme
 
+Der passende Broker-ACL-Patch ist separat als
+[AeroNexus PR #14](https://github.com/mason82-dotcom/AeroNexus/pull/14)
+vorbereitet. Er ändert keine aktive EMQX-Konfiguration. Erst den tatsächlichen
+Bind-Mount und den ACL-Status des laufenden Containers prüfen; **nicht**
+`AERONEXUS_OSD_STATE_ENABLED=1` aktivieren, solange das Subscribe-Recht fehlt.
+
 Zuerst am laufenden Pi mit der alten API feststellen, ob
 `live_feed.state_topic_enabled` bisher `false` ist. In diesem Fall ist
 eine vollständige `state`-Abnahme noch nicht möglich.
