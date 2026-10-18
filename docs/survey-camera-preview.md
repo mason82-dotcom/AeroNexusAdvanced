@@ -76,3 +76,35 @@ Leaflet-1.9.4-Dateien zeigen.
 
 Nach einer späteren eigenständigen Bereitstellung muss der optionale
 Kameramodus erneut gegen die produktive HTTPS-API geprüft werden.
+
+
+## Realer Kamera-Preview-End-to-End-Test auf dem Pi (kein Deployment)
+
+Der Test startet eine **zweite**, vom Produktivdienst unabhängige
+FastAPI-Instanz ausschließlich auf Loopback 127.0.0.1:18081.
+Die Prozessumgebung enthält keine Tokens oder DJI-Konfiguration:
+HOME und Geo-/Missions-Workspace liegen im temporären Verzeichnis.
+Die Testfläche ist eine synthetische vierseitige Geometrie; die
+produktiven Geo-Objekte werden nicht gelesen oder geändert.
+
+Voraussetzung: Browser-Test-venv mit Python Playwright und vorhandenes
+Produktiv-venv mit uvicorn. Im Feature-Worktree auf dem Pi:
+
+    cd ~/Projekte/AeroNexusAdvanced-pr66
+    git fetch origin pull/66/head
+    git switch --detach FETCH_HEAD
+    export AERONEXUS_CHROMIUM_BIN=/usr/bin/chromium
+    ~/Projekte/AeroNexusAdvanced-browser-venv/bin/python \
+      scripts/pi/studio_camera_staging_smoke.py \
+      --server-python ~/Projekte/AeroNexusAdvanced/.venv/bin/python \
+      --require-tiles
+
+Verwendet werden ausschließlich GET/HEAD/OPTIONS und ein einzelner
+nicht persistierender POST an /api/v1/studio/survey/preview.
+Alle anderen schreibenden Browseranforderungen werden blockiert.
+Das Browserfenster muss die GSD-Metriken und Leaflet-SVG-Streifen zeigen.
+Die Datei /tmp/aeronexus-camera-staging.png ist die lokale Momentaufnahme.
+
+Nach dem Test beendet das Skript den separaten Server und entfernt
+automatisch den temporären Workspace. Produktionsport 8000 sowie
+systemd/Compose/DJI-Dienste werden nicht neu gestartet oder verändert.
