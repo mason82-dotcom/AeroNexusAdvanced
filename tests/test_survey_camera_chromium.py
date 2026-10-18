@@ -18,6 +18,7 @@ REAL_PATH = Path(__file__).resolve().parents[1] / "scripts/pi/studio_leaflet_chr
 SPEC = importlib.util.spec_from_file_location("survey_real_leaflet_camera", REAL_PATH)
 real = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(real)
+BASE_BUILD_FIXTURE = real.build_fixture
 
 
 CAMERA_CHECK = r"""
@@ -77,7 +78,7 @@ CAMERA_CHECK = r"""
 
 
 def build_camera_fixture():
-    source = real.build_fixture()
+    source = BASE_BUILD_FIXTURE()
     original_check = real.CHECKS.replace("__RECTANGLE__", json.dumps(real.base.RECTANGLE))
     if source.count(original_check) != 1:
         raise AssertionError("Expected a single existing real Leaflet smoke script")
