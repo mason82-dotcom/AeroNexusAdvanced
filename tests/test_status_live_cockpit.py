@@ -128,7 +128,8 @@ const stale={...first,freshness:"stale",online:null,
 api.renderCockpit([stale]);
 assert.equal(el("cockpit-battery").textContent,"–");
 assert.notEqual(el("cockpit-live").dataset.state,"live");
-assert.equal(api.cockpitHistory.get(api.cockpitKey(first)).battery.length,1);
+assert.equal(api.cockpitHistory.has(api.cockpitKey(first)),false,
+  "stale telemetry must break GNSS/trend continuity");
 const oldBattery={...first,field_status:{...first.field_status,
   battery_percent:{...first.field_status.battery_percent,freshness:"stale"}}};
 api.renderCockpit([oldBattery]);
