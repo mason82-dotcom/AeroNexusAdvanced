@@ -78,8 +78,10 @@ async def run_smoke(*, transport=None, reader=None):
                 if report.get("state") != "connected":
                     # Never forward arbitrary upstream data in failures.
                     raise RuntimeError("live inventory unavailable or incomplete")
-                if not 1 <= report.get("checked", 0) <= 8:
-                    raise RuntimeError("invalid checked count")
+                checked, total = report.get("checked"), report.get("total")
+                if (type(checked) is not int or type(total) is not int
+                        or not 1 <= checked <= 8 or checked != total):
+                    raise RuntimeError("incomplete or invalid checked inventory")
                 if not isinstance(report.get("anonymous_types"), list):
                     raise RuntimeError("anonymous types missing")
                 if not isinstance(report.get("waylines"), list):
@@ -106,10 +108,10 @@ async def run_smoke(*, transport=None, reader=None):
 def main():
     try:
         report = asyncio.run(run_smoke())
-    except (RuntimeError, ValueError, TypeError, httpx.HTTPError) as exc:
-        # Do not echo exception messages: transport/upstream details can
-        # contain signed URLs, tokens, XML values, or LAN hostnames.
-        print("Pilot 2 Studio HTTP smoke: FAIL (" + type(exc).__name__ + ")",
+    except Exception:
+        # Any unexpected exception may embed private paths, signed URLs,
+        # credentials or third-party text. Print no exception or traceback.
+        print("Pilot 2 Studio HTTP smoke: FAIL (details suppressed)",
               file=sys.stderr)
         return 1
     print(json.dumps(report, ensure_ascii=False, indent=2))
