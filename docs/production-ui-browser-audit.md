@@ -93,3 +93,16 @@ angehängt. HTTP-Redirects werden vom Python-Client abgewiesen.
 Browserseite. Ein grüner Layout-/Interaktionsstatus bedeutet deshalb nicht,
 dass alle optionalen Datenintegrationen erfolgreich sind; solche Antworten
 sind anhand dieses Zählers separat zu untersuchen.
+
+## Responsive Studio-Kartenwerkzeuge
+
+Der produktive Pi-Test am 18. Oktober 2026 meldete zunächst 13/14 PASS.
+Die Ursache war eine **falsche Prüfannahme**: Bei Desktop-Breiten
+ab 701 px ist `#map-tools-toggle` laut Studio-CSS absichtlich ausgeblendet.
+Die Prüfung klickt deshalb jetzt im Desktop-Modus auf den sichtbaren
+`#map-focus-toggle`, im Mobilmodus auf `#map-tools-toggle`.
+Die zugehörigen `aria-pressed`- bzw. `aria-expanded`-Zustände müssen
+sich ändern und nach einem zweiten Klick wieder zurückkehren.
+So werden unbeabsichtigte Layoutfehler nicht durch erzwungene DOM-Klicks
+verdeckt. Es handelt sich um eine Testkorrektur; das eigentliche Studio-UI
+und die produktive Serverversion bleiben unverändert.

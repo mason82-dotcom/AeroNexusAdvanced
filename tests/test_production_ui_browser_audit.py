@@ -127,3 +127,53 @@ def test_real_get_relay_fails_closed_on_large_or_invalid_response():
     audit.relay_live_api(route, client)
     assert route.result["status"] == 502
     assert "secret" not in str(route.result)
+
+
+@pytest.mark.parametrize(("viewport", "width", "visible_selector", "hidden_selector"), [
+    ("Desktop", 1440, "#map-focus-toggle", "#map-tools-toggle"),
+    ("Mobile", 420, "#map-tools-toggle", "#map-focus-toggle"),
+])
+def test_responsive_studio_safe_clicks_in_real_chromium(
+        viewport, width, visible_selector, hidden_selector):
+    pytest.importorskip("playwright.sync_api")
+    browser = audit.browser_path()
+    if not browser:
+        pytest.skip("System Chromium not installed")
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        driver = p.chromium.launch(headless=True, executable_path=browser,
+                                   args=["--no-sandbox", "--disable-dev-shm-usage"])
+        try:
+            page = driver.new_page(viewport={"width": width, "height": 860},
+                                   is_mobile=viewport == "Mobile")
+            page.set_content("""<!doctype html>
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <style>
+                @media(min-width:701px){#map-tools-toggle{display:none}}
+                @media(max-width:700px){#map-focus-toggle{display:none}}
+              </style>
+              <button id="map-focus-toggle" aria-pressed="false">Focus</button>
+              <button id="map-tools-toggle" aria-expanded="false">Tools</button>
+              <script>
+                const focus=document.querySelector("#map-focus-toggle");
+                focus.addEventListener("click",()=>focus.setAttribute("aria-pressed",
+                  String(focus.getAttribute("aria-pressed")!=="true")));
+                const tools=document.querySelector("#map-tools-toggle");
+                tools.addEventListener("click",()=>tools.setAttribute("aria-expanded",
+                  String(tools.getAttribute("aria-expanded")!=="true")));
+              </script>""")
+            assert page.locator(visible_selector).is_visible()
+            assert not page.locator(hidden_selector).is_visible()
+            assert audit.safe_ui_actions(page, "studio", viewport) == 2
+            assert page.locator(visible_selector).get_attribute(
+                audit.STUDIO_RESPONSIVE_ACTIONS[viewport][1]) == "false"
+        finally:
+            driver.close()
+
+
+def test_viewport_specific_studio_controls_declared():
+    assert audit.STUDIO_RESPONSIVE_ACTIONS == {
+        "Desktop": ("#map-focus-toggle", "aria-pressed"),
+        "Mobile": ("#map-tools-toggle", "aria-expanded"),
+    }
+    assert audit.SAFE_ACTIONS["studio"] == ()

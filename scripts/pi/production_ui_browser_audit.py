@@ -48,7 +48,8 @@ TILE_ORIGINS = frozenset((
 ))
 # Safe clicks only, never export, upload, analysis, mission modification or scan.
 SAFE_ACTIONS = {
-    "studio": ("#map-tools-toggle",),
+    # Studio uses viewport-specific controls; see STUDIO_RESPONSIVE_ACTIONS.
+    "studio": (),
     "status": (),
     "operations": ("#tasks-finished", "#tasks-all"),
     "media": ("#refresh",),
@@ -56,6 +57,13 @@ SAFE_ACTIONS = {
     "multispectral": ("#view-map", "#view-image"),
     "results": ("#clear",),
 }
+# Studio intentionally hides its compact toolbar toggle at desktop widths.
+# The focus control remains visible in desktop mode; the tools toggle is mobile-only.
+STUDIO_RESPONSIVE_ACTIONS = {
+    "Desktop": ("#map-focus-toggle", "aria-pressed"),
+    "Mobile": ("#map-tools-toggle", "aria-expanded"),
+}
+
 # No text, URLs, file names or headers may appear in results.
 @dataclass(frozen=True)
 class Result:
@@ -202,13 +210,28 @@ def evaluate_layout(page, selector: str) -> tuple[bool, int, int]:
     return bool(info["present"]), int(info["overflow"]), int(info["tiles"])
 
 
-def safe_ui_actions(page, module: str) -> int:
-    """Physical user-like Chromium clicks; all target a reviewed GET-only action."""
+def safe_ui_actions(page, module: str, viewport: str = "Desktop") -> int:
+    """Physically click safe, *visible* controls, respecting responsive layout."""
+    if module == "studio":
+        selector, attribute = STUDIO_RESPONSIVE_ACTIONS[viewport]
+        control = page.locator(selector)
+        if not control.is_visible():
+            raise RuntimeError("responsive Studio control not visible")
+        original = control.get_attribute(attribute)
+        control.click(timeout=6000)
+        if control.get_attribute(attribute) == original:
+            raise RuntimeError("Studio control did not react")
+        # Restoring the original state keeps the audit non-disruptive.
+        control.click(timeout=6000)
+        if control.get_attribute(attribute) != original:
+            raise RuntimeError("Studio control did not restore state")
+        return 2
+
     clicked = 0
     for selector in SAFE_ACTIONS[module]:
-        el = page.locator(selector)
-        # Raise if the control is covered, off-screen or unreachable by pointer.
-        el.click(timeout=6000)
+        control = page.locator(selector)
+        # Raise if the control is covered, hidden or off-screen.
+        control.click(timeout=6000)
         clicked += 1
     return clicked
 
@@ -287,7 +310,7 @@ def audit_page(browser, client: ReadOnlyClient, module: str, path: str,
             return Result(module, viewport, "FAIL",
                           "horizontal viewport overflow", counters["api_ok"], overflow)
         try:
-            clicks = safe_ui_actions(page, module)
+            clicks = safe_ui_actions(page, module, viewport)
         except Exception:
             return Result(module, viewport, "FAIL", "safe UI control unreachable",
                           counters["api_ok"], overflow)
