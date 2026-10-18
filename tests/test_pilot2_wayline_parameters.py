@@ -202,6 +202,54 @@ def test_wpml_106_action_summary_does_not_claim_semantic_validation():
     assert result["full_content_verified"] is False
 
 
+def test_unknown_action_shape_groups_never_echo_values():
+    result = pm._unknown_profiles(
+        ["vendorCustomAction", "vendorCustomAction", "123456",
+         "camera-action/sensitive", None, "takePhoto"],
+        pm.DOCUMENTED_ACTION_TYPES)
+    assert result == {
+        "distinct_count": 4,
+        "shape_counts": {
+            "missing": 1, "identifier": 2, "numeric": 1, "other": 1,
+        },
+    }
+    encoded = json.dumps(result)
+    assert "vendorCustomAction" not in encoded
+    assert "camera-action/sensitive" not in encoded
+
+
+def test_waypoint_trigger_types_counted_without_exposing_unknown_values():
+    content = modified_kmz(
+        b"<wpml:actionTriggerType>reachPoint</wpml:actionTriggerType>",
+        b"<wpml:actionTriggerType>multipleDistance</wpml:actionTriggerType>")
+    result = report(mission(), content)
+    assert result["action_trigger_counts"] == {"multipleDistance": 1}
+    assert result["unknown_action_trigger_count"] == 0
+    assert result["waypoint_action_group_count"] == 1
+    assert result["full_content_verified"] is False
+    unknown = modified_kmz(
+        b"<wpml:actionTriggerType>reachPoint</wpml:actionTriggerType>",
+        b"<wpml:actionTriggerType>privateTriggerSecret</wpml:actionTriggerType>")
+    output = report(mission(), unknown)
+    assert output["action_trigger_counts"] == {}
+    assert output["unknown_action_trigger_count"] == 1
+    assert "privateTriggerSecret" not in json.dumps(output)
+
+
+def test_unknown_enum_shape_counts_across_multiple_routes():
+    unknown = modified_kmz(
+        b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
+        b"<wpml:actionActuatorFunc>newMappingAction</wpml:actionActuatorFunc>")
+    info = report(mission(), unknown)
+    assert info["unknown_action_distinct_by_route"] == [1]
+    assert info["unknown_action_shapes_by_route"] == [
+        {"missing": 0, "identifier": 1, "numeric": 0, "other": 0}]
+    assert info["unknown_start_action_distinct_by_route"] == [0]
+    assert info["unknown_action_trigger_count"] == 0
+    assert "newMappingAction" not in json.dumps(info)
+    assert info["full_content_verified"] is False
+
+
 def test_unknown_actions_never_report_camera_match():
     kmz = modified_kmz(b"<wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>",
                        b"<wpml:actionActuatorFunc>rotateYaw</wpml:actionActuatorFunc>")
