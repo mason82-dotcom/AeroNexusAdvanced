@@ -1569,8 +1569,12 @@ async function loadPilot2ActionSummary(){
       return;
     }
     if(data.read_only!==true||data.flight_compatibility_verified!==false||
-       data.wpml_semantics_verified!==false||!Array.isArray(data.anonymous_types)||
-       !Array.isArray(data.waylines)){
+       data.wpml_semantics_verified!==false||data.full_content_verified!==false||
+       !Array.isArray(data.anonymous_types)||!Array.isArray(data.waylines)||
+       !Number.isInteger(data.checked)||data.checked<1||data.checked>8||
+       data.total!==data.checked||data.waylines.length!==data.checked||
+       !Number.isSafeInteger(data.recognized_actions)||data.recognized_actions<0||
+       !Number.isSafeInteger(data.unknown_actions)||data.unknown_actions<0){
       throw new Error("Diagnoseformat unvollständig oder nicht schreibgeschützt.");
     }
     const count=Number(data.checked)||0;
