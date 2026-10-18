@@ -63,6 +63,10 @@ def call_api(opener, method: str, path: str, payload: dict | None = None):
     headers = {"Accept": "application/json", "Cache-Control": "no-store"}
     if body is not None:
         headers["Content-Type"] = "application/json"
+        # The HTTPS-LAN policy requires a matching Origin for POST requests.
+        # This isolated CLI intentionally calls the same-origin, non-persisting
+        # survey preview endpoint; do not disable the server's CSRF protection.
+        headers["Origin"] = ORIGIN
     # Optional separate dashboard credential; never echo or log it.
     token = os.environ.get("AERONEXUS_STATUS_TOKEN", "")
     if token:
