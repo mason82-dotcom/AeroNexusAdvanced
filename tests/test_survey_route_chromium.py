@@ -13,6 +13,7 @@ REAL_PATH = Path(__file__).resolve().parents[1] / "scripts/pi/studio_leaflet_chr
 SPEC = importlib.util.spec_from_file_location("route_preview_real_leaflet", REAL_PATH)
 real = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(real)
+BASE_BUILD_FIXTURE = real.build_fixture
 
 
 ROUTE_CHECK = r"""
@@ -69,7 +70,7 @@ ROUTE_CHECK = r"""
 
 
 def build_route_fixture():
-    source = real.build_fixture()
+    source = BASE_BUILD_FIXTURE()
     original = real.CHECKS.replace("__RECTANGLE__", json.dumps(real.base.RECTANGLE))
     if source.count(original) != 1:
         raise AssertionError("One real Leaflet harness expected")
