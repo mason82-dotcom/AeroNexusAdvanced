@@ -150,6 +150,21 @@ def server_spki_hash(ca: Path) -> str:
         raise LiveSmokeError("Could not obtain local server SPKI hash") from None
 
 
+def wait_for_polygon_option(page, polygon_id: str) -> None:
+    """Wait for an option to be attached, never for native <option> visibility.
+
+    Playwright marks native <option> nodes hidden on Chromium, including
+    when the dropdown itself is interactive. The saved polygon is identified
+    by its ID rather than by any placeholder option.
+    """
+    page.wait_for_function(
+        """polygon_id => {
+            const select = document.querySelector('#survey-object');
+            return !!select && Array.from(select.options).some(
+                option => option.value === polygon_id);
+        }""", arg=polygon_id, timeout=12000)
+
+
 def check_browser(ca: Path, chosen: dict, expected_count: int,
                   spacing: float, bearing: float, screenshot: Path):
     try:
@@ -185,15 +200,7 @@ def check_browser(ca: Path, chosen: dict, expected_count: int,
             page.route("**/*", allow_only_read_and_preview)
             page.goto(ORIGIN + "/studio", wait_until="domcontentloaded", timeout=20000)
             page.locator('nav button[data-tab="geo-pane"]').click()
-            # Native <option> nodes are often not considered "visible" by
-            # Playwright even when the parent <select> is visible. Wait for
-            # the actual saved polygon ID to appear in the DOM instead.
-            page.wait_for_function(
-                """polygon_id => {
-                    const select = document.querySelector('#survey-object');
-                    return !!select && Array.from(select.options).some(
-                        option => option.value === polygon_id);
-                }""", arg=chosen["id"], timeout=12000)
+            wait_for_polygon_option(page, chosen["id"])
             page.locator("#survey-object").select_option(chosen["id"], timeout=12000)
             page.locator("#survey-spacing").fill(str(spacing))
             page.locator("#survey-bearing").fill(str(bearing))
