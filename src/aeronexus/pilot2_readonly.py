@@ -123,16 +123,65 @@ def _map_payload(data):
             "crs": "EPSG:4326", "complete": True}
 
 
+def _model_component(value):
+    """Normalize a bounded numeric DJI model component (bool is invalid)."""
+    if type(value) is int:
+        if not 0 <= value <= 99999:
+            return None
+        return str(value)
+    if isinstance(value, str) and re.fullmatch(r"[0-9]{1,5}", value):
+        return str(int(value))
+    return None
+
+
+def _device_model_key(model, role):
+    """Decode either DJI device_model.key or numeric domain/type/sub_type.
+
+    Reject malformed values, a wrong device domain, or conflicting fields.
+    This is an identification label only, never a compatibility approval.
+    """
+    if not isinstance(model, dict):
+        return None
+    expected_domain = {"aircraft": "0", "controller": "2"}.get(role)
+    if expected_domain is None:
+        return None
+
+    raw_key = model.get("key")
+    if raw_key is not None:
+        if not isinstance(raw_key, str) or not _MODEL.fullmatch(raw_key):
+            return None
+        key = "-".join(str(int(part)) for part in raw_key.split("-"))
+    else:
+        key = None
+
+    field_names = ("domain", "type", "sub_type")
+    present = [name in model for name in field_names]
+    parts = [
+        _model_component(model[name]) if name in model else None
+        for name in field_names
+    ]
+    if any(is_present and part is None for is_present, part in zip(present, parts)):
+        return None
+
+    if key is not None:
+        key_parts = key.split("-")
+        if any(is_present and part != key_parts[i]
+               for i, (is_present, part) in enumerate(zip(present, parts))):
+            return None
+        return key if key_parts[0] == expected_domain else None
+
+    if not all(present) or parts[0] != expected_domain:
+        return None
+    return "-".join(parts)
+
+
 def _device(value, role):
     if not isinstance(value, dict):
         return None
     serial = value.get("sn")
-    model = value.get("device_model")
-    model_key = model.get("key") if isinstance(model, dict) else None
+    model_key = _device_model_key(value.get("device_model"), role)
     if not isinstance(serial, str) or not _SERIAL.fullmatch(serial):
         return None
-    if not isinstance(model_key, str) or not _MODEL.fullmatch(model_key):
-        model_key = None
     status = value.get("online_status")
     if type(status) is not bool:
         status = None

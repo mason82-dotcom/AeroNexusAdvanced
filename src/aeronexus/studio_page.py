@@ -1198,7 +1198,8 @@ let waylineData=null,waylinePage=1,waylineSerial=0,waylineAbort=null;
 const WAYLINE_PAGE_SIZE=12;
 function waylineModel(key){
   const names={"0-77-0":"Mavic 3E","0-77-1":"Mavic 3T","0-77-2":"Mavic 3M","0-77-3":"Mavic 3TA",
-    "0-99-0":"Matrice 4E","0-99-1":"Matrice 4T"};
+    "0-99-0":"Matrice 4E","0-99-1":"Matrice 4T",
+    "2-144-0":"DJI RC Pro Enterprise","2-174-0":"DJI RC Plus 2"};
   return Object.prototype.hasOwnProperty.call(names,key)?names[key]:key||"Modell nicht übermittelt";
 }
 function waylineSource(provider){return provider==="pilot2-local-cloud"?"Lokale Pilot-2-Cloud":provider==="flighthub-public-v2"?"FlightHub":provider||"Unbekannte Quelle";}
@@ -1804,7 +1805,9 @@ async function loadPilot2Topology(){
       const card=cardText(grid,"article","wayline-card");
       cardText(card,"h2","",item.callsign||"DJI-Gerät");
       cardText(card,"p","",item.role==="aircraft"?"Fluggerät":"Fernsteuerung");
-      cardText(card,"p","",clean(item.serial_number)+" · "+clean(item.device_model_key));
+      const modelLabel=waylineModel(item.device_model_key);
+      cardText(card,"p","",clean(item.serial_number)+" · "+modelLabel+
+        (item.device_model_key&&modelLabel!==item.device_model_key?" ("+item.device_model_key+")":""));
       cardText(card,"p","",item.online===true?"Online":item.online===false?"Offline":"Online-Status unbekannt");
       const related=data.links.filter(link=>item.role==="aircraft"
         ?link.aircraft_sn===item.serial_number
