@@ -370,6 +370,85 @@ def test_span_audit_range_not_confused_with_anchor_or_execution():
     assert "PRIVATE-ABC" not in json.dumps(report)
 
 
+def test_xml_index_delta_categories_and_out_of_folder_are_not_flight_distances():
+    from xml.etree import ElementTree as ET
+    from aeronexus.wpml_export import WPML_NS
+    W = "{" + WPML_NS + "}"
+    group = ET.Element(W + "actionGroup")
+    place = ET.Element(W + "Placemark")
+    ET.SubElement(group, W + "actionGroupStartIndex").text = "0"
+    end = ET.SubElement(group, W + "actionGroupEndIndex")
+    ET.SubElement(place, W + "index").text = "0"
+    indexes = set(range(30))
+    cases = {
+        0: "same_index",
+        1: "one_index_step",
+        2: "two_to_four_index_steps",
+        4: "two_to_four_index_steps",
+        5: "five_to_sixteen_index_steps",
+        16: "five_to_sixteen_index_steps",
+        17: "over_sixteen_index_steps",
+        29: "over_sixteen_index_steps",
+    }
+    for length, expected in cases.items():
+        end.text = str(length)
+        assert av._group_xml_index_delta_bucket(group, place, W, indexes) == expected
+    end.text = "30"
+    assert av._group_xml_index_delta_bucket(
+        group, place, W, indexes) == "endpoint_outside_folder"
+    end.text = "9"
+    assert av._group_xml_index_delta_bucket(
+        group, place, W, None) == "unreliable_folder_indices"
+    group.find(W + "actionGroupStartIndex").text = "1"
+    assert av._group_xml_index_delta_bucket(
+        group, place, W, indexes) == "starts_elsewhere"
+    group.find(W + "actionGroupStartIndex").text = "10"
+    assert av._group_xml_index_delta_bucket(
+        group, place, W, indexes) == "reversed_span"
+    end.text = "private-secret"
+    assert av._group_xml_index_delta_bucket(
+        group, place, W, indexes) == "missing_or_invalid_index"
+
+
+def test_span_length_buckets_report_only_categories_and_p_field_multiplicity():
+    base = archive("privateCorpAction", version="1.0.6")
+    altered = with_substituted_action(
+        base, "<wpml:actionGroupEndIndex>0</wpml:actionGroupEndIndex>",
+        "<wpml:actionGroupEndIndex>1</wpml:actionGroupEndIndex>")
+    altered = with_substituted_action(
+        altered, "<wpml:actionActuatorFuncParam>",
+        "<wpml:actionActuatorFuncParam>"
+        "<wpml:customSecretField>CLASSIFIED-ONE</wpml:customSecretField>"
+        "<wpml:customSecretField>CLASSIFIED-TWO</wpml:customSecretField>")
+    result = av._aggregate_action_records(
+        [(1, altered)], parameter_hints=True, field_aliases=True,
+        span_audit=True, span_length_buckets=True)
+    report = result["results"][0]
+    assert report["unknown_field_xml_index_delta_by_route"] == [
+        {"P01": {"one_index_step": {"2": 1}}}]
+    assert report["unknown_field_xml_span_by_route"] == [
+        {"P01": {"range_starts_at_anchor": 1}}]
+    assert result["unknown_field_aliases"][0]["occurrences"] == 2
+    data = json.dumps(result)
+    for secret in ("privateCorpAction", "customSecretField",
+                   "CLASSIFIED-ONE", "CLASSIFIED-TWO"):
+        assert secret not in data
+    assert result["full_content_verified"] is False
+    assert result["flight_compatibility_verified"] is False
+
+
+def test_span_length_bucket_is_explicit_opt_in():
+    data = param_archive(unknown_tag=True)
+    with pytest.raises(ValueError, match="require span audit"):
+        av._aggregate_action_records(
+            [(1, data)], parameter_hints=True, field_aliases=True,
+            span_length_buckets=True)
+    old = av._aggregate_action_records(
+        [(1, data)], parameter_hints=True, field_aliases=True,
+        span_audit=True)
+    assert "unknown_field_xml_index_delta_by_route" not in old["results"][0]
+
+
 def test_span_audit_opt_in_only():
     with pytest.raises(ValueError, match="span audit requires field aliases"):
         av._aggregate_action_records(
