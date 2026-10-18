@@ -165,6 +165,7 @@ class CloudOsdIngest:
                 kind = classified if classified is not None else (known.kind if known else None)
                 if kind is None:
                     self.ignored += 1
+                    self._count_channel(channel, 'ignored')
                     return False
                 if known is not None and kind != known.kind:
                     raise CloudOsdError("OSD device type conflicts with known device")
