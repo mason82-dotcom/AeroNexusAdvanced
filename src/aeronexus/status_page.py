@@ -417,10 +417,15 @@ async function updateSummary() {
     byId("health").textContent=data.health_warnings;
     const feed=data.live_feed||{state:"disabled"};
     byId("timestamp").textContent="Letzter Aufruf: "+data.server_time+" · DJI Cloud API lokal";
+    const osdStats=(feed.channels||{}).osd||{};
+    const stateStats=(feed.channels||{}).state||{};
+    const stateAbo=feed.state_topic_enabled===true?"ein":feed.state_topic_enabled===false?"aus":"unbekannt";
     byId("poll-health").textContent="MQTT: "+(feedStates[feed.state]||feed.state||"unbekannt")+
       " · Letzte gültige Nachricht: "+(feed.last_message_at||"noch keine")+
       " · "+(feed.accepted??0)+" akzeptiert / "+(feed.rejected??0)+" verworfen"+
       " / "+(feed.outdated??0)+" veraltete Duplikate"+
+      " · OSD: "+(osdStats.accepted??"n. v.")+" / State: "+(stateStats.accepted??"n. v.")+
+      " · State-Abo: "+stateAbo+
       " · Telemetrie-Frischegrenze: "+data.stale_after_seconds+" s";
     byId("feed").textContent="Live-Feed (DJI Cloud API): "+(feedStates[feed.state]||"unbekannt")+
       (feed.state==="disabled"?"":" · "+feed.accepted+" ok / "+feed.rejected+" verworfen");
