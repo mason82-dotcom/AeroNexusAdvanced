@@ -480,3 +480,49 @@ Unbekannte WPML-1.0.6-Aktionen werden weder ausgeführt noch nach
 WPML 1.0.2 umgedeutet. Kein Missionsupload, keine Befehle, kein O4.
 
 Referenz: https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
+
+## Im AeroNexus-Studio: anonyme Pilot-2-Aktionsdiagnose (opt-in)
+
+Die Wayline-Bibliothek besitzt einen neuen Button **Aktionsdiagnose laden**.
+Er ist ausdrücklich manuell auszulösen: Beim Laden der Studio-Seite
+werden dadurch **keine** KMZ-Dateien abgerufen. Das bestehende
+Viewer-Authentifizierungsmodell (Dashboard-Bearer oder explizit
+freigegebener HTTPS-LAN-Modus) gilt auch für die neue GET-Route:
+
+\`GET /api/v1/studio/pilot2/action-summary\`
+
+Die API nutzt die bereits bekannte, vollständig inventarisierte Pilot-2-
+Cloud-Sitzung und liest maximal acht lokale KMZ-Dateien über den
+festen Loopback-/MinIO-Pfad. Sie gibt ausschließlich eine strikt
+allowlist-basierte, anonyme Zusammenfassung mit Aktionszahlen,
+temporären Axx-Aliasnamen, zulässigen Triggernamen, Schema-Versionen
+und Routenanzahl zurück. Sie liefert keine Originalaktionsnamen,
+unbekannten XML-Feldnamen, Feldwerte, Koordinaten, Datei-/Missionsnamen,
+UUIDs, Tokens, Download-URLs oder KMZ-Inhalte.
+
+Eine pro Sitzung getrennte, nur im RAM gehaltene 90-Sekunden-Zwischenspeicherung
+und ein asynchrones Lock verhindern unnötige parallele Abfragen. Beim
+Wechsel der Pilot-2-Credentials wird der Cache nicht weiterverwendet.
+Der HTTP-Response trägt No-Store-Header; die Oberfläche erzeugt
+Textknoten statt HTML aus den empfangenen Werten. Erfolgreiche
+Authentifizierung muss vor jedem Lesevorgang erfolgen.
+
+Die Ansicht zeigt ausdrücklich, dass WPML-1.0.6-Semantik und
+Flugkompatibilität **nicht** verifiziert wurden. Insbesondere
+werden keine Aktionssemantiken geraten und keine unbekannten Aktionen
+im Studio-Editor oder WPML-Exporter freigeschaltet. Kein Upload,
+keine Änderung an Missionen, kein MQTT-Publish, keine Flugbefehle
+und keine O4-Integration.
+
+Für den Pi-Smoketest im getrennten Test-Worktree:
+
+~~~bash
+WT="$HOME/Projekte/AeroNexusAdvanced-pr46"
+PY="$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python"
+cd "$WT"
+PYTHONPATH="$WT/src" "$PY" -m pytest -q tests/test_pilot2_action_summary.py
+~~~
+
+Die Live-UI benötigt den Deployment-Stand dieses Branches;
+das Wechseln des Test-Worktrees allein verändert den laufenden
+AeroNexusAdvanced-Server **nicht**.
