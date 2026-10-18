@@ -90,7 +90,7 @@ def param_archive(*, unknown_tag=False, nonstandard_ns=False):
     extra = (b"<wpml:gimbalPitchRotateAngle>TOP-SECRET-VALUE</wpml:gimbalPitchRotateAngle>"
              b"<wpml:focusX>DO-NOT-LEAK</wpml:focusX>")
     if unknown_tag:
-        extra += b"<wpml:vendorSecretTag>classified</wpml:vendorSecretTag>"
+        extra += b"<wpml:vendorSecretTag>NEVER-EXPOSE-ABC789</wpml:vendorSecretTag>"
     if nonstandard_ns:
         extra += b"<foreign xmlns='urn:unsafe'>hidden-text</foreign>"
     target = source + extra
@@ -116,7 +116,7 @@ def test_optional_parameter_hints_classify_only_static_fields_without_values():
         "focus": 1, "gimbal": 1, "media_naming": 1,
         "payload": 1, "unclassified_fields_present": 1}
     encoded = json.dumps(report)
-    for secret in ("TOP-SECRET-VALUE", "DO-NOT-LEAK", "classified",
+    for secret in ("TOP-SECRET-VALUE", "DO-NOT-LEAK", "NEVER-EXPOSE-ABC789",
                    "hidden-text", "privateActionNeverExpose", "vendorSecretTag"):
         assert secret not in encoded
     assert report["full_content_verified"] is False
