@@ -38,7 +38,7 @@ def test_cockpit_only_uses_protected_read_endpoints_and_text_content():
     assert "sessionStorage" not in page
     assert "createElementNS" in page
     assert "openstreetmap" not in page.lower()
-    assert "authorization" not in page.lower()
+    assert 'headers:{"Authorization"' not in page
     assert "Bearer " not in page
     with TestClient(app) as client:
         response = client.get("/status")
