@@ -79,6 +79,36 @@ def categorize(known_kind, channel, payload, verdict, outdated, now_ms):
     return "other"
 
 
+# Fixed categories: only check allowlisted outer DJI property names.
+# The reader does not output unknown names, nested content, serials or values.
+_UNMAPPED_ROOTS = (
+    ("rc_video_capability_only", frozenset(("live_capacity",))),
+    ("rc_stream_state_only", frozenset(("live_status",))),
+    ("aircraft_psdk_ui", frozenset(("psdk_ui_resource",))),
+    ("aircraft_psdk_widgets", frozenset(("psdk_widget_values",))),
+    ("aircraft_payload_control_only", frozenset(("payloads",))),
+    ("sensitive_dongle_metadata", frozenset(("dongle_infos",))),
+    ("rc_link_metadata_only", frozenset(("wireless_link",))),
+    ("aircraft_battery_metadata_only", frozenset(("battery",))),
+    ("aircraft_maintenance_metadata_only", frozenset(("maintain_status",))),
+)
+UNMAPPED_BUCKETS = tuple(label for label, _ in _UNMAPPED_ROOTS) + ("other_or_unknown",)
+
+
+def unmapped_bucket(payload):
+    """One bounded, fixed diagnostic label; never return user-supplied keys."""
+    from aeronexus.cloud_api_osd import osd_envelope
+    try:
+        data, _timestamp = osd_envelope(payload)
+    except ValueError:
+        return "other_or_unknown"
+    keys = data.keys()
+    for label, approved in _UNMAPPED_ROOTS:
+        if any(key in keys for key in approved):
+            return label
+    return "other_or_unknown"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
@@ -158,6 +188,10 @@ def main(argv=None):
                             known_kind, channel, msg.payload, result, is_outdated,
                             int(datetime.now(timezone.utc).timestamp() * 1000),
                         )
+                        if channel == "state" and reason == "unmapped_properties":
+                            # These buckets are fixed labels, not dynamic DJI data.
+                            bucket = unmapped_bucket(msg.payload)
+                            outcomes["state", "unmapped_" + bucket] += 1
                     except (TypeError, ValueError):
                         reason = "other"
                     outcomes[channel, "reason_" + reason] += 1
@@ -213,6 +247,9 @@ def main(argv=None):
         print("=== DJI state decoder outcome reasons (privacy-safe) ===")
         for name in REASONS:
             print(f"state_reason_{name}:", outcomes["state", "reason_" + name])
+        print("=== State unmapped-property categories (safe fixed labels) ===")
+        for name in UNMAPPED_BUCKETS:
+            print(f"state_unmapped_{name}:", outcomes["state", "unmapped_" + name])
         print("state_accepted_aircraft:", recognized["aircraft"])
         print("state_accepted_controller:", recognized["controller"])
         state_clocks = {
