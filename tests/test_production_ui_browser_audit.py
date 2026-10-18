@@ -28,7 +28,7 @@ BASE = "https://192.168.178.63:8000"
     (BASE + "/api/v1/multispectral/captures/abc/stack.tif", "block"),
     (BASE + "/other", "block"),
     ("file:///etc/passwd", "block"),
-)))
+))
 def test_exact_request_allowlist(url, kind):
     assert audit.allow_request(url, "GET", BASE) == kind
 

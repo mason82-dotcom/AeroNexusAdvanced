@@ -23,7 +23,10 @@ import subprocess
 import tempfile
 from urllib.parse import urlsplit
 
-from scripts.pi.production_ui_readonly_audit import (
+# Executed both as a direct Pi script and imported by isolated pytest.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from production_ui_readonly_audit import (
     HTML_CHECKS, ReadOnlyClient, configured_client,
 )
 
