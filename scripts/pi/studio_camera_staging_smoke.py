@@ -47,6 +47,39 @@ class StagingSmokeError(RuntimeError):
     pass
 
 
+TILE_COVERAGE_JS = r"""() => {
+  // Samples actual on-screen map pixels rather than trusting just one tile.
+  // Successful tiles must be fully decoded and in the loaded state.
+  const mapBox = document.querySelector('#map')?.getBoundingClientRect();
+  if (!mapBox || mapBox.width <= 0 || mapBox.height <= 0) {
+    return {coverage: 0, loaded: 0, visible: 0};
+  }
+  const allTiles = Array.from(document.querySelectorAll(
+    '#map .leaflet-tile-pane img.leaflet-tile'));
+  const overlaps = box => box.right > mapBox.left && box.left < mapBox.right
+    && box.bottom > mapBox.top && box.top < mapBox.bottom;
+  const visible = allTiles.filter(img => overlaps(img.getBoundingClientRect()));
+  const good = visible.filter(img => img.complete && img.naturalWidth > 0
+    && img.classList.contains('leaflet-tile-loaded'))
+    .map(img => img.getBoundingClientRect());
+  const columns = 16, rows = 12;
+  let covered = 0;
+  for (let row = 0; row < rows; row++) {
+    const y = mapBox.top + (row + 0.5) * mapBox.height / rows;
+    for (let col = 0; col < columns; col++) {
+      const x = mapBox.left + (col + 0.5) * mapBox.width / columns;
+      if (good.some(tile => tile.left <= x && x < tile.right
+        && tile.top <= y && y < tile.bottom)) covered++;
+    }
+  }
+  return {
+    coverage: covered / (columns * rows),
+    loaded: good.length,
+    visible: visible.length
+  };
+}"""
+
+
 def isolated_env(workspace: Path, checkout: Path, host: str = "192.168.178.63") -> dict:
     """Pass no deployment credentials, tokens, proxy variables, or .env to staging."""
     # Never expose the user's real HOME to the test server. Several read-only
@@ -255,15 +288,26 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool):
             if blocked:
                 raise StagingSmokeError("Blocked unexpected external/mutating browser requests")
             if require_tiles:
-                # Vector rendering and raster delivery complete independently.
-                # Give real Esri/OSM tiles time to arrive before asserting.
+                # A single loaded tile does not establish that the map is
+                # usable. Wait until decoded tile images cover >=95% of
+                # the currently visible map viewport; never inspect imagery
+                # pixels or disclose tile requests/location in diagnostics.
                 try:
                     page.wait_for_function(
-                        "() => document.querySelector('#map img.leaflet-tile-loaded') !== null",
-                        timeout=15000)
+                        "(" + TILE_COVERAGE_JS + ")().coverage >= 0.95",
+                        timeout=22000)
                 except Exception:
+                    stats = page.evaluate(TILE_COVERAGE_JS)
                     raise StagingSmokeError(
-                        "No real map tile loaded within 15 s (network needed)") from None
+                        "Raster coverage insufficient after 22 s: "
+                        + str(round(stats["coverage"] * 100, 1))
+                        + "% of map viewport; "
+                        + str(stats["loaded"]) + "/"
+                        + str(stats["visible"]) + " visible tile images decoded."
+                    ) from None
+                stats = page.evaluate(TILE_COVERAGE_JS)
+                print("Raster coverage:", round(stats["coverage"] * 100, 1),
+                      "% (" + str(stats["loaded"]) + " decoded tiles)")
             screenshot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(screenshot), timeout=15000)
             print("Staging browser: PASS / real API + real Leaflet SVG")
