@@ -59,7 +59,13 @@ def test_preview_accepts_only_bounded_opaque_readable_images():
     item = {"id": id_, "mime": "image/jpeg", "size_bytes": 240,
             "previewable": True}
     assert audit.choose_preview({"media": [item]}) == id_
-    for new in ({"id": "../file"}, {"size_bytes": 900_000},
+    assert audit.choose_preview({"media": [{**item, "size_bytes": 8_000_000}]}) == id_
+    assert audit.API_CHECKS[[x[1] for x in audit.API_CHECKS].index("photo_map")][0] == (
+        "/api/v1/photos/map?limit=10"
+    )
+    assert len(audit.PREVIEW_SEARCH_PATHS) == 4
+    assert all(path.startswith("/api/v1/studio/dji-media?q=.") for path in audit.PREVIEW_SEARCH_PATHS)
+    for new in ({"id": "../file"}, {"size_bytes": 40_000_000},
                 {"mime": "video/mp4"}, {"previewable": False}):
         assert audit.choose_preview({"media": [{**item, **new}]}) is None
     class FakeClient:
@@ -75,8 +81,6 @@ def test_audit_does_not_allow_arbitrary_media_or_external_urls():
     assert "POST" not in source
     assert "print(" not in source
     assert "media_id" in inspect.getsource(audit.ReadOnlyClient.preview)
-    assert audit.RejectRedirect().redirect_request(None, None, 302,
-                                                     "moved", {}, "https://example.com") if False else True
     with pytest.raises(ValueError, match="redirect"):
         audit.RejectRedirect().redirect_request(None, None, 302,
                                                  "moved", {}, "https://example.com")
