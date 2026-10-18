@@ -64,7 +64,7 @@ def _model_key(node):
     return f"0-{a}-{b}" if a and b and _MODEL_PART.fullmatch(a) and _MODEL_PART.fullmatch(b) else None
 
 
-def _read_xml(kmz: bytes):
+def _read_wpml_root(kmz: bytes):
     if not isinstance(kmz, bytes) or not 0 < len(kmz) <= MAX_KMZ:
         raise LocalWaylineError("invalid_archive")
     try:
@@ -84,13 +84,128 @@ def _read_xml(kmz: bytes):
                 raise LocalWaylineError("invalid_archive")
     except (BadZipFile, OSError, RuntimeError, EOFError):
         raise LocalWaylineError("invalid_archive") from None
-    root = _xml_root(data)
+    return _xml_root(data)
+
+
+def _read_xml(kmz: bytes):
+    root = _read_wpml_root(kmz)
     if root.tag != K + "kml":
         raise LocalWaylineError("unsupported_geometry")
     doc = root.find(K + "Document")
     if doc is None:
         raise LocalWaylineError("unsupported_geometry")
     return doc
+
+
+def _ns_class(tag, target):
+    if not isinstance(tag, str):
+        return "unknown"
+    if tag == "{" + target + "}" + tag.rsplit("}", 1)[-1]:
+        return "standard"
+    if not tag.startswith("{"):
+        return "unqualified"
+    return "nonstandard"
+
+
+def classify_wpml_structure(kmz: bytes) -> dict:
+    """Report only structural categories, never tag contents, namespaces or positions.
+
+    Inspect missing qualified/recursive XML elements without lowering semantic
+    validation. A nonstandard namespace is never silently treated as DJI WPML.
+    """
+    root = _read_wpml_root(kmz)
+    elements = list(root.iter())
+    if len(elements) > 25000:
+        raise LocalWaylineError("invalid_archive")
+    from .pilot2_wayline_preview import _tag
+    direct_docs = [item for item in root if _tag(item) == "Document"]
+    all_docs = [item for item in elements if _tag(item) == "Document"]
+    doc = direct_docs[0] if len(direct_docs) == 1 else None
+    descendants = list(doc.iter()) if doc is not None else []
+    direct_configs = [item for item in doc if _tag(item) == "missionConfig"] if doc is not None else []
+    configs = [item for item in descendants if _tag(item) == "missionConfig"]
+    direct_folders = [item for item in doc if _tag(item) == "Folder"] if doc is not None else []
+    all_folders = [item for item in descendants if _tag(item) == "Folder"]
+    direct_wpml_config = doc.find(W + "missionConfig") if doc is not None else None
+    direct_qualified_folders = doc.findall(K + "Folder") if doc is not None else []
+    spots = [item for item in descendants if _tag(item) == "Placemark"]
+    points = [item for item in descendants if _tag(item) == "Point"]
+    coords = [item for item in descendants if _tag(item) == "coordinates"]
+    # Exact parser compatibility only; do not expose root tags or namespace URIs.
+    qualified_doc = root.find(K + "Document") if root.tag == K + "kml" else None
+    strict_ok = bool(qualified_doc is not None
+                     and qualified_doc.find(W + "missionConfig") is not None
+                     and 1 <= len(qualified_doc.findall(K + "Folder")) <= MAX_FEATURES)
+    if root.tag != K + "kml":
+        reason = "root_namespace"
+    elif qualified_doc is None:
+        reason = "document_namespace_or_nesting"
+    elif direct_wpml_config is None:
+        reason = "mission_config_namespace_or_missing"
+    elif not direct_qualified_folders:
+        reason = "folder_namespace_or_nesting"
+    elif len(direct_qualified_folders) > MAX_FEATURES:
+        reason = "too_many_direct_folders"
+    else:
+        # The strict parser additionally requires direct Point/coordinates.
+        direct_points = 0
+        for folder in direct_qualified_folders:
+            for place in folder.findall(K + "Placemark"):
+                point = place.find(K + "Point")
+                if point is not None and point.find(K + "coordinates") is not None:
+                    direct_points += 1
+        reason = "point_coordinate_namespace_or_nesting" if direct_points < len(spots) else "structurally_compatible"
+    return {
+        "root_namespace": _ns_class(root.tag, KML_NS),
+        "direct_document_count": len(direct_docs),
+        "document_count": len(all_docs),
+        "document_namespace": _ns_class(doc.tag, KML_NS) if doc is not None else None,
+        "direct_mission_config_count": len(direct_configs),
+        "mission_config_count": len(configs),
+        "mission_config_namespace": _ns_class(configs[0].tag, WPML_NS) if configs else None,
+        "direct_folder_count": len(direct_folders),
+        "folder_count": len(all_folders),
+        "folder_namespace": _ns_class(all_folders[0].tag, KML_NS) if all_folders else None,
+        "placemark_count": len(spots),
+        "point_count": len(points),
+        "coordinate_element_count": len(coords),
+        "strict_parser_gate": reason,
+        "strict_header_compatible": strict_ok,
+        "full_content_verified": False,
+    }
+
+
+async def diagnose_structure(*, limit=8, inventory_reader=None, kmz_reader=None,
+                             credentials_loader=None):
+    """Classify actual Pilot 2 KMZ layout, with no IDs, names or coordinates."""
+    if type(limit) is not int or not 1 <= limit <= 8:
+        raise ValueError("invalid limit")
+    reader = inventory_reader or read_waylines
+    downloader = kmz_reader or _download_kmz
+    loader = credentials_loader or load_credentials
+    credentials = loader(credentials_path())
+    if credentials is None:
+        return {"inventory_state": "not_configured", "results": []}
+    inventory = await asyncio.wait_for(reader(credentials), timeout=15)
+    if (inventory.get("state") != "connected"
+            or inventory.get("workspace_id") != credentials.workspace_id
+            or not inventory.get("pagination_complete")):
+        return {"inventory_state": "incomplete_inventory", "results": []}
+    results = []
+    for index, route in enumerate(inventory["waylines"][:limit], start=1):
+        try:
+            kmz = await asyncio.wait_for(downloader(
+                credentials, route["wayline_id"]), timeout=22)
+            results.append({"index": index, "state": "connected",
+                            **classify_wpml_structure(kmz)})
+        except LocalWaylineError as exc:
+            allowed = {"invalid_archive", "storage_unavailable", "authentication_required",
+                       "storage_origin_rejected", "unsupported_geometry"}
+            results.append({"index": index, "state": str(exc) if str(exc) in allowed else "unavailable"})
+        except (httpx.HTTPError, OSError, TimeoutError):
+            results.append({"index": index, "state": "unavailable"})
+    return {"inventory_state": "connected", "reported_total": inventory.get("reported_total"),
+            "checked": len(results), "results": results}
 
 
 def parse_parameter_audit(kmz: bytes) -> dict:
@@ -298,12 +413,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="Read-only Pilot 2 WPML parameter audit. "
                     "No coordinates, IDs, names or credentials in output.")
-    parser.add_argument("--mission", required=True, help="Existing Studio mission UUID")
+    parser.add_argument("--mission", help="Existing Studio mission UUID (nicht bei --structure-only)")
     parser.add_argument("--limit", type=int, choices=range(1, 9), default=8)
+    parser.add_argument("--structure-only", action="store_true",
+                        help="Ausgabe ausschließlich der anonymisierten XML-Struktur")
     args = parser.parse_args()
+    if not args.structure_only and not args.mission:
+        parser.error("--mission erforderlich ohne --structure-only")
     try:
-        mission = read_local_mission(args.mission)
-        report = asyncio.run(diagnose_parameters(mission, limit=args.limit))
+        if args.structure_only:
+            report = asyncio.run(diagnose_structure(limit=args.limit))
+        else:
+            mission = read_local_mission(args.mission)
+            report = asyncio.run(diagnose_parameters(mission, limit=args.limit))
     except (WorkspaceError, ValueError, KeyError, TypeError, LocalWaylineError):
         report = {"inventory_state": "invalid_or_unavailable_mission", "results": []}
     except (httpx.HTTPError, OSError, TimeoutError):
