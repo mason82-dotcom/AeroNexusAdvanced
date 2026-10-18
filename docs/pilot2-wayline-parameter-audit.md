@@ -218,3 +218,40 @@ verschiedene Läufe; sie sind **keine DJI-Aktionsnamen**.
 Die Ergebnisse verraten keine Funktion der unbekannten Aktionen. Ebenso
 wird keine semantische DJI-WPML-1.0.6-Kompatibilität zertifiziert. Alle
 Flug- und Schreibbefehle und O4 bleiben ausdrücklich ausgeschlossen.
+
+## Optionale, anonymisierte Parameter-Hinweise zu unbekannten Aktionen
+
+Die erste Live-Korrelation fand nur 7 verschiedene unbekannte Aktionswerte,
+davon 554/579 Vorkommen in zwei häufigen Typen (anonyme Kennungen A02/A03).
+Trigger allein belegen jedoch KEINE DJI-Aktionssemantik.
+
+Deshalb ergänzt der spezielle Diagnosebefehl optional:
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced-pr46
+PYTHONPATH="$PWD/src" \
+  "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+  -m aeronexus.pilot2_wayline_action_vocabulary \
+  --limit 8 --parameter-hints
+~~~
+
+Pro neutraler Aktionskennung erscheinen bei Bedarf nur
+parameter_container_counts (z. B. absent/present/empty) und
+parameter_category_counts. Letztere zählen **vorhandene** Felder aus
+einer fest codierten kleinen Liste offizieller DJI-WPML-Feldnamen;
+Kategorien sind z. B. gimbal, camera_lens, payload, media_naming,
+focus, zoom, hover, aircraft. Alle nicht klassifizierten Feldnamen
+werden zusammenfassend als unclassified_fields_present gezählt.
+
+**Weder Werte noch unbekannte Feld-/Aktionsnamen, Hashes, XML,
+Koordinaten, Standortdaten, IDs oder Tokens gelangen in die Ausgabe.**
+Die Ausgabe ist ein Präsenzmuster ohne garantierte Funktionszuordnung:
+beispielsweise kommt payloadPositionIndex in mehreren DJI-Aktionsarten
+vor. Die Zuordnung der WPML-1.0.6-Semantik bleibt unbestätigt; niemals
+daraus selbstständig Aktionen ausführen, Konfigurationsänderungen
+vornehmen oder Missionen hochladen.
+
+Ohne --parameter-hints bleibt das vorherige JSON-Format unverändert.
+
+DJI-Felddefinitionen:
+https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
