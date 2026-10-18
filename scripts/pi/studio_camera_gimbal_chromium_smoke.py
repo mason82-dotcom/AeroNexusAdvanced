@@ -241,7 +241,19 @@ def run_smoke(browser=None):
                 command, capture_output=True, text=True,
                 timeout=45, check=False,
             )
-            return 0 if result.returncode == 0 and PASS.search(result.stdout) else 1
+            if result.returncode != 0:
+                # Browser diagnostics contain only a synthetic, temporary
+                # file:// fixture; print no unrestricted Chromium logs.
+                print("Camera smoke browser exited with code:", result.returncode,
+                      file=sys.stderr)
+                return 1
+            if PASS.search(result.stdout):
+                return 0
+            mismatch = re.search(
+                r'data-camera-smoke-error="([^"]{0,120})"', result.stdout)
+            print("Camera smoke DOM failed:", mismatch.group(1)
+                  if mismatch else "no DOM result marker", file=sys.stderr)
+            return 1
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
         return 1
 
