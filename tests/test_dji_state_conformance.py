@@ -92,13 +92,14 @@ def test_probe_only_exposes_fixed_property_paths_not_device_identity_or_values()
     assert mod.accumulate(captured, snapshot) == {"aircraft": 1, "controller": 0}
     result = mod.report(captured, {"aircraft": 1, "controller": 1}, {
         "live_feed": {"state": "subscribed", "state_topic_enabled": True,
-                      "channels": {"state": {"accepted": 1}, "osd": {"accepted": 2}}}})
+                      "channels": {"state": {"accepted": 1}, "osd": {"accepted": 2}}}},
+        {"live_feed": {"channels": {"state": {"accepted": 0}, "osd": {"accepted": 1}}}})
     raw = json.dumps(result)
     assert "flight_mode_code" in raw
     assert "cloud_details.firmware_version" in raw
     assert secret not in raw
     assert "49.5" not in raw
-    assert result["outcome"] == "state_events_observed_partial_property_evidence"
+    assert result["outcome"] == "state_events_observed_in_window_partial_property_evidence"
 
 
 def test_probe_cannot_claim_state_coverage_from_osd_or_zero_events():
@@ -112,7 +113,7 @@ def test_probe_cannot_claim_state_coverage_from_osd_or_zero_events():
     result = mod.report(capture, {"aircraft": 1, "controller": 1},
                         {"live_feed": {"state_topic_enabled": True,
                                        "channels": {"state": {"accepted": 0}}}})
-    assert result["outcome"] == "state_event_not_observed"
+    assert result["outcome"] == "state_event_not_observed_in_window"
     with pytest.raises(ValueError):
         mod.origin("http://127.0.0.1:8000")
     with pytest.raises(ValueError):
