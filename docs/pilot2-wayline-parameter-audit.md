@@ -370,3 +370,36 @@ print(json.dumps([
 ],indent=2))
 '
 ~~~
+
+### Grobe Lage wiederholter Felder innerhalb der XML-Teilroute
+
+Nach einer Liveprüfung traten alle 30 dreifachen P03-Felder in den
+jeweils ersten Foldern der vier Bibliotheksmissionen 1, 2, 4 und 7
+auf. Das neue optionale Flag --position-buckets erlaubt die
+weitere Zuordnung nach groben Dritteln der *XML-Placemark-Liste*.
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced-pr46
+PYTHONPATH="$PWD/src" \
+  "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+  -m aeronexus.pilot2_wayline_action_vocabulary \
+  --limit 8 --parameter-hints --field-aliases --position-buckets
+~~~
+
+Das neue Feld results[].unknown_field_xml_placement_by_route enthält
+pro Folder und anonymem Feldalias Pxx nur die Zählung der Aktions-
+instanzen nach erstem, mittlerem bzw. letztem Drittel und Feldanzahl
+innerhalb einer Aktion. Die Ausgabe enthält keine exakten Wegpunkt-
+indizes, Datenpunkte, Entfernungen, GPS-Koordinaten, Feld-/Aktionsnamen,
+UUIDs, Inhalte oder Parameterwerte. Ohne Flag bleibt die Ausgabe
+unverändert.
+
+**Wichtig:** Das ist ausschließlich die Stelle des actionGroup-
+XML-Knotens in der Placemark-Reihenfolge. Gemäß DJI kann actionGroup
+über actionGroupStartIndex und actionGroupEndIndex einen anderen
+Ausführungsbereich festlegen. Die Statistik beschreibt deshalb NICHT
+die reale Ausführungsposition oder Flugrichtung und darf nicht zu
+Steuerungs- oder Sicherheitsentscheidungen verwendet werden.
+
+DJI-Spezifikation:
+https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
