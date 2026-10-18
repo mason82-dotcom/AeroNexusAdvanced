@@ -422,6 +422,12 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <p id="wayline-range" class="note" role="status" aria-live="polite"></p>
 <div id="wayline-grid" class="wayline-grid" role="region" aria-label="Cloud-Routen"></div>
 <div class="button-row"><button id="wayline-prev" disabled>Vorherige Seite</button><span id="wayline-page">Seite 1</span><button id="wayline-next" disabled>Nächste Seite</button></div>
+<section id="pilot2-action-summary" class="wayline-tools" aria-labelledby="pilot2-action-title" style="display:block;margin-top:22px">
+  <div class="page-head"><div><h2 id="pilot2-action-title">Pilot-2-WPML-Diagnose (nur lesen)</h2><p class="muted">Anonyme Aktionszählung aus bis zu acht Cloud-Waylines. Kein Import, keine Ausführung und keine Flugfreigabe.</p></div>
+  <button id="pilot2-action-load">Aktionsdiagnose laden</button></div>
+  <p id="pilot2-action-status" class="status" role="status" aria-live="polite">Nur nach Klick: keine automatischen KMZ-Abrufe.</p>
+  <div id="pilot2-action-results" class="wayline-grid" role="region" aria-label="Anonyme DJI-Aktionsdiagnose"></div>
+</section>
 </div>
 </section>
 <section class="pane" id="fleet-pane">
@@ -1531,6 +1537,47 @@ async function openCloudOverview(){
     "Routen einzeln schaltbar; keine Flugfreigabe.");
 }
 
+async function loadPilot2ActionSummary(){
+  const button=$("pilot2-action-load");
+  const status=$("pilot2-action-status");
+  const list=$("pilot2-action-results");
+  if(button.disabled)return;
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),95000);
+  button.disabled=true;list.replaceChildren();
+  status.className="status";status.textContent="Anonyme WPML-Aktionsdiagnose wird lesend abgerufen…";
+  try{
+    const response=await api("/api/v1/studio/pilot2/action-summary",{signal:controller.signal});
+    const data=await response.json();
+    if(data?.state!=="connected"){
+      status.className="status error";
+      status.textContent="Pilot-2-Diagnose nicht verfügbar ("+clean(data?.state)+"). Es wurden keine Flugaktionen ausgeführt.";
+      return;
+    }
+    const count=Number(data.checked)||0;
+    status.className="status";
+    status.textContent=count+" Waylines geprüft · "+clean(data.recognized_actions)+
+      " bekannte und "+clean(data.unknown_actions)+" unbekannte Aktionsvorkommen."+
+      " WPML-Semantik und Flugkompatibilität nicht bestätigt.";
+    if(!Array.isArray(data.anonymous_types)||!Array.isArray(data.waylines)){
+      throw new Error("Diagnoseformat unvollständig");
+    }
+    for(const entry of data.anonymous_types.slice(0,128)){
+      const card=els("article","wayline-card");
+      cardText(card,"h2","",clean(entry.alias));
+      cardText(card,"p","",clean(entry.occurrences)+" Vorkommen · "+clean(entry.file_count)+" Cloud-Dateien");
+      const triggers=entry.triggers&&typeof entry.triggers==="object"
+        ?Object.entries(entry.triggers).map(([key,val])=>key+": "+val).join(" · "):"–";
+      cardText(card,"p","muted","Auslöser: "+triggers);
+      list.appendChild(card);
+    }
+    cardText(list,"p","note","Nur anonymisierte Zähler. Kein unbearbeitetes WPML, keine Koordinaten, keine Übertragbarkeits- oder Flugfreigabe.");
+  }catch(err){
+    status.className="status error";
+    status.textContent=controller.signal.aborted
+      ?"Diagnose-Zeitlimit erreicht.":errorMessage(err);
+  }finally{clearTimeout(timer);button.disabled=false;}
+}
 function waylineSourceState(data){
   const state=data.local_pilot?.state||"not_configured";
   const labels={not_configured:"nicht eingerichtet",awaiting_browser_session:"wartet auf vorhandene Cloud-Sitzung",configuration_error:"Konfiguration prüfen",
@@ -2538,6 +2585,7 @@ function wire(){
   });
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
   $("refresh-waylines").addEventListener("click",loadWaylines);
+  $("pilot2-action-load").addEventListener("click",()=>loadPilot2ActionSummary());
   $("wayline-overview-open").addEventListener("click",()=>openCloudOverview().catch(err=>{
     $("wayline-state").className="status error";$("wayline-state").textContent=errorMessage(err);
   }));
