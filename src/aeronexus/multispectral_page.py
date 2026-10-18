@@ -504,8 +504,8 @@ function initMap(){
   if(!map){
     map=L.map("ms-map",{preferCanvas:true}).setView([51.1,10.4],6);
     const sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:22,maxNativeZoom:19,attribution:"Esri World Imagery"});
-    const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:19,attribution:"© OpenStreetMap"});
-    sat.addTo(map);L.control.layers({"Satellit":sat,"Straßenkarte":osm}).addTo(map);
+    const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:19,referrerPolicy:"strict-origin-when-cross-origin",attribution:"© OpenStreetMap"});
+    osm.addTo(map);L.control.layers({"Straßenkarte":osm,"Satellit":sat}).addTo(map);
     mapLayer=L.layerGroup().addTo(map);overlayLayer=L.layerGroup().addTo(map);
     const bar=$("map-legend-bar").getContext("2d"),img=bar.createImageData(140,1),pal=lut("rdylgn");
     for(let i=0;i<140;i++){const k=Math.round(i/139*255);img.data.set([pal[k*3],pal[k*3+1],pal[k*3+2],255],i*4);}bar.putImageData(img,0,0);
