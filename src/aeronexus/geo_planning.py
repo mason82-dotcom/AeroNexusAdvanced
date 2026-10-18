@@ -6,10 +6,12 @@ geometries where that approximation could be misleading.
 """
 from __future__ import annotations
 
-from math import cos, radians, sin
+from math import ceil, cos, radians, sin
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .survey_camera import SurveyCameraRequest, camera_footprint
 
 
 class GeoPoint(BaseModel):
@@ -59,6 +61,7 @@ class SurveyPlanRequest(BaseModel):
     polygon: GeoObject
     spacing_m: float = Field(default=20, ge=2, le=200, allow_inf_nan=False)
     bearing_deg: float = Field(default=0, ge=0, lt=360, allow_inf_nan=False)
+    camera: SurveyCameraRequest | None = None
 
     @model_validator(mode="after")
     def require_polygon(self):
@@ -99,6 +102,11 @@ def generate_survey_preview(request: SurveyPlanRequest) -> dict:
 
     Flight turns, obstacle clearance, battery, elevation and RTH are unknown.
     """
+    optics = camera_footprint(request.camera) if request.camera else None
+    spacing_m = optics["spacing_m"] if optics else request.spacing_m
+    if not 2 <= spacing_m <= 200:
+        raise ValueError("Camera-derived spacing outside 2–200 m; adjust height/overlap")
+    photo_estimate = 0
     vertices = request.polygon.vertices
     lat0 = sum(p.latitude for p in vertices) / len(vertices)
     lon0 = sum(p.longitude for p in vertices) / len(vertices)
@@ -115,7 +123,7 @@ def generate_survey_preview(request: SurveyPlanRequest) -> dict:
     if right-left < .1:
         raise ValueError("Survey area too narrow")
     span = right-left
-    nlines = max(1, int(span/request.spacing_m) + 1)
+    nlines = max(1, int(span/spacing_m) + 1)
     if nlines > 150:
         raise ValueError("Too many flight lines; increase spacing")
     offsets = [(left+right)/2] if nlines==1 else [
@@ -146,8 +154,13 @@ def generate_survey_preview(request: SurveyPlanRequest) -> dict:
                 segment.reverse()
             legs.append(segment)
             total += v2-v1
+            if optics:
+                photo_estimate += ceil((v2-v1)/optics["trigger_interval_m"])+1
     if not legs:
         raise ValueError("No survey lines inside polygon")
-    return {"kind":"survey-preview","legs":legs,"leg_count":len(legs),
-            "distance_m":round(total,1),
-            "note":"Preview only: independent legs, no safe connecting turns, terrain, obstacles or DJI mission export."}
+    result = {"kind":"survey-preview","legs":legs,"leg_count":len(legs),
+              "distance_m":round(total,1),
+              "note":"Preview only: independent legs, no safe connecting turns, terrain, obstacles or DJI mission export."}
+    if optics:
+        result["camera_plan"] = {**optics, "estimated_photo_count": photo_estimate}
+    return result
