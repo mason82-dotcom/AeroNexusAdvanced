@@ -141,7 +141,23 @@ Die `field_status[].channel=state`-Ursprungsmarkierung wird ausschließlich beim
 MQTT-Ingest erzeugt; somit ist die **lokale Verarbeitung eines State-Felds
 je Gerät** nachgewiesen, nicht nur ein erfolgreiches Broker-Subscribe. Diese
 Zählung betrifft **gespeicherte Feldpfade**, nicht empfangene MQTT-Nachrichten.
-Der Name des einen State-Felds am Fluggerät ist bisher noch nicht ermittelt.
+Anschließende Bestandsprüfung über die geschützte HTTPS-Geräte-API:
+
+| Gerät | Verarbeitetes State-Feld | Empfangsalter | DJI-Quellalter | Feldfrische |
+|---|---|---:|---:|---|
+| Fluggerät | `cloud_details.rth_mode_code` | 474,493 s | 496,183 s | `stale` |
+| Controller | `cloud_details.cloud_control_authorization_count` | 474,492 s | 496,181 s | `stale` |
+
+Beide Geräte waren gleichzeitig `fresh`: die OSD-Frische wird **nicht**
+durch ältere State-Felder herabgesetzt oder unzulässig erneuert. Beide
+State-Felder besitzen einen DJI-Quellzeitstempel. Aus den beiden unabhängigen
+Altersangaben ergibt sich eine ungefähr **21,69 Sekunden ältere Quellzeit**
+gegenüber dem Gateway-Empfang. Bei der bislang empfohlenen 15-s-Grenze
+kann das State-Feld somit bereits beim Empfang als `stale` projiziert worden
+sein. Ungeklärt sind DJI-/Pi-Uhrendifferenz, ursprüngliche Ereigniszeit und
+Transport-/Pufferverzögerung. Vor einer Anpassung der Frischepolitik
+**OSD-Quell-/Empfangsalter als Gegenprobe vergleichen**, keine Zeitstempel
+automatisch korrigieren oder alte State-Eigenschaften als live ausgeben.
 Die sieben ignorierten Pakete sind ohne kanalgetrennte Messung nicht erklärbar;
 insbesondere sind sie nicht mit fehlerhaften State-Paketen gleichzusetzen.
 
