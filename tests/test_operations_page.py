@@ -68,7 +68,9 @@ def test_forst_and_no_dji_remote_host_are_used():
     page = render_operations()
     assert "49.1533,lon:8.58417,zoom:15" in page
     assert "id=\"map-forst\"" in page
-    assert "mapLayers.satellite.addTo(map)" in page
+    assert "mapLayers.street.addTo(map)" in page
+    assert "mapLayers.satellite.addTo(map)" not in page
+    assert '<option value="street" selected>' in page
     assert "tile.openstreetmap.org" in page
     assert "referrerPolicy:\"strict-origin-when-cross-origin\"" in page
     assert "djigate.com" not in page
