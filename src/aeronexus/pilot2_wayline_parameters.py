@@ -51,6 +51,9 @@ DOCUMENTED_ACTION_TYPES = frozenset({
     "recordPointCloud",
 })
 MAX_ACTIONS = 10000
+DOCUMENTED_ACTION_TRIGGERS = frozenset({
+    "reachPoint", "betweenAdjacentPoints", "multipleTiming", "multipleDistance",
+})
 _MODEL_PART = re.compile(r"[0-9]{1,5}\Z")
 
 
@@ -241,6 +244,33 @@ def _action_counts(values):
     return dict(sorted(counts.items())), unknown
 
 
+def _unknown_profiles(values, allowlist):
+    """Privacy-safe shape categories and distinct counts, never raw enum values."""
+    missing = identifier = numeric = other = 0
+    distinct = set()
+    for item in values:
+        if item in allowlist:
+            continue
+        distinct.add(item)
+        if not item:
+            missing += 1
+        elif re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", item):
+            identifier += 1
+        elif re.fullmatch(r"[0-9]{1,20}", item):
+            numeric += 1
+        else:
+            other += 1
+    return {
+        "distinct_count": len(distinct),
+        "shape_counts": {
+            "missing": missing,
+            "identifier": identifier,
+            "numeric": numeric,
+            "other": other,
+        },
+    }
+
+
 def parse_parameter_audit(kmz: bytes) -> dict:
     """Bounded, allowlisted, position-free WPML audit over actual executable Folders."""
     doc = _read_xml(kmz)
@@ -268,6 +298,8 @@ def parse_parameter_audit(kmz: bytes) -> dict:
             raise LocalWaylineError("invalid_archive")
         waypoints, photo_count, other_action_count = [], 0, 0
         route_action_values = []
+        route_trigger_values = []
+        group_count = 0
         start_groups = folder.findall(wpml_prefix + "startActionGroup")
         if len(start_groups) > 1:
             raise LocalWaylineError("unsupported_geometry")
@@ -299,6 +331,18 @@ def parse_parameter_audit(kmz: bytes) -> dict:
             if action_total > MAX_ACTIONS:
                 raise LocalWaylineError("invalid_archive")
             route_action_values.extend(actions)
+            groups = place.findall(".//" + wpml_prefix + "actionGroup")
+            group_count += len(groups)
+            if group_count > MAX_ACTIONS:
+                raise LocalWaylineError("invalid_archive")
+            for group in groups:
+                triggers = group.findall(
+                    wpml_prefix + "actionTrigger/" + wpml_prefix + "actionTriggerType")
+                if len(triggers) == 1:
+                    route_trigger_values.append(
+                        triggers[0].text.strip() if triggers[0].text else None)
+                else:
+                    route_trigger_values.append(None)
             photo_count += actions.count("takePhoto")
             other_action_count += len(actions) - actions.count("takePhoto")
             waypoints.append({
@@ -311,6 +355,10 @@ def parse_parameter_audit(kmz: bytes) -> dict:
             })
         per_route_counts, per_route_unknown = _action_counts(route_action_values)
         start_counts, start_unknown = _action_counts(start_action_values)
+        trigger_counts = {}
+        for trigger in route_trigger_values:
+            if trigger in DOCUMENTED_ACTION_TRIGGERS:
+                trigger_counts[trigger] = trigger_counts.get(trigger, 0) + 1
         mode = _child_text(folder, "executeHeightMode", wpml_prefix)
         route_info.append({
             "height_mode": mode if mode in MODES else "unknown",
@@ -324,6 +372,11 @@ def parse_parameter_audit(kmz: bytes) -> dict:
             "start_action_type_counts": start_counts,
             "unrecognized_start_action_count": start_unknown,
             "start_action_count": len(start_action_values),
+            "unknown_action_profile": _unknown_profiles(route_action_values, DOCUMENTED_ACTION_TYPES),
+            "unknown_start_action_profile": _unknown_profiles(start_action_values, DOCUMENTED_ACTION_TYPES),
+            "action_trigger_counts": dict(sorted(trigger_counts.items())),
+            "unknown_action_trigger_count": len(route_trigger_values) - sum(trigger_counts.values()),
+            "waypoint_action_group_count": group_count,
         })
     return {
         "wpml_schema_version": schema_version,
@@ -350,11 +403,14 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
     # actuator contents, unknown enum strings, XML fragments, or action parameters.
     action_type_counts = {}
     start_action_type_counts = {}
+    action_trigger_counts = {}
     for route in routes:
         for type_name, count in route["action_type_counts"].items():
             action_type_counts[type_name] = action_type_counts.get(type_name, 0) + count
         for type_name, count in route["start_action_type_counts"].items():
             start_action_type_counts[type_name] = start_action_type_counts.get(type_name, 0) + count
+        for type_name, count in route["action_trigger_counts"].items():
+            action_trigger_counts[type_name] = action_trigger_counts.get(type_name, 0) + count
     output = {
         "wpml_model_key": wpml_model,
         "wpml_schema_version": audit["wpml_schema_version"],
@@ -375,6 +431,21 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
         "start_action_type_counts": dict(sorted(start_action_type_counts.items())),
         "unrecognized_start_action_count": sum(route["unrecognized_start_action_count"] for route in routes),
         "route_start_actions_present": any(route["start_actions_present"] for route in routes),
+        "unknown_action_distinct_by_route": [
+            r["unknown_action_profile"]["distinct_count"] for r in routes
+        ],
+        "unknown_action_shapes_by_route": [
+            r["unknown_action_profile"]["shape_counts"] for r in routes
+        ],
+        "unknown_start_action_distinct_by_route": [
+            r["unknown_start_action_profile"]["distinct_count"] for r in routes
+        ],
+        "unknown_start_action_shapes_by_route": [
+            r["unknown_start_action_profile"]["shape_counts"] for r in routes
+        ],
+        "waypoint_action_group_count": sum(route["waypoint_action_group_count"] for route in routes),
+        "action_trigger_counts": dict(sorted(action_trigger_counts.items())),
+        "unknown_action_trigger_count": sum(route["unknown_action_trigger_count"] for route in routes),
         "geometry_result": geometry["geometry_result"],
         "parameter_state": "not_comparable",
         "parameter_matches": {},
