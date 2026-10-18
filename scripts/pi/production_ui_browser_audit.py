@@ -161,8 +161,9 @@ def evaluate_layout(page, selector: str) -> tuple[bool, int, int]:
     """Derived counts ONLY. Never return DOM text or sensitive attributes."""
     info = page.evaluate("""selector=>{
        const node=document.querySelector(selector), root=document.documentElement;
-       const bounds=node?.getBoundingClientRect();
-       const present=!!node && !!bounds && bounds.width>0 && bounds.height>0;
+       // Empty table bodies and placeholder panes legitimately have zero height.
+       // Physical clickability is tested separately for active controls.
+       const present=!!node;
        return {present, overflow:Math.max(0,root.scrollWidth-root.clientWidth),
          leaflet:typeof window.L!=='undefined',
          tiles:document.querySelectorAll('.leaflet-tile-loaded').length};
