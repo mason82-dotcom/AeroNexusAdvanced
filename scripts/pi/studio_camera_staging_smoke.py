@@ -50,12 +50,28 @@ class StagingSmokeError(RuntimeError):
 TILE_COVERAGE_JS = r"""() => {
   // Samples actual on-screen map pixels rather than trusting just one tile.
   // Successful tiles must be fully decoded and in the loaded state.
-  const mapBox = document.querySelector('#map')?.getBoundingClientRect();
-  if (!mapBox || mapBox.width <= 0 || mapBox.height <= 0) {
-    return {coverage: 0, loaded: 0, visible: 0};
+  const outer = document.querySelector('#map')?.getBoundingClientRect();
+  if (!outer || outer.width <= 0 || outer.height <= 0) {
+    return {coverage: 0, loaded: 0, visible: 0, area: 'not-rendered'};
   }
-  const allTiles = Array.from(document.querySelectorAll(
-    '#map .leaflet-tile-pane img.leaflet-tile'));
+  // Playwright takes a viewport screenshot, not a full-page screenshot.
+  // A large Leaflet map may extend beyond the viewport; that portion must
+  // not be counted as a missing *visible* raster tile.
+  const mapBox = {
+    left: Math.max(0, outer.left),
+    top: Math.max(0, outer.top),
+    right: Math.min(window.innerWidth, outer.right),
+    bottom: Math.min(window.innerHeight, outer.bottom)
+  };
+  mapBox.width = mapBox.right - mapBox.left;
+  mapBox.height = mapBox.bottom - mapBox.top;
+  if (mapBox.width <= 0 || mapBox.height <= 0) {
+    return {coverage: 0, loaded: 0, visible: 0, area: 'outside-viewport'};
+  }
+  const container = (typeof mapTile !== 'undefined' && mapTile &&
+    typeof mapTile.getContainer === 'function' && mapTile.getContainer())
+    || document.querySelector('#map .leaflet-tile-pane');
+  const allTiles = Array.from(container?.querySelectorAll('img.leaflet-tile') || []);
   const overlaps = box => box.right > mapBox.left && box.left < mapBox.right
     && box.bottom > mapBox.top && box.top < mapBox.bottom;
   const visible = allTiles.filter(img => overlaps(img.getBoundingClientRect()));
@@ -75,7 +91,14 @@ TILE_COVERAGE_JS = r"""() => {
   return {
     coverage: covered / (columns * rows),
     loaded: good.length,
-    visible: visible.length
+    visible: visible.length,
+    rasterArea: Math.round(mapBox.width) + 'x' + Math.round(mapBox.height),
+    layer: typeof mapTiles !== 'undefined' && typeof mapTile !== 'undefined'
+      ? (mapTile === mapTiles.street ? 'street' :
+         mapTile === mapTiles.satellite ? 'satellite' : 'unknown')
+      : 'synthetic',
+    zoom: typeof map !== 'undefined' && map && map.getZoom
+      ? map.getZoom() : null
   };
 }"""
 
@@ -288,26 +311,37 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool):
             if blocked:
                 raise StagingSmokeError("Blocked unexpected external/mutating browser requests")
             if require_tiles:
-                # A single loaded tile does not establish that the map is
-                # usable. Wait until decoded tile images cover >=95% of
-                # the currently visible map viewport; never inspect imagery
-                # pixels or disclose tile requests/location in diagnostics.
+                # Leaflet's map size can change after opening Geo / fitBounds.
+                # Ensure it knows the final layout before measuring raster
+                # coverage, without forcibly re-requesting any tile.
+                page.evaluate("() => map.invalidateSize({pan:false})")
+                # A single loaded tile is insufficient. Require >=95% of
+                # the ACTUALLY VISIBLE map viewport, using decoded images
+                # from the active basemap. Do not log tile URLs/coordinates.
                 try:
                     page.wait_for_function(
                         "(" + TILE_COVERAGE_JS + ")().coverage >= 0.95",
                         timeout=22000)
                 except Exception:
                     stats = page.evaluate(TILE_COVERAGE_JS)
+                    # Save the failure image too; without it a blank patch
+                    # cannot be diagnosed after the temporary server stops.
+                    screenshot.parent.mkdir(parents=True, exist_ok=True)
+                    page.screenshot(path=str(screenshot), timeout=15000)
                     raise StagingSmokeError(
                         "Raster coverage insufficient after 22 s: "
                         + str(round(stats["coverage"] * 100, 1))
-                        + "% of map viewport; "
+                        + "% of visible map (" + stats.get("rasterArea", "unknown")
+                        + " px, " + stats.get("layer", "unknown")
+                        + " basemap, zoom " + str(stats.get("zoom")) + "); "
                         + str(stats["loaded"]) + "/"
-                        + str(stats["visible"]) + " visible tile images decoded."
+                        + str(stats["visible"]) + " visible tile images decoded. "
+                        + "Diagnostic screenshot: " + str(screenshot)
                     ) from None
                 stats = page.evaluate(TILE_COVERAGE_JS)
                 print("Raster coverage:", round(stats["coverage"] * 100, 1),
-                      "% (" + str(stats["loaded"]) + " decoded tiles)")
+                      "% (" + str(stats["loaded"]) + " decoded tiles; "
+                      + stats["rasterArea"] + " px, " + stats["layer"] + ")")
             screenshot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(screenshot), timeout=15000)
             print("Staging browser: PASS / real API + real Leaflet SVG")
