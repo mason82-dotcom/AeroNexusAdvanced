@@ -113,7 +113,7 @@ def test_optional_parameter_hints_classify_only_static_fields_without_values():
     assert entry["occurrences"] == 1
     assert entry["parameter_container_counts"] == {"present": 1}
     assert entry["parameter_category_counts"] == {
-        "focus": 1, "gimbal": 1, "media_naming": 1,
+        "camera_lens": 1, "focus": 1, "gimbal": 1, "media_naming": 1,
         "payload": 1, "unclassified_fields_present": 1}
     encoded = json.dumps(report)
     for secret in ("TOP-SECRET-VALUE", "DO-NOT-LEAK", "NEVER-EXPOSE-ABC789",
@@ -148,6 +148,7 @@ def test_official_additional_fields_are_presence_only_and_never_leak_values():
     category_counts = result["anonymous_types"][0]["parameter_category_counts"]
     assert category_counts == {
         "action_tracking": 1,
+        "camera_lens": 1,
         "camera_model": 1,
         "focus": 1,
         "gimbal": 1,
@@ -512,7 +513,7 @@ def test_parameter_hints_include_absent_start_action_container():
         [(1, archive("privateCode", with_start=True))], parameter_hints=True)
     entry = report["anonymous_types"][0]
     assert entry["parameter_container_counts"] == {"absent": 1, "present": 1}
-    assert entry["parameter_category_counts"] == {"media_naming": 1, "payload": 1}
+    assert entry["parameter_category_counts"] == {"camera_lens": 1, "media_naming": 1, "payload": 1}
 
 
 def test_parameter_field_fanout_fails_closed():
