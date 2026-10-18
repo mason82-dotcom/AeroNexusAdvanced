@@ -43,9 +43,12 @@ def _alert(item) -> dict | None:
         "args": item.get("args"),
         "device_type": item.get("device_type"),
     }
-    decoded = resolve_hms(native, kind="aircraft")
-    if decoded:
-        return decoded
+    # Preserve already supplied FlightHub text and the legacy API shape;
+    # only add catalog metadata when FlightHub left a code undescribed.
+    if not native["message"]:
+        decoded = resolve_hms(native, kind="aircraft")
+        if decoded and decoded["message"]:
+            return decoded
     return {
         "level": native["level"] if native["level"] in LEVELS else "unknown",
         "code": native["code"],

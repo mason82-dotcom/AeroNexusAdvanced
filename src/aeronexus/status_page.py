@@ -356,7 +356,7 @@ function renderDeviceCards(devices) {
         if(alert.code)cardEl(entry,"code","hms-code","Code: "+alert.code);
         cardEl(entry,"div","hms-description",
           alert.message&&alert.message!==alert.code?alert.message:
-          "Unbekannter HMS-Code – Beschreibung im DJI-Katalog nicht verfügbar.");
+          "DJI hat für diesen HMS-Code keinen Beschreibungstext übermittelt.");
         if(alert.module)cardEl(entry,"div","hms-secondary","Bereich: "+alert.module);
         if(alert.message_source==="dji-hms-catalog-en")
           cardEl(entry,"div","hms-secondary","DJI-Katalogtext auf Englisch (DE nicht verfügbar)");
