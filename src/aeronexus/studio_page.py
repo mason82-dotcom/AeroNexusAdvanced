@@ -303,12 +303,31 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <button id="geo-save" class="primary" style="width:100%">Geo-Objekt speichern</button>
 <h2>Lokale Geo-Objekte</h2><div id="geo-list" class="geo-list"></div>
 <hr><h2>Parallele Flugstreifen · Vorschau</h2>
+<label>Spurabstand ermitteln
+<select id="survey-camera">
+<option value="">Manuell · Spurabstand eingeben</option>
+<option value="matrice-4e-wide">Matrice 4E · Weitwinkel 20 MP</option>
+<option value="matrice-4t-wide">Matrice 4T · Weitwinkel 48 MP</option>
+<option value="mavic-3e-wide">Mavic 3E · Weitwinkel 20 MP</option>
+<option value="mavic-3t-wide">Mavic 3T · Weitwinkel 48 MP</option>
+<option value="mavic-3m-rgb">Mavic 3M · RGB 20 MP</option>
+<option value="mavic-3m-ms">Mavic 3M · Multispektral 5 MP</option>
+</select></label>
+<div id="survey-camera-fields" hidden>
 <div class="field-row">
-<label>Spurabstand (m)<input id="survey-spacing" type="number" min="2" max="200" value="20"></label>
+<label>Höhe über Gelände (m)<input id="survey-height-agl" type="number" min="10" max="300" step="1" value="60"></label>
+<label>Seitenüberlappung (%)<input id="survey-side-overlap" type="number" min="40" max="90" step="1" value="70"></label>
+</div>
+<label>Frontüberlappung (%)<input id="survey-front-overlap" type="number" min="40" max="90" step="1" value="80"></label>
+<p class="note">Rechnerische Nadir-Kamerageometrie über ebenem Gelände; 48-MP-Profile setzen den 48-MP-Fotomodus voraus. Kein rechtlich oder technisch freigegebener Flug.</p>
+</div>
+<div class="field-row">
+<label>Spurabstand (m)<input id="survey-spacing" type="number" min="2" max="200" step="0.01" value="20"></label>
 <label>Flugrichtung (°)<input id="survey-bearing" type="number" min="0" max="359" value="0"></label>
 </div>
 <label>Fläche auswählen<select id="survey-object"><option value="">Polygon auswählen…</option></select></label>
 <button id="survey-generate" class="primary" style="width:100%">Flugstreifen berechnen</button>
+<div id="survey-camera-metrics" class="note" role="status" hidden></div>
 <div id="survey-message" class="note" role="status">Nur unabhängige parallele Flugstreifen, keine verbundenen Flugwege. Keine Hindernis- oder Geländefreigabe.</div>
 <hr><h2>Gelände aus GeoTIFF</h2>
 <label>DEM-GeoTIFF (max. 8 MiB)<input type="file" id="terrain-file" accept=".tif,.tiff,image/tiff"></label>
@@ -2147,13 +2166,32 @@ async function saveGeoObject(){
   if(kind==="polygon")$("survey-object").value=saved.id;
   $("geo-draft-status").textContent="Geo-Objekt gespeichert (nur lokal).";
 }
+function updateSurveyCameraMode(){
+  const automatic=Boolean($("survey-camera").value);
+  const spacing=$("survey-spacing");
+  // Returning from automatic camera planning must restore the operator's
+  // original manual spacing rather than silently inheriting the camera value.
+  if(automatic&&!spacing.disabled)spacing.dataset.manualValue=spacing.value;
+  if(!automatic&&spacing.disabled&&spacing.dataset.manualValue!==undefined)
+    spacing.value=spacing.dataset.manualValue;
+  $("survey-camera-fields").hidden=!automatic;
+  spacing.disabled=automatic;
+  $("survey-camera-metrics").hidden=true;
+}
 async function surveyPreview(){
   const row=geoObjects.find(x=>x.id===$("survey-object").value);
   if(!row||row.object.kind!=="polygon")throw new Error("Polygon auswählen");
+  const payload={polygon:row.object,spacing_m:Number($("survey-spacing").value),
+    bearing_deg:Number($("survey-bearing").value)};
+  const cameraId=$("survey-camera").value;
+  if(cameraId)payload.camera={
+    profile_id:cameraId,
+    height_agl_m:Number($("survey-height-agl").value),
+    side_overlap_pct:Number($("survey-side-overlap").value),
+    front_overlap_pct:Number($("survey-front-overlap").value)};
   const r=await api("/api/v1/studio/survey/preview",{
     method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({polygon:row.object,spacing_m:Number($("survey-spacing").value),
-      bearing_deg:Number($("survey-bearing").value)})});
+    body:JSON.stringify(payload)});
   const data=await r.json();
   if(map&&surveyLayer){
     surveyLayer.clearLayers();
@@ -2161,6 +2199,21 @@ async function surveyPreview(){
       color:"#ffab70",weight:3,dashArray:"5 5"}).addTo(surveyLayer));
     if(data.legs.length)map.fitBounds(L.latLngBounds(data.legs.flat().map(p=>[p.latitude,p.longitude])),{
       padding:[50,50],maxZoom:17});
+  }
+  const metrics=$("survey-camera-metrics");
+  if(data.camera_plan){
+    const p=data.camera_plan;
+    $("survey-spacing").value=String(p.spacing_m);
+    metrics.textContent=p.profile_label+" · GSD "+p.gsd_cm_px.toLocaleString("de-DE")+
+      " cm/Pixel · Bildfläche "+p.footprint_width_m.toLocaleString("de-DE")+
+      " × "+p.footprint_length_m.toLocaleString("de-DE")+
+      " m · Spurabstand "+p.spacing_m.toLocaleString("de-DE")+
+      " m · Auslöseabstand "+p.trigger_interval_m.toLocaleString("de-DE")+
+      " m · grob "+p.estimated_photo_count.toLocaleString("de-DE")+
+      " Fotos. Nadir und ebenes Gelände angenommen; nur Vorschau.";
+    metrics.hidden=false;
+  }else{
+    metrics.hidden=true;
   }
   $("survey-message").textContent=data.leg_count+" getrennte Flugstreifen · "+
     formatRouteDistance(data.distance_m)+
@@ -2864,6 +2917,8 @@ function wire(){
   $("geo-undo-vertex").addEventListener("click",()=>{geoDraft.pop();redrawGeo();});
   $("geo-save").addEventListener("click",()=>saveGeoObject().catch(err=>$("geo-draft-status").textContent=err.message));
   $("geo-kind").addEventListener("change",redrawGeo);
+  $("survey-camera").addEventListener("change",updateSurveyCameraMode);
+  updateSurveyCameraMode();
   $("survey-generate").addEventListener("click",()=>surveyPreview().catch(err=>$("survey-message").textContent=err.message));
   $("geophoto-media").addEventListener("change",showGeoPhotoFields);
   $("geophoto-save").addEventListener("click",()=>saveGeoPhoto().catch(err=>$("geophoto-status").textContent=err.message));
