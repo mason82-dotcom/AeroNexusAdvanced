@@ -11,7 +11,7 @@ from aeronexus.hms_catalog import (
 from aeronexus.flighthub_hms import normalize_hms
 from aeronexus.cloud_api_mqtt import MqttSettings, CloudMqttFeed, CloudOsdIngest, HMS_EVENT_TOPIC
 from aeronexus.providers import ProviderKind
-from aeronexus.status_runtime import StatusRuntime
+from aeronexus.status_runtime import StatusRuntime, utc_now
 
 
 @pytest.fixture
@@ -39,10 +39,11 @@ def catalog(tmp_path, monkeypatch):
 def test_exact_copy_keys_de_args_and_levels(catalog):
     msg = resolve_hms({"code": "0x16100083", "in_the_sky": 1,
                        "level": 2, "module": 3, "imminent": 1,
-                       "args": {"component_index": 0, "sensor_index": 0}},
+                       "args": {"component_index": 0, "sensor_index": 0,
+                                "alarm_id": 0x16100001}},
                       kind="aircraft")
     assert msg["message"] == (
-        "Kamera 1: Sensor 1; Akku links; 0x16100083"
+        "Kamera 1: Sensor 1; Akku links; 0x16100001"
     )
     assert msg["level"] == "warning" and msg["module"] == "HMS"
     assert msg["imminent"] is True and msg["in_the_sky"] is True
@@ -106,7 +107,7 @@ def test_full_snapshot_mqtt_hms_event_and_empty_clear(catalog):
     assert ingest.handle("thing/product/AC01/osd",
                          json.dumps({"data": {"mode_code": 3, "elevation": 10}}).encode())
     before = runtime.inventory.telemetry_received_at(ProviderKind.CLOUD_API, "aeronexus", "AC01")
-    first = {"method": "hms", "timestamp": 1792344000000,
+    first = {"method": "hms", "timestamp": int(utc_now().timestamp() * 1000),
              "data": {"list": [
                 {"code": "0x16100083", "in_the_sky": 1, "level": 2, "module": 3,
                  "args": {"component_index": 0, "sensor_index": 0}}
@@ -244,3 +245,26 @@ def test_flighthub_catalog_lookup_does_not_claim_gateway_origin(catalog):
         kind="aircraft", source="flighthub")
     assert decoded["source"] == "flighthub"
     assert decoded["message"] == "Camera module error"
+
+
+def test_dji_alarm_id_is_distinct_from_hms_code():
+    assert _render("ID %alarmid", "0x16100083",
+                   {"alarm_id": 0x16100001}, dock=False) == "ID 0x16100001"
+    assert _render("ID %alarmid", "0x16100083",
+                   {"alarm_id": "0x1610000a"}, dock=False) == "ID 0x1610000A"
+    assert _render("ID %alarmid", "0x16100083", {}, dock=False) == "ID ?"
+    assert _render("ID %alarmid", "0x16100083",
+                   {"alarm_id": -1}, dock=False) == "ID ?"
+
+
+def test_payload_device_domain_is_not_mistaken_for_drone(catalog):
+    payload = resolve_hms({"code": "0x16100083",
+                           "device_type": "1-67-0", "in_the_sky": 1},
+                          kind="aircraft")
+    assert payload["device_domain"] == "payload"
+    assert payload["message"] is None
+    drone = resolve_hms({"code": "0x16100083",
+                         "device_type": "0-67-0", "in_the_sky": 1},
+                        kind="controller")
+    assert drone["device_domain"] == "aircraft"
+    assert drone["message"] is not None
