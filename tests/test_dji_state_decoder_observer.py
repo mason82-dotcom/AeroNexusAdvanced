@@ -72,6 +72,23 @@ def test_reason_labels_are_bounded_fixed_strings():
     assert all(reason.isidentifier() for reason in mod.REASONS)
 
 
+def test_unmapped_dji_property_categories_are_fixed_not_payload_content():
+    mod = _load()
+    payload = lambda value: json.dumps({"data": value}).encode()
+    assert mod.unmapped_bucket(payload({"live_capacity": {"device_list": [
+        {"sn": "SECRET_DEVICE"}]}})) == "rc_video_capability_only"
+    assert mod.unmapped_bucket(payload({"psdk_widget_values": [
+        {"psdk_sn": "SECRET_DEVICE"}]})) == "aircraft_psdk_widgets"
+    assert mod.unmapped_bucket(payload({"dongle_infos": [
+        {"imei": "SECRET_IMEI"}]})) == "sensitive_dongle_metadata"
+    assert mod.unmapped_bucket(payload({"secret_vendor_property": 123})) == "other_or_unknown"
+    assert mod.unmapped_bucket(b"not json") == "other_or_unknown"
+    assert set(mod.UNMAPPED_BUCKETS) == set(
+        label for label, _roots in mod._UNMAPPED_ROOTS
+    ) | {"other_or_unknown"}
+    assert all(label.isidentifier() for label in mod.UNMAPPED_BUCKETS)
+
+
 def test_observer_does_not_log_raw_payload_or_topic():
     code = FILE.read_text()
     assert "print(msg." not in code
