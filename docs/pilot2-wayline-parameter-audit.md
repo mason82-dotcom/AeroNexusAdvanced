@@ -255,3 +255,21 @@ Ohne --parameter-hints bleibt das vorherige JSON-Format unverändert.
 
 DJI-Felddefinitionen:
 https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
+
+### Zusätzliche offizielle WPML-Feldnamen
+
+Die anonymisierte Option --parameter-hints enthält jetzt auch die
+Präsenz-Kategorien action_tracking, media_reference, image_dimensions
+und camera_model. Dazu wurden die in DJI WPML Common Elements
+dokumentierten Felder actionUUID, orientedFilePath, imageWidth,
+imageHeight, orientedCameraType, AFPos, gimbalPort, focalLength und
+weitere Gimbal-Rotationsfelder aufgenommen.
+
+Ausgewertet wird weiterhin **ausschließlich das Vorhandensein von
+XML-Feldnamen**. Insbesondere werden actionUUID, Medienpfade,
+Fokus-/Bildpositionen, Kameramodellwerte, Nutzlastwerte und
+Kameraparameter selbst niemals ausgegeben. Eine zusätzliche
+Feldkategorie erlaubt KEINEN Schluss auf die Identität eines
+unbekannten DJI-WPML-1.0.6-Aktors.
+
+Quellen: https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
