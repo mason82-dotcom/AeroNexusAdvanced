@@ -73,3 +73,36 @@ Offizielle WPML-Spezifikation:
 
 - https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/waylines-wpml.html
 - https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/template-kml.html
+
+## Sichere Strukturdiagnose bei unsupported_geometry
+
+Einige reale, von Pilot 2 erzeugte KMZ-Dateien liefern bei der bisherigen
+strikten WPML-Parameterprüfung unsupported_geometry, obwohl die Karten-
+Geometrievorschau die Wegpunkte erfolgreich lesen kann. Deshalb nicht
+vorschnell andere XML-Namensräume oder Dateistrukturen als äquivalent
+interpretieren.
+
+Die neue Diagnose benötigt keine Studio-Mission und gibt ausschließlich
+anonymisierte Strukturmerkmale aus:
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced-pr46
+PYTHONPATH="$PWD/src" \
+  "$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python" \
+  -m aeronexus.pilot2_wayline_parameters \
+  --structure-only --limit 8
+~~~
+
+Ausgabe: KML-/WPML-Namensraumkategorien (standard, unqualified,
+nonstandard), ob Document, missionConfig und Folder direkt oder geschachtelt
+vorliegen, Anzahl von Placemark-/Point-/Koordinaten-XML-Elementen,
+strict_parser_gate und strict_header_compatible.
+
+Die Ausgabe enthält keine XML-Inhalte, Roh-Namensräume, Namen, UUIDs,
+Koordinaten, Geräte-Seriennummern oder Tokens. Das CLI verwendet denselben
+abgesicherten GET-Pfad wie die Kartenansicht, führt keine Schreibzugriffe aus
+und lädt nicht automatisch Missionen anderer Workspaces.
+
+Mit diesem Befund kann gezielt die fehlschlagende Parser-Annahme angepasst
+werden, ohne eine fremde XML-Variante voreilig als voll valide DJI-Mission
+zu akzeptieren.
