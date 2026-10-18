@@ -42,6 +42,15 @@ FIELDS = (
     "globalTransitionalSpeed", "globalRTHHeight",
 )
 MODES = {"relativeToStartPoint", "WGS84", "realTimeFollowSurface"}
+# Known names only: the source enum from DJI's WPML action common elements.
+# This is a read-only classification, not firmware/action compatibility validation.
+DOCUMENTED_ACTION_TYPES = frozenset({
+    "takePhoto", "startRecord", "stopRecord", "focus", "zoom",
+    "customDirName", "gimbalRotate", "rotateYaw", "hover",
+    "gimbalEvenlyRotate", "accurateShoot", "orientedShoot", "panoShot",
+    "recordPointCloud",
+})
+MAX_ACTIONS = 10000
 _MODEL_PART = re.compile(r"[0-9]{1,5}\Z")
 
 
@@ -220,6 +229,18 @@ async def diagnose_structure(*, limit=8, inventory_reader=None, kmz_reader=None,
             "checked": len(results), "results": results}
 
 
+def _action_counts(values):
+    """Only expose allowlisted DJI enum names and counts, never upstream text."""
+    counts = {}
+    unknown = 0
+    for value in values:
+        if value in DOCUMENTED_ACTION_TYPES:
+            counts[value] = counts.get(value, 0) + 1
+        else:
+            unknown += 1
+    return dict(sorted(counts.items())), unknown
+
+
 def parse_parameter_audit(kmz: bytes) -> dict:
     """Bounded, allowlisted, position-free WPML audit over actual executable Folders."""
     doc = _read_xml(kmz)
@@ -239,12 +260,25 @@ def parse_parameter_audit(kmz: bytes) -> dict:
     global_fields = {field: _child_text(config, field, wpml_prefix) for field in FIELDS}
     route_info = []
     total = 0
+    action_total = 0
     for folder in folders:
         places = folder.findall(K + "Placemark")
         total += len(places)
         if total > MAX_ELEMENTS:
             raise LocalWaylineError("invalid_archive")
         waypoints, photo_count, other_action_count = [], 0, 0
+        route_action_values = []
+        start_groups = folder.findall(wpml_prefix + "startActionGroup")
+        if len(start_groups) > 1:
+            raise LocalWaylineError("unsupported_geometry")
+        start_action_values = [
+            elem.text.strip() if elem.text else None
+            for group in start_groups
+            for elem in group.findall(".//" + wpml_prefix + "actionActuatorFunc")
+        ]
+        action_total += len(start_action_values)
+        if action_total > MAX_ACTIONS:
+            raise LocalWaylineError("invalid_archive")
         for place in places:
             point = place.find(K + "Point")
             coords = point.find(K + "coordinates") if point is not None else None
@@ -261,6 +295,10 @@ def parse_parameter_audit(kmz: bytes) -> dict:
                 len(action_nodes) != len(actions)
                 or (bool(place.findall(".//" + wpml_prefix + "actionGroup")) and not action_nodes)
             )
+            action_total += len(actions)
+            if action_total > MAX_ACTIONS:
+                raise LocalWaylineError("invalid_archive")
+            route_action_values.extend(actions)
             photo_count += actions.count("takePhoto")
             other_action_count += len(actions) - actions.count("takePhoto")
             waypoints.append({
@@ -271,6 +309,8 @@ def parse_parameter_audit(kmz: bytes) -> dict:
                 "action_count": len(actions),
                 "action_structure_unknown": action_structure_unknown,
             })
+        per_route_counts, per_route_unknown = _action_counts(route_action_values)
+        start_counts, start_unknown = _action_counts(start_action_values)
         mode = _child_text(folder, "executeHeightMode", wpml_prefix)
         route_info.append({
             "height_mode": mode if mode in MODES else "unknown",
@@ -278,7 +318,12 @@ def parse_parameter_audit(kmz: bytes) -> dict:
             "waypoints": waypoints,
             "photo_count": photo_count,
             "other_action_count": other_action_count,
-            "start_actions_present": folder.find(wpml_prefix + "startActionGroup") is not None,
+            "start_actions_present": bool(start_groups),
+            "action_type_counts": per_route_counts,
+            "unrecognized_action_count": per_route_unknown,
+            "start_action_type_counts": start_counts,
+            "unrecognized_start_action_count": start_unknown,
+            "start_action_count": len(start_action_values),
         })
     return {
         "wpml_schema_version": schema_version,
@@ -301,6 +346,15 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
     model, subtype, payload, _ = MODELS[mission.drone_model]
     expected_model = f"0-{model}-{subtype}"
     wpml_model = audit["wpml_model_key"]
+    # Aggregate only recognized, documented action names. Never expose free-form
+    # actuator contents, unknown enum strings, XML fragments, or action parameters.
+    action_type_counts = {}
+    start_action_type_counts = {}
+    for route in routes:
+        for type_name, count in route["action_type_counts"].items():
+            action_type_counts[type_name] = action_type_counts.get(type_name, 0) + count
+        for type_name, count in route["start_action_type_counts"].items():
+            start_action_type_counts[type_name] = start_action_type_counts.get(type_name, 0) + count
     output = {
         "wpml_model_key": wpml_model,
         "wpml_schema_version": audit["wpml_schema_version"],
@@ -315,6 +369,11 @@ def compare_parameters(mission: WaypointMission, audit: dict, geometry: dict,
         "height_modes": [route["height_mode"] for route in routes],
         "photo_action_count": sum(route["photo_count"] for route in routes),
         "other_action_count": sum(route["other_action_count"] for route in routes),
+        "action_type_counts": dict(sorted(action_type_counts.items())),
+        "unrecognized_action_count": sum(route["unrecognized_action_count"] for route in routes),
+        "start_action_count": sum(route["start_action_count"] for route in routes),
+        "start_action_type_counts": dict(sorted(start_action_type_counts.items())),
+        "unrecognized_start_action_count": sum(route["unrecognized_start_action_count"] for route in routes),
         "route_start_actions_present": any(route["start_actions_present"] for route in routes),
         "geometry_result": geometry["geometry_result"],
         "parameter_state": "not_comparable",
