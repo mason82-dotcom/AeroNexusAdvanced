@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .survey_camera import SurveyCameraRequest, camera_footprint
+from .survey_route import SurveyRouteOptions, build_schematic_route
 
 
 class GeoPoint(BaseModel):
@@ -62,6 +63,7 @@ class SurveyPlanRequest(BaseModel):
     spacing_m: float = Field(default=20, ge=2, le=200, allow_inf_nan=False)
     bearing_deg: float = Field(default=0, ge=0, lt=360, allow_inf_nan=False)
     camera: SurveyCameraRequest | None = None
+    route: SurveyRouteOptions | None = None
 
     @model_validator(mode="after")
     def require_polygon(self):
@@ -163,4 +165,6 @@ def generate_survey_preview(request: SurveyPlanRequest) -> dict:
               "note":"Preview only: independent legs, no safe connecting turns, terrain, obstacles or DJI mission export."}
     if optics:
         result["camera_plan"] = {**optics, "estimated_photo_count": photo_estimate}
+    if request.route is not None:
+        result["route_preview"] = build_schematic_route(legs, total, request.route)
     return result

@@ -326,8 +326,17 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <label>Flugrichtung (°)<input id="survey-bearing" type="number" min="0" max="359" value="0"></label>
 </div>
 <label>Fläche auswählen<select id="survey-object"><option value="">Polygon auswählen…</option></select></label>
+<label><input id="survey-route-enabled" type="checkbox"> Schematische Wegpunkt- und Verbindungsstrecken anzeigen (keine Flugmission)</label>
+<div id="survey-route-fields" hidden>
+<div class="field-row">
+<label>Rechengeschwindigkeit (m/s)<input id="survey-route-speed" type="number" min="1" max="15" step="0.5" value="5"></label>
+<label>Rechenpause je Verbindung (s)<input id="survey-route-hold" type="number" min="0" max="60" step="1" value="5"></label>
+</div>
+<p class="note">Gestrichelte violette Linien sind geradlinige Skizzen, keine sicheren Wendemanöver. Sie können außerhalb des Polygons liegen. Keine Gelände-, Hindernis-, Akku- oder Flugfreigabe.</p>
+</div>
 <button id="survey-generate" class="primary" style="width:100%">Flugstreifen berechnen</button>
 <div id="survey-camera-metrics" class="note" role="status" hidden></div>
+<div id="survey-route-metrics" class="note" role="status" hidden></div>
 <div id="survey-message" class="note" role="status">Nur unabhängige parallele Flugstreifen, keine verbundenen Flugwege. Keine Hindernis- oder Geländefreigabe.</div>
 <hr><h2>Gelände aus GeoTIFF</h2>
 <label>DEM-GeoTIFF (max. 8 MiB)<input type="file" id="terrain-file" accept=".tif,.tiff,image/tiff"></label>
@@ -2180,6 +2189,11 @@ function updateSurveyCameraMode(){
   spacing.disabled=automatic;
   $("survey-camera-metrics").hidden=true;
 }
+function updateSurveyRouteMode(){
+  const enabled=$("survey-route-enabled").checked;
+  $("survey-route-fields").hidden=!enabled;
+  $("survey-route-metrics").hidden=true;
+}
 async function surveyPreview(){
   const row=geoObjects.find(x=>x.id===$("survey-object").value);
   if(!row||row.object.kind!=="polygon")throw new Error("Polygon auswählen");
@@ -2191,6 +2205,9 @@ async function surveyPreview(){
     height_agl_m:Number($("survey-height-agl").value),
     side_overlap_pct:Number($("survey-side-overlap").value),
     front_overlap_pct:Number($("survey-front-overlap").value)};
+  if($("survey-route-enabled").checked)payload.route={
+    speed_mps:Number($("survey-route-speed").value),
+    turn_delay_s:Number($("survey-route-hold").value)};
   const r=await api("/api/v1/studio/survey/preview",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(payload)});
@@ -2199,6 +2216,12 @@ async function surveyPreview(){
     surveyLayer.clearLayers();
     data.legs.forEach(segment=>L.polyline(segment.map(p=>[p.latitude,p.longitude]),{
       color:"#ffab70",weight:3,dashArray:"5 5"}).addTo(surveyLayer));
+    if(data.route_preview){
+      data.route_preview.connectors.forEach(link=>L.polyline([
+        [link.start.latitude,link.start.longitude],[link.end.latitude,link.end.longitude]],{
+        color:"#c18aff",weight:3,dashArray:"2 8"
+      }).bindTooltip("Nur skizzierte, ungeprüfte Verbindung").addTo(surveyLayer));
+    }
     if(data.legs.length)map.fitBounds(L.latLngBounds(data.legs.flat().map(p=>[p.latitude,p.longitude])),{
       padding:[50,50],maxZoom:17});
   }
@@ -2216,6 +2239,19 @@ async function surveyPreview(){
     metrics.hidden=false;
   }else{
     metrics.hidden=true;
+  }
+  const routeMetrics=$("survey-route-metrics");
+  if(data.route_preview){
+    const p=data.route_preview;
+    routeMetrics.textContent=p.waypoint_count+" schematische Punkte · "+
+      p.connector_count+" ungeprüfte Verbindungen · "+
+      formatRouteDistance(p.connector_distance_m)+" Verbindungslänge · "+
+      formatRouteDistance(p.total_distance_m)+" Gesamtstrecke · "+
+      Math.ceil(p.estimated_duration_s/60)+" min grobe Rechenzeit. "+
+      "Keine sicheren Wendemanöver, Hindernis-/Gelände-/Akkufreigabe, RTH oder Flugmission.";
+    routeMetrics.hidden=false;
+  }else{
+    routeMetrics.hidden=true;
   }
   $("survey-message").textContent=data.leg_count+" getrennte Flugstreifen · "+
     formatRouteDistance(data.distance_m)+
@@ -2921,6 +2957,8 @@ function wire(){
   $("geo-kind").addEventListener("change",redrawGeo);
   $("survey-camera").addEventListener("change",updateSurveyCameraMode);
   updateSurveyCameraMode();
+  $("survey-route-enabled").addEventListener("change",updateSurveyRouteMode);
+  updateSurveyRouteMode();
   $("survey-generate").addEventListener("click",()=>surveyPreview().catch(err=>$("survey-message").textContent=err.message));
   $("geophoto-media").addEventListener("change",showGeoPhotoFields);
   $("geophoto-save").addEventListener("click",()=>saveGeoPhoto().catch(err=>$("geophoto-status").textContent=err.message));

@@ -173,6 +173,36 @@ def test_staging_chromium_calls_real_local_api_with_leaflet(monkeypatch, tmp_pat
 
 
 
+def test_isolated_staging_route_preview_with_real_api_and_svg(monkeypatch, tmp_path):
+    """Only synthetic routes: real localhost API and Leaflet; no mission changes."""
+    import shutil
+
+    pytest.importorskip("playwright.sync_api")
+    assets_value = os.environ.get("AERONEXUS_LEAFLET_TEST_ASSETS", "")
+    assets = Path(assets_value) if assets_value else None
+    if not assets or not all((assets / item).is_file()
+                             for item in ("leaflet.js", "leaflet.css")):
+        pytest.skip("Pinned Leaflet assets unavailable")
+    chrome = (shutil.which(os.environ.get("AERONEXUS_CHROMIUM_BIN", ""))
+              if os.environ.get("AERONEXUS_CHROMIUM_BIN") else
+              next((p for name in ("chromium", "chromium-browser",
+                                   "google-chrome", "google-chrome-stable")
+                    if (p := shutil.which(name))), None))
+    if chrome is None:
+        pytest.skip("Chromium unavailable")
+    monkeypatch.setenv("AERONEXUS_CHROMIUM_BIN", chrome)
+    workspace = tmp_path / "isolated-route"
+    staging.seed_synthetic_workspace(workspace)
+    port = _free_loopback_port()
+    screenshot = tmp_path / "route-staging.png"
+    with staging.staging_server(Path(sys.executable), CHECKOUT, workspace, port) as origin:
+        staging.run_browser(origin, screenshot, require_tiles=False,
+                            route_preview=True)
+        assert screenshot.is_file() and screenshot.stat().st_size > 3000
+    assert len(list((workspace / "geo_objects").glob("*.json"))) == 1
+    assert not list((workspace / "missions").iterdir())
+
+
 def test_raster_coverage_detects_missing_map_tiles():
     """A single successful tile must not pass a mostly blank map screenshot."""
     import shutil
