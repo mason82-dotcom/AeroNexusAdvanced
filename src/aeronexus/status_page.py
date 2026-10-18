@@ -314,6 +314,25 @@ function renderDeviceCards(devices) {
         "AeroNexus-Farbhinweis: niedriger Akkustand. Keine DJI-Flugfreigabe oder Warnschwelle.");
     }
     const values=cardEl(card,"div","device-values");
+    const d=t.cloud_details||{};
+    if(device.kind==="controller") {
+      const link=d.wireless_link||{};
+      const drc={0:"Nicht verbunden",1:"Verbindungsaufbau",2:"Verbunden"};
+      cardValue(values,"DRC-Verbindung",drc[d.drc_link_state_code]);
+      cardValue(values,"Cloud-Berechtigungen (Anzahl)",d.cloud_control_authorization_count);
+      cardValue(values,"SDR-Verbindung",({0:"Getrennt",1:"Verbunden"})[link.sdr_link_state_code]);
+      cardValue(values,"4G-Verbindung",({0:"Getrennt",1:"Verbunden"})[link.cellular_link_state_code]);
+      cardValue(values,"SDR-Signal",link.sdr_quality===null?"Unbekannt":
+        typeof link.sdr_quality==="number"?link.sdr_quality+" / 5":null);
+      cardValue(values,"4G-Signal",link.cellular_quality===null?"Unbekannt":
+        typeof link.cellular_quality==="number"?link.cellular_quality+" / 5":null);
+    } else if(device.kind==="aircraft") {
+      const authority={unassigned:"Nicht zugewiesen",controller_a:"Fernsteuerung A",
+        controller_b:"Fernsteuerung B",browser:"Cloud-Browser",other:"Andere / unbekannt"};
+      cardValue(values,"Steuerquelle",authority[d.control_source_category]);
+      cardValue(values,"Kurswinkel",safeNumber(d.heading_deg,1,"°"));
+      cardValue(values,"Wind (Schätzwert)",safeNumber(d.wind_speed_mps,1,"m/s"));
+    }
     const mode=t.flight_mode_code;
     cardValue(values,"Flugmodus",mode===null||mode===undefined?null:flightModes[mode]||"Code "+mode);
     cardValue(values,"Höhe über Start",safeNumber(t.elevation_m,1,"m"));
