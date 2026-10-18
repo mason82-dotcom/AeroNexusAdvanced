@@ -48,6 +48,7 @@ const base=()=>({
  state:'connected',checked:8,total:8,recognized_actions:70,
  unknown_actions:579,read_only:true,
  flight_compatibility_verified:false,wpml_semantics_verified:false,
+ full_content_verified:false,
  anonymous_types:[{alias:'A02',occurrences:369,file_count:7,
    triggers:{betweenAdjacentPoints:369}}],
  waylines:Array.from({length:8},(_,i)=>({index:i+1}))
@@ -80,6 +81,18 @@ const base=()=>({
  assert.equal(list.children.length,0);
  assert.match($('pilot2-action-status').textContent,/SAFE-ERROR/);
  assert.equal($('pilot2-action-load').disabled,false);
+ // A compromised or outdated API must never show a partial library as complete.
+ for(const mutation of [
+   {full_content_verified:true},{full_content_verified:null},
+   {checked:7},{total:9},{waylines:[]},
+   {recognized_actions:-1},{unknown_actions:'579'}
+ ]){
+   respond=async()=>({json:async()=>({...base(),...mutation})});
+   await view.loadPilot2ActionSummary();
+   assert.equal(list.children.length,0);
+   assert.match($('pilot2-action-status').textContent,/SAFE-ERROR/);
+   assert.equal($('pilot2-action-load').disabled,false);
+ }
 
  // Simulate leaving the tab after response headers but before JSON is ready.
  let resolveResponse;
