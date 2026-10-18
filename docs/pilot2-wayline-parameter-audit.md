@@ -657,3 +657,53 @@ Gesamtzahlen und ungültigen Zählertypen. Es bleibt ein isolierter
 Laufzeittest des extrahierten Studio-JavaScript-Blocks; ein echter
 Chromium/HTTPS-End-to-End-Test und ein überprüftes Deployment fehlen
 weiterhin. Keine Änderung am laufenden Raspberry-Pi-Dienst.
+
+
+### Echter Chromium-DOM-Test, isoliert ohne Backend-Verbindung
+
+Zusätzlich zum Node-DOM-Test existiert der **optionale echte Chromium-Smoketest**
+unter scripts/pi/pilot2_studio_chromium_smoke.py. Er extrahiert genau den
+Aktionsdiagnose-JavaScript-Block aus der erzeugten Studio-Seite und testet
+ihn in einem temporären lokalen HTML-Dokument mit tatsächlichem Chromium-DOM.
+Die API ist dabei durch synthetische Antworten ersetzt; der Browser erhält
+keine Cloud-Credentials und kein Produktions-Token.
+
+Aus dem unveränderten, isolierten PR-Worktree auf dem Pi:
+
+~~~bash
+(
+  set -euo pipefail
+  WT="$HOME/Projekte/AeroNexusAdvanced-pr46"
+  PY="$HOME/Projekte/AeroNexusAdvanced/.venv/bin/python"
+  cd "$WT"
+  PYTHONPATH="$WT/src" "$PY" -m pytest -q \
+    tests/test_pilot2_studio_chromium_smoke.py \
+    tests/test_pilot2_studio_action_ui_runtime.py \
+    tests/test_pilot2_action_http_smoke.py \
+    tests/test_pilot2_action_summary.py
+  PYTHONPATH="$WT/src" "$PY" \
+    scripts/pi/pilot2_studio_chromium_smoke.py
+)
+~~~
+
+Eine vorhandene Chromium- oder Google-Chrome-Installation wird benötigt.
+Bei fehlendem Browser endet das Skript mit Exit-Code 2 (NOT RUN);
+fehlgeschlagene Abnahmen ergeben Exit-Code 1. Es installiert nichts
+automatisch und verwendet kein --no-sandbox. Bei abweichendem Browserpfad
+kann AERONEXUS_CHROMIUM_BIN auf die ausführbare Datei gesetzt werden.
+
+Die positive Browser-Fixture simuliert 8/8 Waylines mit 70 bekannten
+Typvorkommen und 579 unbekannten Aktionsvorkommen. Negativ geprüft werden
+HTML-Injection als Text, unvollständige Inventur, fehlerhafte Zähler,
+positive Verifikationsbehauptungen und verspätete Antworten nach dem
+Abbruch einer Anfrage. Der Browser läuft mit einem temporären Profil,
+einer lokalen file://-Fixture, deaktiviertem Hintergrundnetzwerk und
+unterdrückter DNS-Auflösung. Er benötigt keinen HTTP-Port, keinen
+Pi-Service-Neustart und keinen Cloud-Zugriff.
+
+**Abnahmegrenze:** Das beweist ausschließlich die Darstellung und
+Fehlerbehandlung der betreffenden UI-Funktionen in echtem Chromium.
+Es ist weder ein vollständiger Studio-Browserintegrationstest noch ein
+HTTPS-/Reverse-Proxy-, Authentifizierungs- oder Produktivdeployment-Test.
+Ein späterer Browser-Test der realen, gezielt bereitgestellten HTTPS-Route
+bleibt ein eigenes Gate. Keine Änderungen an main, MQTT, DJI oder O4.
