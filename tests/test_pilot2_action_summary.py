@@ -92,6 +92,7 @@ def test_summary_fails_closed_on_invalid_payload(mutation):
     lambda x: x.update(reported_total=-1),
     lambda x: x.update(reported_total=True),
     lambda x: x.update(reported_total=10000001),
+    lambda x: x.update(reported_total=3),
     lambda x: x["anonymous_types"][1].update(id="A01"),
     lambda x: x.update(full_content_verified=True),
     lambda x: x.update(full_content_verified=None),
@@ -100,6 +101,15 @@ def test_summary_rejects_invalid_total_duplicate_alias_and_verification(mutation
     value = fixture_report()
     mutation(value)
     assert summarize_action_report(value)["state"] == "invalid_response"
+
+
+def test_viewer_summary_rejects_partial_library_even_when_bounded_cli_succeeded():
+    report = fixture_report()
+    report["reported_total"] = 8
+    result = summarize_action_report(report)
+    assert result["state"] == "incomplete_inventory"
+    assert result["checked"] == 0
+    assert result["flight_compatibility_verified"] is False
 
 
 def test_summary_rejects_non_object_and_unhashable_state():
