@@ -559,7 +559,9 @@ function cockpitRenderTrends(dev){
     const heading=cardEl(wrapper,"div","cockpit-chart-title");
     cardEl(heading,"span","",title);
     cardEl(heading,"b","",series.length?cockpitNumber(series[series.length-1].value,1,unit):"–");
-    const svg=cardEl(wrapper,"svg","cockpit-chart");
+    const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
+    svg.setAttribute("class","cockpit-chart");
+    wrapper.appendChild(svg);
     svg.setAttribute("viewBox","0 0 420 70");
     svg.setAttribute("aria-label",title+" · bisherige Live-Messpunkte");
     if(series.length>1){
