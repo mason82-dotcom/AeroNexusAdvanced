@@ -193,6 +193,7 @@ def test_field_aliases_correlate_unknown_tag_across_two_unknown_actions():
     assert report["unknown_field_aliases"] == [{
         "id": "P01", "occurrences": 2,
         "file_count": 2, "action_aliases": ["A01", "A02"],
+        "actions_with_field": 2, "multiplicity_per_action": {"1": 2},
     }]
     assert report["field_alias_scope"] == "single_invocation_only"
     encoded = json.dumps(report)
@@ -203,6 +204,28 @@ def test_field_aliases_correlate_unknown_tag_across_two_unknown_actions():
     ):
         assert secret not in encoded
     assert report["full_content_verified"] is False
+
+
+def test_repeated_field_name_is_counted_per_action_without_leaking_values():
+    once = param_archive(unknown_tag=True)
+    repeated = with_substituted_action(
+        once, "<wpml:vendorSecretTag>NEVER-EXPOSE-ABC789</wpml:vendorSecretTag>",
+        "<wpml:vendorSecretTag>NEVER-EXPOSE-ABC789</wpml:vendorSecretTag>"
+        "<wpml:vendorSecretTag>ANOTHER-PRIVATE-VALUE</wpml:vendorSecretTag>")
+    info = av._aggregate_action_records([
+        (1, once), (2, repeated)
+    ], parameter_hints=True, field_aliases=True)
+    assert info["unknown_field_aliases"] == [{
+        "id": "P01", "occurrences": 3, "file_count": 2,
+        "action_aliases": ["A01"], "actions_with_field": 2,
+        "multiplicity_per_action": {"1": 1, "2": 1},
+    }]
+    assert info["anonymous_types"][0]["unknown_field_alias_counts"] == {"P01": 3}
+    output = json.dumps(info)
+    assert "vendorSecretTag" not in output
+    assert "ANOTHER-PRIVATE-VALUE" not in output
+    assert info["full_content_verified"] is False
+    assert info["flight_compatibility_verified"] is False
 
 
 def test_field_aliases_require_explicit_parameter_hints():
