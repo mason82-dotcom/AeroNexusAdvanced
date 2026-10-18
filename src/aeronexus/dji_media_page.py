@@ -276,8 +276,8 @@ function initPhotoMap(){
   if(photoMap||typeof L==="undefined")return;
   photoMap=L.map("photo-map",{preferCanvas:true}).setView([51.1,10.4],6);
   const sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:22,maxNativeZoom:19,attribution:"Esri World Imagery"});
-  const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:19,attribution:"© OpenStreetMap"});
-  sat.addTo(photoMap);L.control.layers({"Satellit":sat,"Straßenkarte":osm}).addTo(photoMap);
+  const osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:22,maxNativeZoom:19,referrerPolicy:"strict-origin-when-cross-origin",attribution:"© OpenStreetMap"});
+  osm.addTo(photoMap);L.control.layers({"Straßenkarte":osm,"Satellit":sat}).addTo(photoMap);
   photoLayer=L.layerGroup().addTo(photoMap);
 }
 function popup(it){
