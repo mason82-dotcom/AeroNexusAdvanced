@@ -229,7 +229,7 @@ def validate_result(data: dict) -> tuple[int, float, dict]:
     return count, float(distance), camera
 
 
-def run_browser(origin: str, screenshot: Path, require_tiles: bool):
+def run_browser(origin: str, screenshot: Path, require_tiles: bool, route_preview: bool = False):
     from playwright.sync_api import sync_playwright
     configured = os.environ.get("AERONEXUS_CHROMIUM_BIN", "").strip()
     chromium = shutil.which(configured) if configured else next(
@@ -285,6 +285,10 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool):
             page.locator("#survey-height-agl").fill("60")
             page.locator("#survey-side-overlap").fill("70")
             page.locator("#survey-front-overlap").fill("80")
+            if route_preview:
+                page.locator("#survey-route-enabled").check()
+                page.locator("#survey-route-speed").fill("5")
+                page.locator("#survey-route-hold").fill("5")
             with page.expect_response(
                 lambda r: r.request.method == "POST"
                   and r.url == origin + "/api/v1/studio/survey/preview",
@@ -295,12 +299,38 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool):
                 raise StagingSmokeError("Staging camera API returned non-200 HTTP")
             response = result_response.json()
             count, distance, camera = validate_result(response)
+            route_plan = response.get("route_preview") if route_preview else None
+            if route_preview:
+                if (not isinstance(route_plan, dict)
+                        or route_plan.get("kind") != "schematic-route-preview"
+                        or route_plan.get("mission_ready") is not False
+                        or route_plan.get("clearance_verified") is not False
+                        or route_plan.get("waypoint_count") != 2 * count
+                        or route_plan.get("connector_count") != count - 1
+                        or not isinstance(route_plan.get("estimated_duration_s"), int)
+                        or route_plan["estimated_duration_s"] <= 0
+                        or not isinstance(route_plan.get("connectors"), list)
+                        or len(route_plan["connectors"]) != count - 1
+                        or any(c.get("clearance_verified") is not False
+                               for c in route_plan["connectors"])):
+                    raise StagingSmokeError("Invalid schematic route or safety flags")
             seen_preview.append(True)
+            expected_layers = count + (count - 1 if route_preview else 0)
             page.wait_for_function(
                 """n => typeof surveyLayer !== 'undefined' &&
                      !!surveyLayer && surveyLayer.getLayers().length === n &&
                      !document.getElementById('survey-camera-metrics').hidden""",
-                arg=count, timeout=12000)
+                arg=expected_layers, timeout=12000)
+            if route_preview:
+                connection_svg = page.locator(
+                    "#map .leaflet-overlay-pane svg path[stroke='#c18aff']").count()
+                if connection_svg != count - 1:
+                    raise StagingSmokeError("Staging schematic connector SVG mismatch")
+                route_metrics = page.locator("#survey-route-metrics")
+                if (not route_metrics.is_visible()
+                        or "ungeprüfte Verbindungen" not in route_metrics.inner_text()
+                        or "Rechenzeit" not in route_metrics.inner_text()):
+                    raise StagingSmokeError("Schematic route metrics/warning missing")
             svg = page.locator(
                 "#map .leaflet-overlay-pane svg path[stroke='#ffab70']").count()
             if svg != count:
@@ -351,6 +381,12 @@ def run_browser(origin: str, screenshot: Path, require_tiles: bool):
             print("GSD:", camera["gsd_cm_px"], "cm/pixel")
             print("Derived strip spacing:", camera["spacing_m"], "m")
             print("Estimated photos:", camera["estimated_photo_count"])
+            if route_preview:
+                print("Schematic waypoints:", route_plan["waypoint_count"])
+                print("Unverified connectors:", route_plan["connector_count"])
+                print("Connection length:", route_plan["connector_distance_m"], "m")
+                print("Duration estimate:", route_plan["estimated_duration_s"], "s")
+                print("Mission/clearance verified:", False)
             print("Screenshot:", screenshot)
         finally:
             browser.close()
@@ -365,6 +401,8 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=18081)
     parser.add_argument("--require-tiles", action="store_true",
                         help="Fail unless a real map tile loaded")
+    parser.add_argument("--route-preview", action="store_true",
+                        help="Also test optional schematic connectors and duration; never upload a mission")
     parser.add_argument("--screenshot", type=Path,
                         default=Path("/tmp/aeronexus-camera-staging.png"))
     args = parser.parse_args(argv)
@@ -375,7 +413,8 @@ def main(argv=None):
             seed_synthetic_workspace(workspace)
             with staging_server(args.server_python, checkout, workspace, args.port) as origin:
                 print("Staging server: healthy on loopback only")
-                run_browser(origin, args.screenshot, args.require_tiles)
+                run_browser(origin, args.screenshot, args.require_tiles,
+                            route_preview=args.route_preview)
         print("Staging process stopped; synthetic workspace cleaned")
         return 0
     except (StagingSmokeError, OSError, ValueError) as exc:
