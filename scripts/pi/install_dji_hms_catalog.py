@@ -28,10 +28,15 @@ def validate(data: bytes) -> int:
     obj = json.loads(data)
     if not isinstance(obj, dict) or not 100 <= len(obj) <= MAX_ENTRIES:
         raise ValueError("Unexpected DJI HMS catalog size")
-    usable = sum(isinstance(k, str) and KEY.fullmatch(k)
-                 and isinstance(v, dict) and
-                 any(isinstance(v.get(x), str) and v[x].strip() for x in ("de", "en"))
-                 for k, v in obj.items())
+    # A non-matching regex returns None; sum() requires each item to be a
+    # number/bool. DJI's JSON may contain non-HMS metadata keys.
+    usable = sum(
+        isinstance(k, str)
+        and KEY.fullmatch(k) is not None
+        and isinstance(v, dict)
+        and any(isinstance(v.get(x), str) and v[x].strip() for x in ("de", "en"))
+        for k, v in obj.items()
+    )
     if usable < 100:
         raise ValueError("HMS catalog has too few usable messages")
     return usable
