@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from .inventory import DeviceType, Inventory
 from .providers import ProviderKind
 from .cloud_api_freshness import clock_view, project_fields
+from .hms_history import HmsHistory
 
 
 def utc_now() -> datetime:
@@ -48,6 +49,8 @@ class StatusRuntime:
     live_feed: Callable[[], dict] | None = None
     # Live FlightHub HMS alerts per (provider, project, device); None = not read.
     health: dict[tuple[ProviderKind, str, str], tuple[dict, ...]] = field(default_factory=dict)
+    # Bounded HMS state-transition log; disk persistence is configured at startup.
+    hms_history: HmsHistory = field(default_factory=HmsHistory)
     # FlightHub project library (waylines, models, tasks) per (provider, project).
     catalog: dict[tuple[ProviderKind, str], dict] = field(default_factory=dict)
     flighthub_system_ok: bool | None = None
@@ -109,6 +112,9 @@ class StatusRuntime:
                 "telemetry": sample,
                 "health": list(self.health.get(
                     (device.provider, device.project_id, device.device_id), ())),
+                "hms_history": self.hms_history.list_events(
+                    provider=device.provider.value, project_id=device.project_id,
+                    device_id=device.device_id, limit=12)["events"],
                 **cloud,
             })
         return tuple(views)
@@ -133,6 +139,10 @@ class StatusRuntime:
             "live_feed": {"state": "disabled"} if self.live_feed is None else self.live_feed(),
             "health_warnings": sum(any(a.get("level") == "warning" for a in v["health"])
                                    for v in views),
+            "hms_history_events": len(self.hms_history.events),
+            "hms_history_persistent": (self.hms_history.path is not None
+                                       and not self.hms_history.storage_error),
+            "hms_history_storage_error": self.hms_history.storage_error,
             "flighthub": {
                 "system_status": {None: "unknown", True: "ok", False: "error"}[self.flighthub_system_ok],
                 "catalog_updated_at": utc_iso(self.catalog_updated_at),
