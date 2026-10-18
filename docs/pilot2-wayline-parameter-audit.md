@@ -154,3 +154,33 @@ Firmware-Kompatibilität werden nicht validiert. Die WPML-1.0.6-Semantik
 bleibt ungeprüft; kein automatischer Upload oder Flugsteuerungsbefehl.
 Die Liste der bekannten Aktionsnamen stammt aus DJI WPML Common Element:
 https://developer.dji.com/doc/cloud-api-tutorial/en/api-reference/dji-wpml/common-element.html
+
+## Anonymisierte Analyse unbekannter Aktionen und Trigger
+
+DJI WPML 1.0.6 aus der Pilot-2-Cloud kann Aktionswerte enthalten, die
+in der dokumentierten DJI Cloud-API-Aktionsliste nicht beschrieben sind.
+Sie werden ausdrücklich NICHT in bekannte Befehle umgedeutet.
+
+Neue Diagnosefelder je Cloud-KMZ:
+
+- unknown_action_distinct_by_route: Zahl verschiedener nicht erkannter
+  Aktionswerte pro ausführbarer Folder-Route (ohne Werte selbst).
+- unknown_action_shapes_by_route: pro Route aggregierte Formklassen
+  missing, identifier (ASCII-Bezeichner), numeric, other.
+- unknown_start_action_distinct_by_route und
+  unknown_start_action_shapes_by_route: entsprechend für startActionGroup.
+- waypoint_action_group_count: Anzahl von wpml:actionGroup bei Wegpunkten.
+- action_trigger_counts: ausschließlich dokumentierte und erkannte
+  Trigger reachPoint, betweenAdjacentPoints, multipleTiming und
+  multipleDistance.
+- unknown_action_trigger_count: unbekannte oder fehlende Trigger.
+
+Die Formklassen liefern nur Hinweise für die nächste Schema-Recherche,
+nicht die Semantik der Aktionswerte. Insbesondere identifiziert
+identifier keine Kameraaktion. Keinerlei unbekannte Aktionstexte,
+Hashes, Parameter, Koordinaten, Missionstitel oder UUIDs werden in
+Diagnoseausgaben übernommen.
+
+Originalaktionen werden weder umgeschrieben noch veröffentlicht,
+hochgeladen oder auf einer Drohne ausgeführt. Übertragbarkeit von
+WPML-1.0.6-Aktionen bleibt ungeprüft.
