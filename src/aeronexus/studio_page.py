@@ -111,6 +111,7 @@ body.map-focus-active #map{height:100%;min-height:0}
 #point-list{max-height:380px;overflow-y:auto}
 #point-editor{border:1px solid #385270;border-radius:11px;padding:12px;margin-top:10px}
 #point-editor[hidden],#mission-panel[hidden],#media-panel[hidden],#fleet-panel[hidden],#geo-panel[hidden],#wayline-panel[hidden]{display:none}
+#point-focus-params[hidden],#point-zoom-params[hidden],#point-pitch-params[hidden]{display:none}
 .pane-inner{padding:25px;max-width:1500px;margin:0 auto}
 .page-head{display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .page-head h1{font-size:28px}.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
