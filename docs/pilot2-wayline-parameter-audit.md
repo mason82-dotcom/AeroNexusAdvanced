@@ -526,3 +526,30 @@ PYTHONPATH="$WT/src" "$PY" -m pytest -q tests/test_pilot2_action_summary.py
 Die Live-UI benötigt den Deployment-Stand dieses Branches;
 das Wechseln des Test-Worktrees allein verändert den laufenden
 AeroNexusAdvanced-Server **nicht**.
+
+### Härtung der Studio-Diagnoseansicht (Sitzung, Fehlerzustand)
+
+Beim Wechsel aus der Wayline-Bibliothek wird ein laufender
+Aktionsdiagnose-GET mit AbortController abgebrochen, die Anfragegeneration
+ungültig gemacht und die vorherigen anonymen Diagnosekarten entfernt.
+Eine bereits empfangene HTTP-Antwort kann somit nach einem späteren
+Tabwechsel keine veralteten Karten nachzeichnen. Das gilt auch, falls die
+Antwort erst während des JSON-Parsens eintrifft.
+
+Der Backend-Summarizer akzeptiert ausschließlich vollständige
+Bibliotheksstände mit plausibler gemeldeter Gesamtzahl, eindeutigen
+temporären Axx-Aliassen, konsistenten Gesamtzählern und explizit
+false gesetztem full_content_verified sowie
+flight_compatibility_verified. Fehlerhafte Summen und untypisierte
+oder doppelte Aliaswerte führen zu einer anonymisierten Fehlermeldung,
+nicht zur Ausgabe von Originaldaten.
+
+Die Oberfläche beschriftet den bekannten Anteil deshalb ausdrücklich
+als **Aktionen in der bekannten Typenliste** – eine Klassifizierung der
+Textkennung und ausdrücklich *kein* Nachweis von WPML-1.0.6-Semantik.
+Keine automatische Freigabe, kein Schreiben, keine Flugsteuerung.
+
+Getestet mit pytest und gezielten negativen Fixtures:
+parallel ausgelöste Abrufe (ein Scan), Cache-Ablauf, Credentials-Wechsel,
+abgewiesene Viewer-Anfragen, doppelte Aliasse, inkonsistente
+Metadaten und verschwundene Browseransichten.
