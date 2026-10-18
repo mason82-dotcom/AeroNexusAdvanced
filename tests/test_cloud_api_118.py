@@ -372,3 +372,52 @@ def test_invalid_control_source_and_payload_control_fail_closed():
                 {'payloads': [{'control_source': 23}]}):
         with pytest.raises(ValueError):
             normalize_osd(DeviceType.AIRCRAFT, {'mode_code': 3, **raw})
+
+
+def test_partial_homepoint_state_preserves_known_pair_and_field_clocks(feed):
+    ingest, clock = feed
+    assert push(feed, {"mode_code": 0})
+    clock[0] += timedelta(seconds=1)
+    assert push(feed, {"home_latitude": 49.1, "home_longitude": 8.5},
+                channel="state")
+    key = (CLOUD, "aeronexus", DRONE)
+    before = {name: dict(ingest.runtime.cloud_field_clocks[key][name]) for name in
+              ("cloud_details.home_latitude", "cloud_details.home_longitude")}
+    clock[0] += timedelta(seconds=1)
+    assert push(feed, {"home_latitude": 49.9, "rth_mode": 2},
+                channel="state")
+    details = view(feed)["last_known_telemetry"]["cloud_details"]
+    assert (details["home_latitude"], details["home_longitude"]) == (49.1, 8.5)
+    assert details["rth_mode_code"] == 2
+    for name in before:
+        assert ingest.runtime.cloud_field_clocks[key][name] == before[name]
+    clock[0] += timedelta(seconds=1)
+    assert not push(feed, {"home_longitude": 8.9}, channel="state")
+    assert (view(feed)["last_known_telemetry"]["cloud_details"]["home_latitude"],
+            view(feed)["last_known_telemetry"]["cloud_details"]["home_longitude"]) == (49.1, 8.5)
+
+
+def test_complete_unknown_homepoint_pair_can_clear_existing_pair(feed):
+    assert push(feed, {"mode_code": 0})
+    feed[1][0] += timedelta(seconds=1)
+    assert push(feed, {"home_latitude": 49.1, "home_longitude": 8.5},
+                channel="state")
+    feed[1][0] += timedelta(seconds=1)
+    assert push(feed, {"home_latitude": 0, "home_longitude": 0},
+                channel="state")
+    details = view(feed)["last_known_telemetry"]["cloud_details"]
+    assert details["home_latitude"] is None
+    assert details["home_longitude"] is None
+
+
+def test_invalid_partial_homepoint_cannot_replace_previous_pair(feed):
+    assert push(feed, {"mode_code": 0})
+    feed[1][0] += timedelta(seconds=1)
+    assert push(feed, {"home_latitude": 49.1, "home_longitude": 8.5},
+                channel="state")
+    feed[1][0] += timedelta(seconds=1)
+    assert not push(feed, {"home_latitude": 100, "rth_mode": 2},
+                    channel="state")
+    details = view(feed)["last_known_telemetry"]["cloud_details"]
+    assert (details["home_latitude"], details["home_longitude"]) == (49.1, 8.5)
+    assert "rth_mode_code" not in details
