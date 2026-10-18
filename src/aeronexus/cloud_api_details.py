@@ -318,11 +318,16 @@ def normalize_details(kind, data):
                     result[wire] = parsed
         if 'live_status' in data:
             result['live_status'] = array(data['live_status'], LIVE, 16)
-    # A half home coordinate pair and DJI's unknown 0/0 do not locate a home.
+    # Never merge a changed home latitude with an older home longitude (or
+    # vice versa). mapped() has already validated even a lone wire value.
     if 'home_latitude' in result or 'home_longitude' in result:
-        lat, lon = result.get('home_latitude'), result.get('home_longitude')
-        if lat is None or lon is None or (lat == 0 and lon == 0):
-            result['home_latitude'] = result['home_longitude'] = None
+        if 'home_latitude' not in result or 'home_longitude' not in result:
+            result.pop('home_latitude', None)
+            result.pop('home_longitude', None)
+        else:
+            lat, lon = result['home_latitude'], result['home_longitude']
+            if lat is None or lon is None or (lat == 0 and lon == 0):
+                result['home_latitude'] = result['home_longitude'] = None
     return result
 
 
