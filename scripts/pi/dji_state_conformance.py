@@ -128,7 +128,7 @@ def sanitize_channels(feed):
     return result
 
 
-def report(capture, maximum_devices, summary):
+def report(capture, maximum_devices, summary, baseline=None):
     feed = summary.get("live_feed") or {}
     if not isinstance(feed, dict):
         feed = {}
@@ -143,7 +143,13 @@ def report(capture, maximum_devices, summary):
                 "not_observed": sorted(set(EXPECTED[kind][channel]) - seen),
             }
     state_enabled = feed.get("state_topic_enabled") is True
-    state_count = channel_counts["state"]["accepted"]
+    start = sanitize_channels(baseline.get("live_feed", {})) if baseline else channel_counts
+    delta = {}
+    for channel in ("osd", "state"):
+        before, after = start[channel]["accepted"], channel_counts[channel]["accepted"]
+        delta[channel] = (max(after - before, 0) if before is not None
+                          and after is not None and after >= before else None)
+    state_count = delta["state"]
     if not maximum_devices["aircraft"] or not maximum_devices["controller"]:
         outcome = "missing_aircraft_or_controller"
     elif not state_enabled:
@@ -151,9 +157,9 @@ def report(capture, maximum_devices, summary):
     elif state_count is None:
         outcome = "channel_counters_unavailable_deploy_branch_first"
     elif state_count == 0:
-        outcome = "state_event_not_observed"
+        outcome = "state_event_not_observed_in_window"
     else:
-        outcome = "state_events_observed_partial_property_evidence"
+        outcome = "state_events_observed_in_window_partial_property_evidence"
     return {
         "scope": "DJI Cloud API 1.18, M4T / RC Plus 2 candidate properties",
         "evidence": "live API field clocks; no hardware values retained",
@@ -162,6 +168,7 @@ def report(capture, maximum_devices, summary):
             "subscription_denied", "auth_failed", "unreachable", "disconnected") else "unknown",
         "state_topic_enabled": state_enabled,
         "channels": channel_counts,
+        "accepted_during_observation": delta,
         "coverage": coverage,
         "outcome": outcome,
         "notice": "Not observed does not imply unsupported: state is change-triggered. "
@@ -193,6 +200,7 @@ def main(argv=None):
         maximum = {kind: 0 for kind in EXPECTED}
         end_at = time.monotonic() + args.seconds
         summary = {}
+        baseline = _read_json(opener, base + "/api/v1/status/summary", token)
         while True:
             summary = _read_json(opener, base + "/api/v1/status/summary", token)
             devices = _read_json(opener, base + "/api/v1/status/devices?limit=200", token)
@@ -202,7 +210,7 @@ def main(argv=None):
             if time.monotonic() >= end_at:
                 break
             time.sleep(min(5, max(0, end_at - time.monotonic())))
-        print(json.dumps(report(capture, maximum, summary), indent=2, sort_keys=True))
+        print(json.dumps(report(capture, maximum, summary, baseline), indent=2, sort_keys=True))
         return 0
     except HTTPError as exc:
         print(f"Read-only API request failed: HTTP {exc.code}", file=sys.stderr)
