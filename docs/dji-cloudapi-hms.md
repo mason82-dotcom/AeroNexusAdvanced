@@ -88,3 +88,18 @@ echte DJI-Dock-Sitzung validiert werden.
   von Fehlern an DJI und keine automatischen Reparatur- oder Flugaktionen.
 - Das Deployment auf dem Pi bleibt bis zur ausdrücklichen Integration
   und einer kontrollierten Konfigurationsprüfung unverändert.
+
+## Verifizierte Katalog-Abdeckung (DJI-Cloud-API-Demo)
+
+Der von DJI veröffentlichte Beispielkatalog `sample/src/main/resources/hms.json`
+enthält derzeit **2.451 HMS-Schlüssel** (2.205 Fluggerät- und 246 Dock-Schlüssel).
+Deutsch (`de`) ist für **1.830** Einträge mit nichtleerem Text vorhanden,
+Englisch (`en`) für **2.409**. Die Sprachabdeckung unterscheidet sich je
+Katalogversion. Fehlende deutsche Einträge werden mit englischem Originaltext
+angezeigt, und vollständig unbekannte Schlüssel nur mit Code.
+
+Im HMS-Event steht die Alarmherkunft explizit in `device_type`
+(Domäne 0 = Fluggerät, 3 = Dock). Diese Angabe hat Vorrang gegenüber
+dem Typ des MQTT-Gateways. Das Gateway kann Meldungen für verschiedene
+Geräte übertragen; die Anzeige darf solche Meldungen nicht einem anderen
+Gerät nur aufgrund des Topic-Namens zuordnen.

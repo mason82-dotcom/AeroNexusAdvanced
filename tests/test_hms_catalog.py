@@ -127,7 +127,7 @@ def test_full_snapshot_mqtt_hms_event_and_empty_clear(catalog):
 def test_mqtt_hms_does_not_register_devices_or_update_on_invalid(catalog):
     ingest = CloudOsdIngest(StatusRuntime())
     valid = json.dumps({"method": "hms", "data": {"list": [
-        {"code": "0x16100083", "level": 2}
+        {"code": "0x16100083", "level": 2, "module": 3}
     ]}}).encode()
     assert not ingest.handle_hms("thing/product/UNKNOWN/events", valid)
     assert ingest.hms_ignored == 1
@@ -135,7 +135,7 @@ def test_mqtt_hms_does_not_register_devices_or_update_on_invalid(catalog):
     for payload in (b"{}", b"{", b"x" * 65537,
                     json.dumps({"method": "osd", "data": {"list": []}}).encode(),
                     json.dumps({"method": "hms", "data": {"list": [
-                        {"code": "x"}]}}).encode()):
+                        {"code": "x", "level": 2, "module": 3}]}}).encode()):
         with pytest.raises(ValueError):
             normalize_cloud_hms_event(payload)
     assert not ingest.handle_hms("sys/product/AC01/status", valid)
@@ -196,3 +196,26 @@ def test_hms_mqtt_setting_opt_in_and_subscriptions():
         loop.close()
     with pytest.raises(ValueError):
         MqttSettings.from_env({**env, "AERONEXUS_OSD_HMS_ENABLED": "unexpected"})
+
+
+def test_dji_device_type_domain_selects_the_correct_copy_key(catalog):
+    # HMS is published by the gateway, but a single snapshot may contain
+    # drone and dock entries, each with their own device_type domain.
+    dock = resolve_hms({"code": "0x19110020", "device_type": "3-67-0",
+                        "args": {"sensor_index": 0}}, kind="controller")
+    assert dock["device_domain"] == "dock"
+    assert dock["message"] == "Abdeckung links; Stange vorn"
+    drone = resolve_hms({"code": "0x16100083", "device_type": "0-67-0",
+                         "in_the_sky": 1}, kind="controller")
+    assert drone["device_domain"] == "aircraft"
+    assert drone["message"] is not None
+
+
+def test_cloud_mqtt_allows_documented_methodless_hms_sample(catalog):
+    msg = json.dumps({"timestamp": 1700000000000, "data": {"list": [
+        {"code": "0x16100083", "device_type": "0-67-0", "level": 2,
+         "module": 3, "in_the_sky": 0}
+    ]}}).encode()
+    rows, ts = normalize_cloud_hms_event(msg)
+    assert ts == 1700000000000
+    assert len(rows) == 1 and rows[0]["device_domain"] == "aircraft"

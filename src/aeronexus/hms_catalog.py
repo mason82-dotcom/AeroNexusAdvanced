@@ -141,6 +141,21 @@ def _flag(value) -> bool:
     return value is True or value == 1 or value == "1" or value == "in_the_sky"
 
 
+def _kind_for_message(item: Mapping, kind: str) -> str:
+    """DJI reports device domain in device_type: drone=0, dock=3.
+
+    A gateway's HMS list may contain both dock and drone alerts.
+    Never infer the alarm owner from the MQTT topic's device type.
+    """
+    device_type = item.get("device_type")
+    if isinstance(device_type, str):
+        match = re.fullmatch(r"([0-3])-[0-9]{1,4}-[0-9]{1,4}", device_type)
+        if match:
+            return {"0": "aircraft", "1": "aircraft",
+                    "2": "controller", "3": "dock"}[match.group(1)]
+    return kind
+
+
 def _module(value) -> str | None:
     if type(value) is int and 0 <= value < len(MODULES):
         return MODULES[value]
@@ -164,12 +179,13 @@ def resolve_hms(item: Mapping, *, kind: str = "aircraft") -> dict | None:
     imminent = _flag(item.get("imminent"))
     args = item.get("args") if isinstance(item.get("args"), Mapping) else {}
     device_type = _clean(item.get("device_type"), 32)
-    explicit_dock = kind == "dock" or item.get("is_dock") is True
+    resolved_kind = _kind_for_message(item, kind)
+    explicit_dock = resolved_kind == "dock"
     keys = []
     if normalize_code(code):
         if explicit_dock:
             keys = ["dock_tip_" + code]
-        elif kind == "aircraft":
+        elif resolved_kind == "aircraft":
             if in_sky:
                 keys.append("fpv_tip_" + code + "_in_the_sky")
             keys.append("fpv_tip_" + code)
@@ -193,6 +209,7 @@ def resolve_hms(item: Mapping, *, kind: str = "aircraft") -> dict | None:
         "message_source": source,
         "imminent": imminent, "in_the_sky": in_sky,
         "device_type": device_type,
+        "device_domain": resolved_kind,
     }
 
 
@@ -206,8 +223,11 @@ def normalize_cloud_hms_event(
         obj = json.loads(payload)
     except (UnicodeError, ValueError) as exc:
         raise ValueError("Invalid HMS JSON event") from exc
-    if not isinstance(obj, dict) or obj.get("method") != "hms":
+    if not isinstance(obj, dict) or obj.get("method", "hms") != "hms":
         raise ValueError("Not an HMS event")
+    # DJI's published HMS JSON example omits the method field; its
+    # MQTT message envelope usually supplies it. Missing method is only
+    # accepted with strict HMS-specific item structure below.
     data = obj.get("data")
     rows = data.get("list") if isinstance(data, dict) else None
     if not isinstance(rows, list) or len(rows) > 20:
@@ -217,6 +237,8 @@ def normalize_cloud_hms_event(
             type(timestamp) is not int or timestamp < 0 or timestamp > 253402300799999):
         raise ValueError("Invalid HMS timestamp")
     if any(not isinstance(row, dict) or normalize_code(row.get("code")) is None
+           or type(row.get("level")) is not int or row["level"] not in (0, 1, 2)
+           or type(row.get("module")) is not int or row["module"] not in (0, 1, 2, 3)
            for row in rows):
         raise ValueError("Invalid HMS item")
     # No free-form text, device SN or arbitrary properties are preserved.
