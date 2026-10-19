@@ -20,7 +20,6 @@ import time
 from .minio_media_index import DjiMediaError
 from .thermal import ThermalError, ThermalNotFound, ThermalService
 from .thermal_geo import ThermalGeoIndex
-from .thermal_sdk import ThermalSdkError
 
 FLIGHT_GAP_MINUTES = 15
 MAX_JOB_IMAGES = 5000
@@ -195,10 +194,13 @@ class ThermalFlights:
                 break
             key = "measured"
             try:
-                self.service.measure(row["id"], cache=False)  # stats_sink persists the summary
+                self.service.measure(row["id"], cache=False, require_persistence=True)
             except ThermalError:
                 key = "skipped"  # not radiometric / no longer indexed
-            except (ThermalSdkError, DjiMediaError, OSError, sqlite3.Error):
+            except Exception:
+                # Storage/SDK errors and unexpected provider failures are per-image
+                # failures. Never leave a dead worker marked running or expose
+                # exception text (which may contain paths or object identifiers).
                 key = "failed"
             with self._lock:
                 self._job[key] += 1

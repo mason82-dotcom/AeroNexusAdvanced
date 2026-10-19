@@ -172,3 +172,21 @@ Das Skript arbeitet ohne root und außerhalb des Repositorys:
 - Automatische Modulerkennung statt manuellem PV-Bereich.
 - Geo-Index regelmäßig per `systemd --user`-Timer aktualisieren.
 - Gerenderte Wärmebilder als georeferenzierte Kacheln auf der Karte.
+
+## Fehlerbehandlung der Flugauswertung
+
+Eine Batch-Auswertung zählt ein Bild erst dann als `measured`, wenn die
+Zusammenfassung erfolgreich im lokalen Statistikindex gespeichert wurde.
+Dies gilt auch für bereits im Speicher vorhandene Messungen. Ein Schreibfehler
+wird als `failed` gezählt; das Bild bleibt für einen späteren Versuch offen.
+Die interaktive Einzelbildmessung bleibt bei einem Fehler ihres optionalen
+Statistikcaches weiterhin nutzbar.
+
+Fehler eines einzelnen SDK-/Datenbankaufrufs beenden den Hintergrundthread
+nicht unkontrolliert. Der Auftrag erreicht einen Abschlusszustand und kann
+anschließend erneut gestartet werden. Exception-Texte werden weder in den
+Auftragsstatus noch in die Oberfläche übernommen.
+
+Die Flugkarte zeigt auch nach Abschluss oder Abbruch die Anzahl gespeicherter,
+übersprungener und fehlgeschlagener Bilder. `done` bedeutet Auftrag beendet;
+es garantiert nicht, dass alle Bilder erfolgreich ausgewertet wurden.

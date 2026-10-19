@@ -1,5 +1,8 @@
 """Thermal flight analysis: grouping, background SDK job, ranking, cache and API."""
 import importlib
+import shutil
+import sqlite3
+import subprocess
 
 import pytest
 from fastapi.testclient import TestClient
@@ -92,6 +95,53 @@ def test_override_measurements_do_not_overwrite_the_summary(flights, service):
     assert flights.flights()["flights"][0]["analyzed"] == 0
 
 
+@pytest.mark.parametrize("cached", [False, True])
+def test_failed_stats_write_is_not_counted_as_measured_and_can_be_retried(flights, service, monkeypatch, cached):
+    fid = flights.flights()["flights"][0]["id"]
+
+    def storage_failure(*args):
+        raise sqlite3.OperationalError("private database path must not leave the worker")
+
+    monkeypatch.setattr(service, "stats_sink", storage_failure)
+    # An interactive image remains usable even when its optional summary fails.
+    if cached:
+        assert service.analysis(media_id("dji-cloud", THERMAL))["measurement"]["max_c"] == 27.0
+    flights.start(fid)
+    flights.wait(10)
+    job = flights.job()
+    assert job["state"] == "done"
+    assert (job["measured"], job["failed"], job["skipped"]) == (0, 1, 1)
+    assert "private" not in str(job)
+    assert flights.flights()["flights"][0]["analyzed"] == 0
+
+    monkeypatch.setattr(service, "stats_sink", flights.save_stats)
+    flights.start(fid)
+    flights.wait(10)
+    assert flights.job()["measured"] == 1
+    assert flights.job()["failed"] == 0
+    assert flights.flights()["flights"][0]["analyzed"] == 1
+
+
+def test_unexpected_measurement_error_finishes_job_and_allows_retry(flights, service, monkeypatch):
+    fid = flights.flights()["flights"][0]["id"]
+
+    def broken_measure(*args, **kwargs):
+        raise RuntimeError("private upstream information")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(service, "measure", broken_measure)
+        flights.start(fid)
+        flights.wait(10)
+        job = flights.job()
+        assert job["state"] == "done"
+        assert job["processed"] == job["failed"] == job["total"]
+        assert job["finished_at"] is not None
+        assert "private" not in str(job)
+    flights.start(fid)
+    flights.wait(10)
+    assert flights.job()["measured"] == 1
+
+
 def test_single_job_and_cancel(flights):
     fid = flights.flights()["flights"][0]["id"]
     flights._job = {"state": "running"}
@@ -149,3 +199,37 @@ def test_page_has_flight_tab_and_thermal_naming():
         assert "Thermografie" not in page and '/thermal">Thermal' in page.replace(
             ' style="color:#9edaff;padding:9px;text-decoration:none"', "").replace(
             ' style="color:#9cd2ff"', "")
+
+
+def test_finished_job_failures_remain_visible_in_flight_cards():
+    from aeronexus.thermal_page import render_thermal_page
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node unavailable")
+    page = render_thermal_page()
+    code = page[page.index("function renderFlights(){"):page.index("function rankingTable(d){")]
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const code=fs.readFileSync(0,'utf8'),nodes=new Map();
+function el(tag,text='',className=''){return {tag,textContent:text||'',className,children:[],style:{},
+ append(...items){this.children.push(...items)},replaceChildren(){this.children=[]},
+ addEventListener(){},setAttribute(k,v){this[k]=v}}}
+const $=id=>{if(!nodes.has(id))nodes.set(id,el('div'));return nodes.get(id)};
+const when2=v=>v,deg=v=>String(v),fmt=v=>String(v),openFlight=null;
+let flightsData={gap_minutes:15,flights:[{id:'flight',start:'2026-10-19T00:00:00Z',
+ end:'2026-10-19T00:01:00Z',images:2,with_position:0,analyzed:1}],job:{}};
+const render=new Function('$','el','when2','deg','fmt','flightsData','openFlight',code+';renderFlights();');
+const text=n=>[n.textContent,...n.children.map(text)].join(' ');
+function show(job){flightsData.job={flight_id:'flight',measured:1,skipped:0,failed:0,...job};
+ render($,el,when2,deg,fmt,flightsData,openFlight);return text($('flights'))}
+assert.match(show({state:'done',failed:1}),/Auswertung mit Fehlern beendet: 1 gespeichert · 0 übersprungen · 1 Fehler/);
+assert.ok($('flights').children[0].children.some(n=>n.role==='status'));
+assert.match(show({state:'done'}),/Auswertung beendet: 1 gespeichert/);
+assert.match(show({state:'cancelled'}),/Auswertung abgebrochen/);
+assert.ok(!show({state:'done',flight_id:'another-flight'}).includes('Auswertung beendet'));
+assert.match(show({state:'running',total:2,processed:1,seconds:2,failed:1}),/1 Fehler/);
+console.log('Thermal job feedback passed');
+"""
+    result = subprocess.run([node, "-e", script], input=code, text=True,
+                            capture_output=True, timeout=15)
+    assert result.returncode == 0, result.stderr
