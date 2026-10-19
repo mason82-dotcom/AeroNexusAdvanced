@@ -145,10 +145,16 @@ class CloudOsdIngest:
             serial, channel = topic_device(topic)
             if channel == "state" and not allow_state:
                 raise CloudOsdError("DJI state topic is not enabled")
-            data, timestamp = osd_envelope(payload)
+            data, timestamp = osd_envelope(
+                payload, allow_empty_data=channel == "state")
             received = utc_now()
             if timestamp is not None and timestamp > int(received.timestamp() * 1000) + 30000:
                 raise CloudOsdError("DJI source clock too far in future")
+            # DJI documents data={} for /state: valid no-op, no liveness renewal.
+            if channel == "state" and not data:
+                self.ignored += 1
+                self._count_channel(channel, 'ignored')
+                return False
             classified = classify(data)
             known = inventory._devices.get((CLOUD, self.project_id, serial))
             if channel == "state":

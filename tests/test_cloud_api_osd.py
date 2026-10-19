@@ -59,6 +59,47 @@ def test_osd_data_bounded_and_object_only():
             osd_data(bad)
 
 
+def test_nonfinite_json_constants_are_rejected_even_in_unknown_properties():
+    # RFC 8259 JSON does not permit NaN/Infinity. Unknown DJI properties
+    # must not bypass the envelope's syntax checks.
+    for number in ("NaN", "Infinity", "-Infinity"):
+        for field in ("elevation", "unknown_dji_property"):
+            raw = (f'{{"timestamp": 1, "data": {{'
+                   f'"mode_code": 3, "{field}": {number}}}}}').encode()
+            with pytest.raises(CloudOsdError):
+                osd_data(raw)
+
+
+@pytest.mark.parametrize("token", ["1e9999", "-1e9999"])
+@pytest.mark.parametrize("field", ["elevation", "unknown_dji_property"])
+def test_json_exponent_overflow_is_rejected_in_known_and_unknown_fields(token, field):
+    # The literals are valid JSON but Python's float parser otherwise returns inf.
+    raw = (f'{{"timestamp": 1, "data": {{'
+           f'"mode_code": 3, "{field}": {token}}}}}').encode()
+    with pytest.raises(CloudOsdError):
+        osd_data(raw)
+
+
+def test_deeply_nested_json_is_rejected_without_mutating_telemetry():
+    # Below the MQTT size limit; CPython can raise RecursionError while decoding.
+    nested = b"[" * 20000 + b"0" + b"]" * 20000
+    payload = b'{"data":{"mode_code":3,"vendor":' + nested + b"}}"
+    assert len(payload) < 65536
+    ingest = CloudOsdIngest(StatusRuntime())
+    assert not ingest.handle(topic(DRONE), payload)
+    assert ingest.rejected == 1 and ingest.accepted == 0
+    assert not ingest.runtime.inventory.devices()
+    assert ingest.last_message_at is None
+
+
+def test_direct_decoder_rejects_nonfinite_python_numbers():
+    # Direct normalization (without the JSON parser) must also fail closed.
+    for number in (float("nan"), float("inf"), float("-inf")):
+        for field in ("elevation", "horizontal_speed", "vertical_speed"):
+            with pytest.raises(CloudOsdError):
+                normalize_osd(DeviceType.AIRCRAFT, {"mode_code": 3, field: number})
+
+
 def test_classification():
     assert classify(AIRCRAFT) == DeviceType.AIRCRAFT
     assert classify(CONTROLLER) == DeviceType.CONTROLLER
@@ -136,6 +177,20 @@ def test_invalid_message_does_not_change_state(ingest):
     assert not ingest.handle(topic(DRONE), envelope({"latitude": 91, "longitude": 8, "mode_code": 1}))
     assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == before
     assert ingest.rejected == 2
+
+
+def test_nonfinite_json_is_atomic_and_does_not_refresh_liveness(ingest):
+    assert ingest.handle(topic(DRONE), envelope(AIRCRAFT))
+    key = (CLOUD, "aeronexus", DRONE)
+    before = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
+    clocks = dict(ingest.runtime.cloud_field_clocks[key])
+    osd_clock = dict(ingest.runtime.cloud_osd_clocks[key])
+    raw = b'{"timestamp": 1, "data": {"mode_code": 9, "elevation": NaN}}'
+    assert not ingest.handle(topic(DRONE), raw)
+    assert ingest.rejected == 1
+    assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == before
+    assert ingest.runtime.cloud_field_clocks[key] == clocks
+    assert ingest.runtime.cloud_osd_clocks[key] == osd_clock
 
 
 def test_type_change_rejected(ingest):
