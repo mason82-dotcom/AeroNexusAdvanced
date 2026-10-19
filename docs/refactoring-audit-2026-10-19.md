@@ -143,3 +143,25 @@ Qualität einer DJI-Funkverbindung.
   auch außerhalb der veränderten Codepfade beobachtet; einzelne
   fehlgeschlagene Runnerläufe müssen mitsamt Testnamen bewertet werden.
   Ein grüner PR-Check ist kein Ersatz für Browser-/Pilot-2-Hardwaretests.
+
+### Messprotokoll: GitHub Actions (synthetisch, 19.10.2026)
+
+Die neue Benchmark-Stufe lief im [Pull-Request-CI-Lauf
+39181853206](https://github.com/mason82-dotcom/AeroNexusAdvanced/actions/runs/39181853206)
+auf Python 3.12 und 3.13 erfolgreich. Jeweils 40 simulierte Geräte,
+1.600 simulierte HMS-Ereignisse, 20 Geräte je Page und 25 Iterationen
+pro Stichprobe:
+
+| Vergleich (Median je Aufruf) | Python 3.12 | Python 3.13 |
+| --- | ---: | ---: |
+| Alle Geräte projizieren | 0,594849 ms | 0,618566 ms |
+| Nur angefragte Geräte projizieren | 0,302329 ms | 0,312960 ms |
+| HMS für Gerät aus globalem Verlauf filtern | 0,348110 ms | 0,414967 ms |
+| HMS für Gerät über Geräteindex lesen | 0,002023 ms | 0,001633 ms |
+
+Vor jeder Zeitmessung verglich das Skript beide Ergebnisvarianten auf
+Gleichheit. Die Werte sind **keine Messung der Gesamtanwendung**
+und kein Vorher-/Nachher-Profil eines produktiven Pi. Sie vergleichen
+gezielt jeweils zwei alternative Zugriffswege **innerhalb desselben
+aktuellen Codes**. Für eine reale Leistungszusage sind weitere Messungen
+auf Zielhardware und mit realistischen Datenmengen erforderlich.
