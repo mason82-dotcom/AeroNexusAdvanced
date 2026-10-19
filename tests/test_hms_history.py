@@ -134,3 +134,33 @@ def test_hms_history_api_is_protected_and_bounded(tmp_path, monkeypatch):
                               headers=headers).status_code == 422
     finally:
         app.state.status_runtime = previous
+
+def test_filtered_pagination_preserves_total_order_and_bounded_page():
+    history = HmsHistory(limit=100)
+    now = datetime.now(timezone.utc)
+    for number in range(75):
+        provider = ProviderKind.CLOUD_API if number % 3 else ProviderKind.PUBLIC_V2
+        device = "AC01" if number % 2 else "RC02"
+        history.record_snapshot(
+            (provider, "project", device), (),
+            ({"code": f"alarm-{number}", "device_domain": "aircraft",
+              "level": "warning"},), now,
+        )
+
+    expected = [
+        item for item in reversed(history.events)
+        if item["provider"] == ProviderKind.CLOUD_API.value
+        and item["device_id"] == "AC01"
+    ]
+    for offset, limit in ((0, 12), (5, 7), (19, 12), (1000, 20)):
+        result = history.list_events(
+            provider=ProviderKind.CLOUD_API.value,
+            project_id="project", device_id="AC01",
+            offset=offset, limit=limit,
+        )
+        assert result["total"] == len(expected)
+        assert result["events"] == expected[offset:offset + limit]
+        assert len(result["events"]) <= limit
+
+    assert history.list_events(device_id="unknown")["events"] == []
+    assert history.list_events(device_id="unknown")["total"] == 0
