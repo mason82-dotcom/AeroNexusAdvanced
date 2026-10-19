@@ -26,9 +26,9 @@ def test_manager_groups_sources_preserves_draft_and_recovers_from_failure():
     script = r"""
 const assert=require('node:assert/strict'),fs=require('node:fs');
 const code=fs.readFileSync(0,'utf8');
-const nodes=new Map();
+const nodes=new Map(),sourceDetails={open:false};
 const $=id=>{if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',children:[],disabled:false,
- replaceChildren(){this.children=[]},appendChild(v){this.children.push(v)}});return nodes.get(id)};
+ replaceChildren(){this.children=[]},appendChild(v){this.children.push(v)},closest(){return sourceDetails}});return nodes.get(id)};
 const els=(tag,cls,text)=>({tag,textContent:text,children:[],appendChild(v){this.children.push(v)}});
 let knownMissions=[{id:'local-one',name:'Local',waypoints:2}],missionId='local-one';
 let waylineData={waylines:[{provider:'pilot2-local-cloud',project_id:'workspace',wayline_id:'route-one',name:'<b>Cloud</b>'},
@@ -63,6 +63,8 @@ const manager=eval('(function(){'+code+';return {updateMissionSelect,managerKey,
  await manager.openManagerRoute(manager.managerKey(fh));
  assert.equal(loaded.length,3);assert.match($('mission-manager-state').textContent,/kein Geometrieabruf/);
  assert.match($('mission-manager-state').className,/error/);
+ assert.equal(sourceDetails.open,true);
+ assert.match($('mission-manager-summary').textContent,/Quellenproblem/);
  localSucceeds=false;await manager.openManagerRoute('other-local');assert.equal(clears,0);
  localSucceeds=true;await manager.openManagerRoute('local-one');assert.equal(clears,1);
  assert.equal($('mission-list').value,'local-one');
@@ -73,6 +75,12 @@ const manager=eval('(function(){'+code+';return {updateMissionSelect,managerKey,
  assert.ok($('mission-list').children.some(g=>g.label==='pilot2-local-cloud'));
  localError=false;await manager.refreshMissionManager();
  assert.match($('mission-manager-state').textContent,/1 lokale Entwürfe/);
+ assert.match($('mission-manager-summary').textContent,/1 lokale Entwürfe · 2 Cloud-Routen/);
+ sourceDetails.open=false;
+ waylineData.local_pilot={state:'connected',pagination_complete:false};
+ await manager.refreshMissionManager();
+ assert.equal(sourceDetails.open,true,'partial inventory must be visible');
+ assert.match($('mission-manager-summary').textContent,/Quellenproblem/);
  await assert.rejects(()=>manager.openManagerRoute('cloud:missing'),/nicht mehr im Bestand/);
  console.log('Mission Manager state tests passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

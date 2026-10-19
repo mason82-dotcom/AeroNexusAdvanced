@@ -59,7 +59,7 @@ def test_corrupt_catalogue_is_controlled_and_private(monkeypatch, tmp_path, url)
 
 def test_static_media_page_never_inserts_dynamic_html_or_downloads():
     html = render_dji_media_page()
-    assert "DJI-MinIO-Medienindex" in html
+    assert "<h1>Medien</h1>" in html
     assert 'getJSON("/api/v1/dji/media/summary")' in html
     assert 'fetch(url,{cache:"no-store"})' in html
     assert "textContent=String(value??" in html
