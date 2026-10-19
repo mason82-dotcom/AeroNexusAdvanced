@@ -115,6 +115,69 @@ h1{font-size:clamp(29px,3.5vw,41px);line-height:1.1;letter-spacing:-.039em;margi
 @media(max-width:720px){.overview,.lower{grid-template-columns:1fr}.network-flow{margin-top:34px}.heading{align-items:start;flex-direction:column}.network{min-height:330px}.systems{display:block}}
 @media(max-width:520px){.workspace{padding:22px 14px}.top{padding:12px 14px}.top-right{width:100%;justify-content:space-between}.network-flow{grid-template-columns:1fr;gap:10px;margin-top:22px}.net-node{min-height:0}.network-bottom{margin-top:25px}.network{min-height:0}.feature-grid{grid-template-columns:1fr}.feature{min-height:155px}.section-row{flex-direction:column;align-items:start}.panel-title{padding:14px}.network{padding:17px}.detail-links{padding:8px 12px}}
 @media(prefers-reduced-motion:reduce){.feature,.rail-nav a{transition:none}}
+
+/* Compact control portal. Visual-only; original DJI links and probes are unchanged. */
+:root{--compact-space:8px}
+html{scrollbar-width:thin}
+@media(min-width:901px){
+ .page{grid-template-columns:208px minmax(0,1fr)}
+ .rail{padding:16px 10px 13px;gap:12px}
+ .brand{padding:2px 5px 12px}
+ .rail-nav{gap:2px}
+ .rail-nav a{min-height:35px;padding:6px 9px;gap:8px;font-size:12px}
+ .rail-nav a[aria-current="page"]{padding-left:7px}
+ .rail-note{padding:9px}
+}
+.work{max-width:1800px}
+.top{padding:10px 19px;gap:8px}
+.top-right{gap:8px}
+.link-chip{padding:6px 9px}
+.workspace{padding:17px 19px 22px}
+.heading{margin-bottom:14px;gap:10px}
+h1{font-size:clamp(24px,2.6vw,31px);margin:4px 0 6px}
+.heading p{font-size:12px;line-height:1.4}
+.heading-action{padding:7px 10px}
+.overview,.lower{gap:9px}
+.panel-title{padding:9px 11px}
+.network{min-height:235px;padding:13px 14px 11px}
+.network-flow{gap:8px;margin-top:22px}
+.net-node{min-height:100px;padding:9px;gap:4px}
+.network-bottom{margin-top:16px}
+.service{padding:9px 11px}
+.service small{margin-top:4px;line-height:1.35}
+.status-text{padding:3px 6px}
+.section-row{margin:19px 0 9px}
+.section-row h2{font-size:16px}
+.feature-grid{gap:8px}
+.feature{min-height:128px;padding:12px;gap:6px}
+.feature strong{font-size:14px}
+.feature p{line-height:1.4}
+.lower{margin-top:9px}
+.detail-links{padding:4px 11px}
+.detail-links a{padding:8px 3px}
+.disclaimer{padding:12px}
+.footer{margin-top:19px;padding:11px 0}
+@media(max-width:900px){
+ .top{padding:10px 15px}
+ .workspace{padding:15px}
+ .network{min-height:220px}
+}
+@media(max-width:720px){
+ .overview,.lower{grid-template-columns:minmax(0,1fr)}
+ .network-flow{margin-top:18px}
+}
+@media(max-width:520px){
+ .top{padding:10px 12px}
+ .workspace{padding:12px}
+ .feature-grid{grid-template-columns:minmax(0,1fr)}
+ .feature{min-height:0}
+ .network{min-height:0;padding:12px}
+ .network-flow{grid-template-columns:minmax(0,1fr);margin-top:12px}
+ .net-node{min-height:0}
+ .network-bottom{margin-top:10px}
+ .section-row{margin-top:14px}
+ .heading{gap:8px}
+}
 </style>
 </head>
 <body>
