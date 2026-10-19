@@ -90,7 +90,26 @@ def test_portal_compact_rail_in_real_chromium():
                 page = browser.new_page(viewport={"width": width, "height": height})
                 page.route("**/*", lambda route: route.abort())
                 page.set_content(html, wait_until="domcontentloaded")
-                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 2")
+                layout = page.evaluate(
+                    """() => ({
+                        viewport: innerWidth,
+                        scrollWidth: document.documentElement.scrollWidth,
+                        offenders: [...document.querySelectorAll('body *')]
+                          .filter(e => {
+                            const r = e.getBoundingClientRect();
+                            return r.right > innerWidth + 2 &&
+                              getComputedStyle(e).position !== 'fixed';
+                          })
+                          .slice(0, 12)
+                          .map(e => {
+                            const r = e.getBoundingClientRect();
+                            return {tag: e.tagName, cls: e.className?.baseVal ||
+                              e.className, right: Math.round(r.right),
+                              text: (e.textContent || '').trim().slice(0, 45)};
+                          }),
+                    })"""
+                )
+                assert layout["scrollWidth"] <= width + 2, layout
                 if width == 1440:
                     assert page.locator(".rail").bounding_box()["width"] <= 220
                 page.close()
