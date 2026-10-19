@@ -58,12 +58,18 @@ def osd_data(payload: bytes) -> Mapping:
     return osd_envelope(payload)[0]
 
 
+def _reject_nonfinite_json_constant(_value: str):
+    """JSON permits finite numbers only; Python's decoder otherwise accepts NaN/Infinity."""
+    raise ValueError("Non-finite JSON number")
+
+
 def osd_envelope(payload: bytes) -> tuple[Mapping, int | None]:
     """Decode once; preserve optional source milliseconds for ordering and age."""
     if not isinstance(payload, (bytes, bytearray)) or not 0 < len(payload) <= MAX_PAYLOAD_BYTES:
         raise CloudOsdError("Invalid OSD payload size")
     try:
-        message = json.loads(bytes(payload).decode("utf-8"))
+        message = json.loads(bytes(payload).decode("utf-8"),
+                             parse_constant=_reject_nonfinite_json_constant)
     except (UnicodeError, ValueError) as exc:
         raise CloudOsdError("OSD payload is not JSON") from exc
     data = message.get("data") if isinstance(message, dict) else None
@@ -90,7 +96,11 @@ def classify(data: Mapping) -> DeviceType | None:
 
 def _number(value):
     """DJI sends numbers; some SDK samples type them as strings. Accept both."""
-    if value is None or type(value) in (int, float):
+    if value is None:
+        return None
+    if type(value) in (int, float):
+        if type(value) is float and not isfinite(value):
+            raise CloudOsdError("Invalid numeric OSD value")
         return value
     if isinstance(value, str) and 0 < len(value) <= 32:
         try:
