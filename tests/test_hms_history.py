@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -164,3 +165,57 @@ def test_filtered_pagination_preserves_total_order_and_bounded_page():
 
     assert history.list_events(device_id="unknown")["events"] == []
     assert history.list_events(device_id="unknown")["total"] == 0
+
+def test_device_history_index_prunes_evictions_and_survives_reload(tmp_path):
+    path = tmp_path / "indexed-hms.sqlite3"
+    history = HmsHistory(path, limit=3)
+    now = datetime.now(timezone.utc)
+    provider = ProviderKind.CLOUD_API
+    for index, device in enumerate(("AC01", "RC01", "AC01", "AC02", "RC01")):
+        history.record_snapshot(
+            (provider, "project", device), (),
+            ({"code": f"alarm-{index}", "device_domain": "aircraft",
+              "level": "warning"},), now,
+        )
+    assert len(history.events) == 3
+    assert history.list_events()["total"] == 3
+    assert [e["code"] for e in history.list_events(
+        provider=provider.value, project_id="project", device_id="AC01"
+    )["events"]] == ["alarm-2"]
+    assert history.list_events(
+        provider=provider.value, project_id="project", device_id="RC01"
+    )["events"][0]["code"] == "alarm-4"
+    assert not history.list_events(
+        provider=provider.value, project_id="project", device_id="unknown"
+    )["events"]
+
+    restored = HmsHistory(path, limit=3)
+    assert restored.list_events() == history.list_events()
+    for device in ("AC01", "RC01", "AC02"):
+        assert restored.list_events(
+            provider=provider.value, project_id="project", device_id=device
+        )["events"] == history.list_events(
+            provider=provider.value, project_id="project", device_id=device
+        )["events"]
+
+
+def test_device_history_query_never_scans_unrelated_global_events():
+    history = HmsHistory(limit=5)
+    now = datetime.now(timezone.utc)
+    for number, device in enumerate(("A", "B", "C", "A", "B")):
+        history.record_snapshot(
+            (ProviderKind.CLOUD_API, "p", device), (),
+            ({"code": str(number), "device_domain": "aircraft"},), now,
+        )
+
+    class GlobalScanForbidden(deque):
+        def __reversed__(self):
+            raise AssertionError("Device filtering scanned all HMS events")
+
+    history.events = GlobalScanForbidden(history.events, maxlen=history.limit)
+    result = history.list_events(
+        provider=ProviderKind.CLOUD_API.value, project_id="p", device_id="A",
+        limit=1, offset=1,
+    )
+    assert result["total"] == 2
+    assert [item["code"] for item in result["events"]] == ["0"]
