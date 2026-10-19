@@ -122,23 +122,34 @@ class StatusRuntime:
     def summary(self, *, now: datetime | None = None) -> dict:
         now = utc_now() if now is None else now
         views = self.device_views(now=now)
-        freshness = ("fresh", "stale", "missing", "unknown_age", "clock_skew")
+        # The summary endpoint is polled regularly. Accumulate counters in one
+        # pass instead of traversing every device for each individual metric.
+        freshness_counts = dict.fromkeys(
+            ("fresh", "stale", "missing", "unknown_age", "clock_skew"), 0)
+        aircraft = controllers = online_fresh = offline_fresh = health_warnings = 0
+        for view in views:
+            aircraft += view["kind"] == DeviceType.AIRCRAFT.value
+            controllers += view["kind"] == DeviceType.CONTROLLER.value
+            if view["freshness"] in freshness_counts:
+                freshness_counts[view["freshness"]] += 1
+            online_fresh += view["online"] is True
+            offline_fresh += view["online"] is False
+            health_warnings += any(a.get("level") == "warning" for a in view["health"])
         return {
             "server_time": utc_iso(now),
             "registered_devices": len(views),
-            "aircraft": sum(v["kind"] == DeviceType.AIRCRAFT.value for v in views),
-            "controllers": sum(v["kind"] == DeviceType.CONTROLLER.value for v in views),
-            **{status: sum(v["freshness"] == status for v in views) for status in freshness},
-            "online_fresh": sum(v["online"] is True for v in views),
-            "offline_fresh": sum(v["online"] is False for v in views),
+            "aircraft": aircraft,
+            "controllers": controllers,
+            **freshness_counts,
+            "online_fresh": online_fresh,
+            "offline_fresh": offline_fresh,
             "stale_after_seconds": self.settings.stale_after_seconds,
             "refresh_every_seconds": self.settings.refresh_every_seconds,
             "polling": self.polling,
             "last_refresh_at": utc_iso(self.last_refresh_at),
             "last_refresh_success_at": utc_iso(self.last_refresh_success_at),
             "live_feed": {"state": "disabled"} if self.live_feed is None else self.live_feed(),
-            "health_warnings": sum(any(a.get("level") == "warning" for a in v["health"])
-                                   for v in views),
+            "health_warnings": health_warnings,
             "hms_history_events": len(self.hms_history.events),
             "hms_history_persistent": (self.hms_history.path is not None
                                        and not self.hms_history.storage_error),
