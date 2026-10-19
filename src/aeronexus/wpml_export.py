@@ -394,7 +394,8 @@ def _extra_action(place: ET.Element, index: int, seq: int, action: WaypointActio
 
 
 def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int,
-         legacy_camera_params: bool = False) -> bytes:
+         legacy_camera_params: bool = False,
+         legacy_heading_path: bool = False) -> bytes:
     root = ET.Element(_k("kml"))
     doc = ET.SubElement(root, _k("Document"))
     ET.SubElement(doc, _k("name")).text = mission.name
@@ -417,6 +418,12 @@ def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int,
         _set(folder, "gimbalPitchMode", "usePointSetting")
         heading = ET.SubElement(folder, _w("globalWaypointHeadingParam"))
         _set(heading, "waypointHeadingMode", "followWayline")
+        # DJI marks the heading-path enum as mandatory in this block, even
+        # when per-point yaw overrides the global followWayline setting.
+        # Existing AeroNexus archives without it remain importable via the
+        # explicit historical XML signature below; new exports always emit it.
+        if not legacy_heading_path:
+            _set(heading, "waypointHeadingPathMode", "followBadArc")
         _set(folder, "globalWaypointTurnMode", mission.turn_mode)
         _set(folder, "globalUseStraightLine", 1)
     else:
@@ -451,6 +458,10 @@ def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int,
             if mission.heading_mode == "smoothTransition":
                 _set(heading, "waypointHeadingAngle", _num(wp.heading_angle_deg))
                 _set(heading, "waypointHeadingPathMode", mission.heading_path_mode)
+            elif not legacy_heading_path:
+                # No yaw path preference changes how followWayline works:
+                # DJI explicitly requires a supported enum value here.
+                _set(heading, "waypointHeadingPathMode", "followBadArc")
             turning = ET.SubElement(place, _w("waypointTurnParam"))
             _set(turning, "waypointTurnMode", mission.turn_mode)
             if mission.turn_mode == "toPointAndStopWithContinuityCurvature":
@@ -665,14 +676,20 @@ def import_kmz(data: bytes) -> WaypointMission:
             raise ValueError("Invalid AeroNexus timestamp")
         elements[0].text = "0"
     actual = (_document_signature(template), _document_signature(route))
-    # Accept exactly one complete AeroNexus format generation. Mixing old and
-    # new camera parameters across documents, or altering any other parameter,
-    # is NOT a supported conversion and must never be silently accepted.
-    for legacy in (False, True):
+    # Accept only complete historical AeroNexus format generations.
+    # The prior revision had modern camera selection but no heading path;
+    # the oldest revision had neither. Never accept arbitrary mixed settings
+    # or silently "fix" only one of the two WPML documents.
+    for legacy_heading, legacy_camera in (
+        (False, False), (True, False), (True, True)
+    ):
+        if legacy_camera and mission.heading_mode != "followWayline":
+            continue  # Smooth yaw did not exist in the old-camera generation.
         expected = tuple(
             _document_signature(ET.fromstring(
                 _xml(mission, template=is_template, timestamp_ms=0,
-                     legacy_camera_params=legacy)))
+                     legacy_camera_params=legacy_camera,
+                     legacy_heading_path=legacy_heading)))
             for is_template in (True, False)
         )
         if actual == expected:
