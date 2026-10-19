@@ -86,10 +86,12 @@ def required_waypoint_findings(
             if not present(node, name):
                 missing(doc, "wpml:" + name, conditional)
 
-    if (
-        template.findtext(K + "Document/" + K + "Folder/" + W + "templateType")
-        != "waypoint"
-    ):
+    template_type = template.findtext(
+        K + "Document/" + K + "Folder/" + W + "templateType"
+    )
+    # An explicit mapping/strip/oblique template has different obligations;
+    # an *absent* type in an AeroNexus-shaped archive is itself an error.
+    if template_type not in (None, "", "waypoint"):
         return findings
 
     for docname, root in (
