@@ -1,0 +1,173 @@
+/*
+ * AeroNexusAdvanced · Cloud-Control UI polish v1
+ * Applied AFTER DJI's existing Vue/Ant Design CSS.
+ *
+ * Appearance-only. No content, login, form bindings, DJI bridges, device
+ * controls, visibility rules or functional pointer-event behavior change.
+ * Scoped predominantly to DJI's upstream login, topbar and sidebar classes.
+ * Served from the existing read-only /aeronexus/ bind mount.
+ */
+:root {
+  --anx-deep: #0a1321;
+  --anx-ink: #e9f2ff;
+  --anx-blue: #69b7ff;
+  --anx-teal: #6cddc4;
+  --anx-line: #31455e;
+  --anx-muted: #afc2d8;
+  --anx-radius: 12px;
+}
+.login {
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: auto !important;
+  padding: clamp(22px, 5vw, 64px) 18px !important;
+  background:
+    radial-gradient(ellipse 54% 40% at 80% 7%, rgba(46, 129, 186, .26), transparent),
+    radial-gradient(ellipse 48% 40% at 8% 88%, rgba(15, 116, 123, .20), transparent),
+    var(--anx-deep) !important;
+  color: var(--anx-ink);
+}
+.login > .ant-image {
+  display: block !important;
+  width: clamp(96px, 11vw, 150px) !important;
+  height: auto !important;
+  margin-bottom: clamp(20px, 4vh, 42px) !important;
+}
+.login > .ant-image img {
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  max-height: 110px;
+  object-fit: contain;
+}
+.login > .logo,
+.login > p.fz35 {
+  margin: 0 0 30px !important;
+  padding: 0 !important;
+  color: var(--anx-ink) !important;
+  font-size: clamp(23px, 3vw, 37px) !important;
+  font-weight: 690 !important;
+  letter-spacing: -.025em;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.login > .ant-form {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  width: min(100%, 370px);
+  gap: 15px !important;
+  padding: clamp(20px, 4vw, 34px);
+  border: 1px solid var(--anx-line);
+  border-radius: 16px;
+  background: linear-gradient(160deg, #17283dd9, #111e30ed);
+  box-shadow: 0 20px 56px #02091580;
+}
+.login > .ant-form > .ant-form-item {
+  display: block;
+  width: 100%;
+  margin: 0 !important;
+}
+.login > .ant-form .ant-form-item-control,
+.login > .ant-form .ant-form-item-control-input,
+.login > .ant-form .ant-form-item-control-input-content {
+  width: 100%;
+  min-width: 0;
+}
+.login > .ant-form .ant-input-affix-wrapper {
+  min-height: 45px;
+  padding: 7px 12px;
+  color: var(--anx-ink);
+  background: #0d192b;
+  border: 1px solid #3c5570;
+  border-radius: 9px;
+}
+.login > .ant-form .ant-input {
+  font-size: 14px;
+  color: var(--anx-ink);
+  background: transparent;
+}
+.login > .ant-form .ant-input::placeholder { color: #acc0d6; opacity: 1; }
+.login > .ant-form .ant-input-prefix .anticon { color: #91b4d5 !important; }
+.login > .ant-form .ant-input-affix-wrapper:hover { border-color: #7ebdf4; }
+.login > .ant-form .ant-input-affix-wrapper-focused,
+.login > .ant-form .ant-input-affix-wrapper:focus-within {
+  border-color: var(--anx-blue);
+  box-shadow: 0 0 0 3px #7ccaff33;
+}
+.login > .ant-form .ant-btn-primary {
+  width: 100%;
+  min-height: 45px;
+  padding: 9px 17px;
+  font-size: 14px;
+  font-weight: 720;
+  background: #71bcfa;
+  border: 1px solid #71bcfa;
+  border-radius: 9px;
+  color: #091724;
+  text-shadow: none;
+}
+.login > .ant-form .ant-btn-primary:not(:disabled):hover {
+  background: #a5d7ff;
+  border-color: #a5d7ff;
+}
+.login > .ant-form .ant-btn-primary:focus-visible {
+  outline: 2px solid var(--anx-teal);
+  outline-offset: 3px;
+}
+.login > .ant-form .ant-btn-primary:disabled { opacity: .65; cursor: not-allowed; }
+/* Desktop DJI Cloud-Control: maintain current routes and their Vue owners. */
+.ant-layout-header.header {
+  background: #101e31 !important;
+  border-bottom: 1px solid var(--anx-line);
+  color: var(--anx-ink);
+  box-shadow: 0 3px 18px #09121e40;
+}
+.ant-layout-header.header a {
+  color: #cbd9eb;
+  text-decoration: none;
+}
+.ant-layout-header.header a:hover { color: var(--anx-teal); }
+.ant-layout-header.header .fontBold { font-weight: 720; letter-spacing: -.012em; }
+.demo-project-sidebar-wrapper {
+  background: #132136;
+  border-color: var(--anx-line) !important;
+}
+.demo-project-sidebar-wrapper .menu-item {
+  transition: background-color .15s ease, color .15s ease;
+}
+.demo-project-sidebar-wrapper .menu-item:hover {
+  background: #233c56;
+  color: #e9f6ff;
+}
+.demo-project-sidebar-wrapper .menu-item.selected {
+  background: #1b3b55;
+  color: #76cfff;
+  box-shadow: inset 3px 0 #6cddc4;
+}
+.demo-project-sidebar-wrapper .menu-item:focus-visible {
+  outline: 2px solid #9bcfff;
+  outline-offset: -3px;
+}
+/* Operational panels: polish chrome only, preserve source colors for telemetry. */
+.ant-card, .ant-modal-content, .ant-drawer-content {
+  border-radius: var(--anx-radius);
+}
+.ant-btn:not(.ant-btn-link) { border-radius: 8px; }
+.ant-input, .ant-input-affix-wrapper, .ant-select-selector {
+  border-radius: 8px;
+}
+.ant-table-wrapper, .ant-table-container { min-width: 0; }
+.ant-table-wrapper .ant-table-cell { font-variant-numeric: tabular-nums; }
+.ant-modal-content, .ant-drawer-content { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .login > .ant-form { width: min(100%, 340px); gap: 12px !important; }
+  .login > .logo, .login > p.fz35 { font-size: 25px !important; }
+  .ant-layout-header.header { padding-left: 12px !important; padding-right: 12px !important; }
+  .ant-layout-header.header .fontBold { font-size: 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .demo-project-sidebar-wrapper .menu-item { transition: none; }
+}

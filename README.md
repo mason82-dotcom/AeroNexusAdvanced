@@ -33,6 +33,8 @@ Details: [Live-Cockpit](docs/live-telemetry-cockpit.md), [Missions- und Wayline-
 
 Ein eigenständiges, responsives [AeroNexus-Control-Portal](docs/control-portal-fh2.md) kann per ausschließlich lesendem Docker-Bind-Mount unter `/aeronexus/` neben der bestehenden DJI-Pilot-2-Anmeldung bereitgestellt werden. Es verlinkt die bestehenden geschützten Fachmodule, während die native FlightHub-2-Projektkarte bzw. das DJI-Cockpit eine **HTTPS-geschützte Seite auf Port 8000**, eine **separate FlightHub-2-Installation**, eigene Projektberechtigungen und eine bewusste Aktivierung voraussetzen. Dieses optionale Portal enthält keine DJI-Secrets und startet keine Flüge. **Das Vorbereiten auf GitHub ist kein produktiver Pi-Rollout.**
 
+Die vorhandene **DJI-Pilot-2-/Cloud-Control-Vue-Oberfläche** kann ergänzend mit einem [separat aktivierbaren AeroNexus-UI-Theme](docs/dji-vue-modern-ui.md) modernisiert werden. Dieser Schritt ändert nur CSS und einen Link im privaten Vue-Einstieg und benötigt einen bewussten lokalen Neubau ausschließlich des Webcontainers. Er ist nicht Teil eines automatischen Pi-Rollouts.
+
 ## Installation und Entwicklung
 
 Voraussetzung: Python 3.11 oder neuer. Die Grundinstallation ist nicht gleichbedeutend mit einer betriebsbereiten DJI-/MinIO-Anbindung.
