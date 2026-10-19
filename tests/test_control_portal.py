@@ -87,6 +87,8 @@ def test_fh2_opt_in_and_native_api_call_shapes():
     assert 'window.FH2.loadProject("project-app-container")' in html
     assert 'window.FH2.loadCockpit("cockpit-app-container"' in html
     assert "/paas.js" in html
+    assert 'if(window.location.protocol!=="https:")' in html
+    assert 'if(u.protocol!=="https:")' in html
     assert "localStorage.setItem" not in html
     assert "fetch(" not in html
     assert not re.search(r"eyJ[a-zA-Z0-9_-]{25,}\.", html)
