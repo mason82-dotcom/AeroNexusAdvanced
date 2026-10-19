@@ -61,6 +61,7 @@ from .terrain_preview import TerrainGrid, TerrainUnavailable, terrain_overview, 
 from .studio_events import serve_studio_events
 from .lan_access import lan_host, lan_mode_enabled, require_lan
 from .wpml_export import WaypointMission, export_kmz, import_kmz
+from .wpml_conformance import audit_kmz
 from .mission_reconciliation import compare_missions
 from .local_waylines import LocalWaylineReader, load_credentials, credentials_path
 from .pilot2_wayline_preview import read_preview
@@ -890,6 +891,10 @@ def studio_export_mission(mission_id: str, request: Request,
     try:
         mission = WaypointMission.model_validate(store.get_mission(mission_id)["mission"])
         result = export_kmz(mission, timestamp_ms=int(time.time() * 1000))
+        # Inspect exactly the bytes about to leave this local-only endpoint.
+        # Do not rewrite XML, perform Cloud operations, or treat this as flight approval.
+        if not audit_kmz(result)["editable_in_aeronexus"]:
+            raise HTTPException(status_code=422, detail="Offline WPML export validation failed")
     except WorkspaceError as exc:
         raise _studio_error(exc) from exc
     except ValueError as exc:
