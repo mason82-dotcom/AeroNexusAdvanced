@@ -254,3 +254,30 @@ Gemeinsame Gestaltung: `ui_theme.COCKPIT_CSS`; Navigation: `ui_navigation`;
 fachliche Viewer, Datenladezustände und Berechtigungen: die bisherigen Module.
 Keine Übernahme der OpenDroneKit-Desktop-Bridge, MAVLink-Kommandos, Beispieldaten
 oder funktionsloser zusätzlicher Arbeitsbereiche.
+
+
+# FlightHub-orientiertes Portal auf Port 8085
+
+Kanonische Eigentümer: deploy/cloud-server/control-portal/index.html
+(öffentliche, tokenfreie Navigation), ui_navigation.py (HTTPS-Fachmodule),
+operations_page.py und dessen geschützte GET-APIs (Datenstatus),
+app.py /fh2-components (ausdrücklich aktivierte echte DJI-Widgets).
+
+Nur die Startansicht besitzt die schematische Netzstruktur. Das Portal führt
+keine Datenmutation, Credential-Eingabe, Flugsteuerung oder gerätespezifische
+Datenbeschaffung durch. Navigation zu den HTTPS-Fachmodulen bleibt ein normaler
+Link im neuen Tab; Original-Pilot 2 und Cloud Control bleiben unter ihren
+ursprünglichen Routen auf 8085.
+
+Der einzige asynchrone Portalzustand ist HEAD /pilot-login. Er beginnt als
+„Webserver wird geprüft“, endet als „Pilot-2-Webserver erreichbar“, „nicht
+bestätigt“ oder „Webserverprüfung fehlgeschlagen“. Diese Prüfung belegt keine
+Drohnen-, MQTT-, FlightHub- oder Flugstatusverbindung. Die Beschriftung ist auch
+ohne Farbe unterscheidbar, der Status besitzt aria-live. Keine 401-/403-Retries,
+keine Auth-Weitergabe, keine Speicherung. Die echte FH2-Komponentenseite
+gehört weiterhin dem HTTPS-Host und verlangt bewusste Autorisierung.
+
+Layout-Verifikation: Standard-HTML-Semantik, Mobilbreiten, Tastaturfokus,
+keine horizontale Dokumentüberbreite, reduzierte Bewegung und sichtbare
+Scrollbereiche. Opt-in-FH2-Komponenten und Cloud-API-Integration müssen erst
+mit echten Backend-Berechtigungen separat abgenommen werden.
