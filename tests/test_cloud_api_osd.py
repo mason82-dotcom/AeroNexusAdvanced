@@ -163,7 +163,7 @@ def test_nonfinite_json_is_atomic_and_does_not_refresh_liveness(ingest):
     before = ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE)
     clocks = dict(ingest.runtime.cloud_field_clocks[key])
     osd_clock = dict(ingest.runtime.cloud_osd_clocks[key])
-    raw = b'{"timestamp": 253402300700000, "data": {"mode_code": 9, "elevation": NaN}}'
+    raw = b'{"timestamp": 1, "data": {"mode_code": 9, "elevation": NaN}}'
     assert not ingest.handle(topic(DRONE), raw)
     assert ingest.rejected == 1
     assert ingest.runtime.inventory.telemetry(CLOUD, "aeronexus", DRONE) == before
