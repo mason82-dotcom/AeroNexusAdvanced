@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from .wpml_export import (
     KML_NS, WPML_NS, MODELS, import_kmz, waypoints_for_export,
 )
+from .wpml_required_fields import required_waypoint_findings
 
 DJI_REFERENCE = (
     "https://developer.dji.com/doc/cloud-api-tutorial/en/"
@@ -138,6 +139,16 @@ def audit_kmz(blob: bytes) -> dict:
             else "UNRECOGNIZED_WPML_SCHEMA",
             "unsupported",
         )
+        return report
+
+    # Independent, scoped rules give precise diagnostics for missing mandatory
+    # or conditionally mandatory fields before the strict canonical round-trip.
+    # The heading-path interoperability discrepancy remains an advisory below,
+    # since current DJI reference revisions differ in default/profile behavior.
+    missing = required_waypoint_findings(roots[0], roots[1])
+    if missing:
+        report["status"] = "unsupported"
+        report["findings"].extend(missing)
         return report
 
     # Importer proves full representation of BOTH documents by reconstructing
