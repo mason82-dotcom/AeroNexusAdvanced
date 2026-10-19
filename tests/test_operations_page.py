@@ -339,3 +339,13 @@ def test_live_cockpit_indoor_gnss_and_controller_status_are_safe():
     assert "document.createElement(tag)" in page
     assert "innerHTML" not in page
     assert "localStorage" not in page
+
+def test_hidden_operations_tab_skips_polling_but_keeps_active_live_playback():
+    page = render_operations()
+    assert "if(refreshing||stopped||document.hidden)return;" in page
+    assert "if(stopped||(document.hidden&&!live.current))return;" in page
+    assert 'document.addEventListener("visibilitychange",()=>{' in page
+    assert "if(!document.hidden&&!stopped){refreshAll();refreshLive();}" in page
+    assert "window.setInterval(refreshAll,15000)" in page
+    assert "window.setInterval(refreshLive,10000)" in page
+    assert 'window.addEventListener("pagehide",()=>{stopped=true;stopLive();});' in page
