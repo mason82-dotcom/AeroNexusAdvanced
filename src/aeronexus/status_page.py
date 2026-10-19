@@ -5,6 +5,8 @@ enforces an explicitly enabled, direct-to-Pi LAN policy.
 """
 
 
+from functools import lru_cache
+
 from .status_cockpit import COCKPIT_CSS, COCKPIT_HTML, COCKPIT_JS
 
 
@@ -527,6 +529,12 @@ setInterval(updateCatalog,60000);
 def render_page(refresh_every_seconds: int) -> str:
     if type(refresh_every_seconds) is not int or not 5 <= refresh_every_seconds <= 3600:
         raise ValueError("Invalid refresh interval")
+    return _render_cached(refresh_every_seconds)
+
+
+@lru_cache(maxsize=8)
+def _render_cached(refresh_every_seconds: int) -> str:
+    """Reuse the immutable cockpit shell for repeated polling-page requests."""
     return (HTML.replace("__INTERVAL_SECONDS__", str(refresh_every_seconds))
                 .replace("__INTERVAL_MILLISECONDS__", str(refresh_every_seconds * 1000))
                 .replace("__COCKPIT_STYLE__", COCKPIT_CSS)
