@@ -158,6 +158,11 @@ h1{font-size:clamp(24px,2.6vw,31px);margin:4px 0 6px}
 .disclaimer{padding:12px}
 .footer{margin-top:19px;padding:11px 0}
 @media(max-width:900px){
+ /* A one-column grid with 1fr retains its min-content width on mobile.
+    Shrink the rail track; its horizontal menu scrolls inside the rail. */
+ .page{grid-template-columns:minmax(0,1fr);width:100%}
+ .rail{min-width:0;max-width:100%}
+ .mobile-nav{min-width:0;width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
  .top{padding:10px 15px}
  .workspace{padding:15px}
  .network{min-height:220px}
