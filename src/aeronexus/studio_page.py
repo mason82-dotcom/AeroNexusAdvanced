@@ -207,6 +207,37 @@ header .studio-tabs button{font-size:13px;padding:8px 10px}
 .studio-help{margin:9px 0;color:var(--muted);font-size:12px}.studio-help>summary{font-weight:400}
 #mission-manager-state{font-size:12px;padding:9px;overflow-wrap:anywhere}
 #mission-panel h2{margin-top:18px}.route-analysis .analysis-grid{margin-top:12px}
+
+/* Cockpit: route inventory, working canvas, contextual inspector. */
+@media(min-width:1001px){
+ .layout{grid-template-columns:280px minmax(0,1fr) 300px;grid-template-rows:minmax(0,1fr)}
+ .layout>.side{grid-column:1;grid-row:1;padding:14px;border-right:1px solid var(--line)}
+ .layout>.mission-inspector{grid-column:3;border-right:0;border-left:1px solid var(--line)}
+ .layout>.content{grid-column:2;grid-row:1}
+ .layout:has(#mission-inspector[hidden])>.content{grid-column:2/4}
+ .mission-inspector .field-row{grid-template-columns:1fr}
+ #point-list{max-height:none;overflow:visible}
+}
+#mission-inspector[hidden]{display:none}
+#inspector-title{font-size:15px;margin:0 0 8px}
+.mission-inspector[data-cloud-preview="true"] #mission-fields,
+.mission-inspector[data-cloud-preview="true"] .route-analysis,
+.mission-inspector[data-cloud-preview="true"] #point-editor{display:none}
+@media(min-width:701px) and (max-width:1000px){
+ .layout{grid-template-columns:300px minmax(0,1fr);grid-template-rows:minmax(220px,1fr) minmax(0,1fr)}
+ .layout>.side{grid-column:1;grid-row:1/3;padding:14px}
+ .layout:has(#mission-inspector:not([hidden]))>#mission-panel{grid-row:1}
+ .layout>.mission-inspector{grid-row:2;border-top:1px solid var(--line)}
+ .layout>.content{grid-column:2;grid-row:1/3}
+}
+@media(max-width:700px){.mission-inspector{border-top:1px solid var(--line)}}
+
+.workspace-status{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:6px 14px;min-height:30px;flex-shrink:0;border-top:1px solid var(--line);background:#141b24;font-size:11px;color:var(--muted)}
+.workspace-status .auth{min-width:0;flex:0 1 auto;gap:8px}
+.workspace-status .auth-message{flex-basis:auto;max-width:none;text-align:right}
+.workspace-status .auth:has(.auth-message.ok) .dot{background:var(--good)}
+.workspace-status .auth:has(.auth-message.error) .dot{background:#ffacb6}
+@media(max-width:700px){.workspace-status{flex-wrap:wrap}.workspace-status .auth{min-width:0}.workspace-status .auth-message{text-align:left}}
 </style>
 </head>
 <body>
@@ -221,9 +252,7 @@ __APP_NAVIGATION__
 <button data-tab="waylines-pane" aria-controls="waylines-pane">Cloud-Routen</button>
 <button data-tab="fleet-pane">Geräte</button>
 </nav>
-<div class="auth"><span class="dot on" aria-hidden="true"></span>
-<span id="auth-message" class="auth-message" role="status" aria-live="polite">Direkter LAN-Zugriff · Daten werden geladen…</span>
-</div>
+
 </header>
 <div class="layout">
 <aside class="side" id="mission-panel">
@@ -236,6 +265,30 @@ __APP_NAVIGATION__
 <div class="button-row"><button id="new-mission">Neu</button><button id="save-mission" class="primary">Speichern</button><button id="delete-mission" class="danger" disabled>Löschen</button></div>
 <div class="editor-tools"><button id="undo-edit" disabled title="Strg+Z (außer in Eingabefeldern)">↶ Rückgängig</button><button id="redo-edit" disabled title="Wiederherstellen · Strg+Umschalt+Z / Strg+Y">↷ Wiederholen</button></div>
 <div id="editor-dirty" class="editor-dirty" role="status" aria-live="polite">Keine ungespeicherten Änderungen</div>
+
+<h2>Wegpunkte <span id="point-count" class="badge">0</span></h2>
+<div class="button-row"><button id="add-mode">+ Auf Karte setzen</button><button id="fit-mission">Route einpassen</button></div>
+<div class="note">„Auf Karte setzen“ aktivieren, dann klicken. Punkte lassen sich ziehen, bearbeiten, sortieren und löschen.</div>
+<label class="route-option" for="close-route">
+<input id="close-route" type="checkbox">
+<span>Zum ersten Wegpunkt zurückkehren</span>
+</label>
+<details class="studio-help"><summary>Was bedeutet eine geschlossene Route?</summary><p class="route-explain">Eine geschlossene Route fliegt wirklich zurück zum ersten Wegpunkt. Im DJI-WPML-Export wird dafür ein zusätzlicher Wegpunkt angelegt, nicht nur eine Linie gezeichnet. Die Return-to-Home-Einstellung bleibt unabhängig davon.</p></details>
+<div id="route-status" class="route-status" role="status" aria-live="polite">Offene Route. Noch keine Wegpunkte.</div>
+
+<div id="point-list"></div>
+<details class="studio-disclosure" id="mission-import"><summary>Route aus Datei importieren</summary>
+<button id="open-csv" style="width:100%">Wegpunkte aus CSV importieren</button>
+<p class="note">CSV zuerst prüfen, dann Wegpunkte im aktuellen Entwurf ersetzen. Speichern bleibt ein eigener Schritt.</p>
+<label>Eigene AeroNexus-KMZ wieder öffnen<input type="file" id="import-kmz" accept=".kmz,application/vnd.google-earth.kmz"></label>
+<div class="button-row"><button id="import-mission">KMZ importieren & bearbeiten</button></div>
+</details>
+<div class="button-row"><button class="primary" id="export-mission">KMZ / DJI WPML exportieren</button></div>
+<details class="studio-help"><summary>Hinweise zum DJI-Export</summary><p class="note">Exportiert eine Datei mit <code>wpmz/template.kml</code> und <code>wpmz/waylines.wpml</code>. Flugmissionen müssen vor einem Einsatz in DJI Pilot 2 auf Kompatibilität, Höhen, Luftraum, RTH und Sicherheit geprüft werden. Kein automatischer Import zur Drohne.</p></details>
+</aside>
+<aside class="side mission-inspector" id="mission-inspector" aria-labelledby="inspector-title">
+<h2 id="inspector-title">Missionseinstellungen</h2>
+<p class="note" id="inspector-context">Lokaler Entwurf · Änderungen mit „Speichern“ übernehmen.</p>
 <fieldset id="mission-fields">
 <label>Missionsname<input id="mission-name" maxlength="100" value="Neue Wegpunktmission"></label>
 <div class="field-row">
@@ -252,15 +305,6 @@ __APP_NAVIGATION__
 </div>
 </details>
 </fieldset>
-<h2>Wegpunkte <span id="point-count" class="badge">0</span></h2>
-<div class="button-row"><button id="add-mode">+ Auf Karte setzen</button><button id="fit-mission">Route einpassen</button></div>
-<div class="note">„Auf Karte setzen“ aktivieren, dann klicken. Punkte lassen sich ziehen, bearbeiten, sortieren und löschen.</div>
-<label class="route-option" for="close-route">
-<input id="close-route" type="checkbox">
-<span>Zum ersten Wegpunkt zurückkehren</span>
-</label>
-<details class="studio-help"><summary>Was bedeutet eine geschlossene Route?</summary><p class="route-explain">Eine geschlossene Route fliegt wirklich zurück zum ersten Wegpunkt. Im DJI-WPML-Export wird dafür ein zusätzlicher Wegpunkt angelegt, nicht nur eine Linie gezeichnet. Die Return-to-Home-Einstellung bleibt unabhängig davon.</p></details>
-<div id="route-status" class="route-status" role="status" aria-live="polite">Offene Route. Noch keine Wegpunkte.</div>
 <details class="route-analysis studio-disclosure"><summary id="route-analysis-title">Strecke &amp; geschätzte Flugzeit</summary>
 <div class="analysis-grid">
 <div><small>Wegstrecke (geradlinig)</small><strong id="route-distance">–</strong></div>
@@ -271,7 +315,6 @@ __APP_NAVIGATION__
 <p id="route-analysis-warning" class="analysis-warning" role="status" aria-live="polite"></p>
 <p class="note">WGS84-Großkreisentfernungen zwischen Wegpunkten. Nur ideale horizontale Reisezeit; kein Start/Steigflug, Bremsen, Schweben, Wind, Hindernisse, Gelände, RTH, Landung oder Akkuverbrauch. Keine Freigabe zum Fliegen.</p>
 </details>
-<div id="point-list"></div>
 <div id="point-editor" hidden>
 <h3>Wegpunkt <span id="edit-index">1</span> bearbeiten</h3>
 <div class="field-row">
@@ -301,14 +344,6 @@ __APP_NAVIGATION__
 <div class="button-row"><button id="apply-point">Übernehmen</button><button id="remove-point" class="danger">Entfernen</button></div>
 <div class="button-row"><button id="insert-midpoint">Zwischenpunkt danach</button><button id="copy-point">WGS84 kopieren</button></div>
 </div>
-<details class="studio-disclosure" id="mission-import"><summary>Route aus Datei importieren</summary>
-<button id="open-csv" style="width:100%">Wegpunkte aus CSV importieren</button>
-<p class="note">CSV zuerst prüfen, dann Wegpunkte im aktuellen Entwurf ersetzen. Speichern bleibt ein eigener Schritt.</p>
-<label>Eigene AeroNexus-KMZ wieder öffnen<input type="file" id="import-kmz" accept=".kmz,application/vnd.google-earth.kmz"></label>
-<div class="button-row"><button id="import-mission">KMZ importieren & bearbeiten</button></div>
-</details>
-<div class="button-row"><button class="primary" id="export-mission">KMZ / DJI WPML exportieren</button></div>
-<details class="studio-help"><summary>Hinweise zum DJI-Export</summary><p class="note">Exportiert eine Datei mit <code>wpmz/template.kml</code> und <code>wpmz/waylines.wpml</code>. Flugmissionen müssen vor einem Einsatz in DJI Pilot 2 auf Kompatibilität, Höhen, Luftraum, RTH und Sicherheit geprüft werden. Kein automatischer Import zur Drohne.</p></details>
 </aside>
 <aside class="side" id="geo-panel" hidden>
 <h1>Geo-Objekte &amp; Flächenplanung</h1><p class="note">Eigenständige lokale Planungsdaten. Keine DJI-Missionsausführung oder Änderung am WPML-Export.</p>
@@ -523,6 +558,9 @@ __APP_NAVIGATION__
 </section>
 </main>
 </div>
+<footer class="workspace-status" aria-label="Arbeitsbereichsstatus"><span>Lokale Missionsplanung · Keine Flugausführung</span><div class="auth"><span class="dot" aria-hidden="true"></span>
+<span id="auth-message" class="auth-message" role="status" aria-live="polite">Direkter LAN-Zugriff · Daten werden geladen…</span>
+</div></footer>
 <dialog id="media-dialog"><div class="flex between"><strong id="preview-name">Vorschau</strong><button id="preview-close">Schließen</button></div><div id="preview-content" style="margin-top:15px"></div></dialog>
 <dialog id="csv-dialog" aria-labelledby="csv-title" aria-describedby="csv-help">
 <div class="csv-heading flex between"><h2 id="csv-title" style="margin:0">Wegpunkte aus CSV</h2><button id="csv-close" autofocus>Schließen</button></div>
@@ -1154,6 +1192,11 @@ function updateMissionSelect(){
   $("delete-mission").disabled=!!managerRouteKey||!missionId;
   $("save-mission").disabled=!!managerRouteKey;
   $("export-mission").disabled=!!managerRouteKey;
+  $("mission-inspector").setAttribute?.("data-cloud-preview",managerRouteKey?"true":"false");
+  $("inspector-title").textContent=managerRouteKey?"Cloud-Routenvorschau":"Missionseinstellungen";
+  $("inspector-context").textContent=managerRouteKey?
+    "Schreibgeschützte Cloud-Vorschau. Zum Bearbeiten einen lokalen Entwurf auswählen. Der lokale Entwurf bleibt erhalten.":
+    "Lokaler Entwurf · Änderungen mit „Speichern“ übernehmen.";
 }
 async function loadMissions(){
   const res=await api("/api/v1/studio/missions");knownMissions=(await res.json()).missions;
@@ -1942,6 +1985,7 @@ function switchTab(id){
     const current=["map-pane","geo-pane","media-pane","fleet-pane","waylines-pane"][i];
     $(key).hidden=(current!==id&&!(key==="geo-panel"&&id==="terrain-pane"));
   });
+  $("mission-inspector").hidden=id!=="map-pane";
   const mapVisible=(id==="map-pane"||id==="geo-pane");
   $("map-pane").classList.toggle("active",mapVisible);
   if(mapVisible&&map){

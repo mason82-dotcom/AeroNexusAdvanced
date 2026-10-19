@@ -76,6 +76,16 @@ def test_studio_disclosures_preserve_values_and_keyboard_navigation_in_browser()
                 page.set_content(source, wait_until="domcontentloaded")
                 page.wait_for_function("document.getElementById('auth-message').textContent.includes('aktiv')")
                 assert not page.evaluate("document.documentElement.scrollWidth > innerWidth + 1")
+                left = page.locator("#mission-panel").bounding_box()
+                canvas = page.locator(".content").bounding_box()
+                right = page.locator("#mission-inspector").bounding_box()
+                if width > 1000:
+                    assert left["x"] + left["width"] <= canvas["x"] + 1
+                    assert canvas["x"] + canvas["width"] <= right["x"] + 1
+                    assert abs(left["y"] - right["y"]) < 1
+                elif width > 700:
+                    assert left["y"] + left["height"] <= right["y"] + 1
+                    assert right["x"] + right["width"] <= canvas["x"] + 1
                 details = page.locator("#mission-settings")
                 assert not details.evaluate("el => el.open")
                 summary = details.locator("summary")
@@ -91,6 +101,18 @@ def test_studio_disclosures_preserve_values_and_keyboard_navigation_in_browser()
                 page.keyboard.press("Enter")
                 assert menu.locator('a[href="/thermal"]').is_visible()
                 assert not page.evaluate("document.documentElement.scrollWidth > innerWidth + 1")
+                menu.locator("summary").click()
+                page.locator('button[data-tab="geo-pane"]').click()
+                assert not page.locator("#mission-inspector").is_visible()
+                page.locator('button[data-tab="map-pane"]').click()
+                assert page.locator("#mission-inspector").is_visible()
+                assert page.locator("#mission-description").input_value() == "Einsatzgebiet Nord"
+                page.evaluate("managerRouteKey=managerKey(waylineData.waylines[0]);updateMissionSelect()")
+                assert not page.locator("#mission-fields").is_visible()
+                assert "Schreibgeschützte Cloud-Vorschau" in page.locator("#inspector-context").inner_text()
+                page.evaluate('managerRouteKey="";updateMissionSelect()')
+                assert page.locator("#mission-fields").is_visible()
+                assert page.locator("#mission-description").input_value() == "Einsatzgebiet Nord"
                 # A source failure must reveal the full message without another click.
                 page.evaluate('missionManagerState("Quelle nicht erreichbar", true)')
                 assert page.locator("#mission-manager-state").is_visible()

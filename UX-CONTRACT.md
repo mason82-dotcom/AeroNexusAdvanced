@@ -235,3 +235,22 @@ Das optionale Portal bietet direkte Aufgabenlinks und eine geschlossene
 Einrichtungssektion. Die Erreichbarkeitsprüfung bezeichnet ausschließlich den
 Pilot-2-Webserver. Sie behauptet keine Geräteverbindung. Die vorhandene
 explizite Aktivierung nativer FlightHub-Komponenten bleibt erhalten.
+
+# Cockpit mit getrenntem Missionsinspektor
+
+Der Mission Manager besitzt Bestand, Laden, Speichern, Wegpunktliste und Import.
+`mission-inspector` besitzt die vorhandenen Missionsfelder, theoretische Analyse
+und Wegpunktbearbeitung. Alle bisherigen IDs, API-Aufrufe, Undo/Redo- und
+CSV-/KMZ-Verträge bleiben erhalten. `switchTab` blendet den Inspektor nur bei
+„Mission planen“ ein; weder Werkzeugwechsel noch Responsive-Umschaltung setzen
+Formularwerte zurück. Es gibt keine zusätzliche Browser-Persistenz.
+
+`updateMissionSelect` besitzt den Inspektorkontext: Cloud-Vorschau bedeutet
+schreibgeschützter Hinweis und ausgeblendete lokale Felder. Ein lokaler Entwurf
+stellt dieselben DOM-Felder mit ihren bisherigen Werten wieder her. Die
+vorhandene Sperre für Speichern, Löschen und Export bleibt bestehen.
+
+Gemeinsame Gestaltung: `ui_theme.COCKPIT_CSS`; Navigation: `ui_navigation`;
+fachliche Viewer, Datenladezustände und Berechtigungen: die bisherigen Module.
+Keine Übernahme der OpenDroneKit-Desktop-Bridge, MAVLink-Kommandos, Beispieldaten
+oder funktionsloser zusätzlicher Arbeitsbereiche.
