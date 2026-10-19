@@ -155,14 +155,20 @@ class HmsHistory:
                     limit: int = 50, offset: int = 0) -> dict:
         if type(limit) is not int or not 1 <= limit <= 200 or type(offset) is not int or offset < 0:
             raise ValueError("Invalid HMS history pagination")
-        matches = (
-            item for item in reversed(self.events)
-            if (provider is None or item["provider"] == provider)
-            and (project_id is None or item["project_id"] == project_id)
-            and (device_id is None or item["device_id"] == device_id)
-        )
-        selected = list(matches)
-        return {"total": len(selected), "limit": limit, "offset": offset,
+        # A device view requests only a few recent transitions. Avoid creating
+        # a second list containing every matching event on each dashboard poll.
+        page = []
+        total = 0
+        end = offset + limit
+        for item in reversed(self.events):
+            if ((provider is not None and item["provider"] != provider)
+                    or (project_id is not None and item["project_id"] != project_id)
+                    or (device_id is not None and item["device_id"] != device_id)):
+                continue
+            if offset <= total < end:
+                page.append(item)
+            total += 1
+        return {"total": total, "limit": limit, "offset": offset,
                 "persistent": self.path is not None and not self.storage_error,
                 "storage_error": self.storage_error,
-                "events": selected[offset:offset + limit]}
+                "events": page}
