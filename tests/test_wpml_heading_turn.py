@@ -131,6 +131,19 @@ def test_smooth_heading_combines_with_curve_stop_offline():
     assert_roundtrip(m)
 
 
+@pytest.mark.parametrize("path", ["clockwise", "counterClockwise", "followBadArc"])
+def test_explicit_return_point_keeps_its_smooth_heading(path):
+    points = smooth_points()
+    points.append({**points[0], "heading_angle_deg": 135.0})
+    m = mission(heading_mode="smoothTransition", heading_path_mode=path, waypoints=points)
+    template, route = assert_roundtrip(m)
+    assert m.close_route is False
+    for root in (template, route):
+        exported = root.findall(".//" + K + "Placemark")
+        assert len(exported) == 4
+        assert exported[-1].findtext(W + "waypointHeadingParam/" + W + "waypointHeadingAngle") == "135"
+
+
 @pytest.mark.parametrize("changes", [
     {"heading_mode": "smoothTransition", "heading_path_mode": "followBadArc"},
     {"heading_mode": "smoothTransition", "waypoints": smooth_points()},

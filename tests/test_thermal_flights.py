@@ -64,6 +64,27 @@ def test_stats_are_invalidated_when_the_object_changes(flights, service):
     assert flights.flights()["flights"][0]["analyzed"] == 0
 
 
+def test_flight_persists_measurement_cached_before_flight_initialization(service, monkeypatch):
+    item = media_id("dji-cloud", THERMAL)
+    service.analysis(item)
+    ThermalGeoIndex(service.index).scan(service.client, "dji-cloud")
+    flights = ThermalFlights(service)
+    fid = flights.flights()["flights"][0]["id"]
+
+    def unexpected_measure(*args, **kwargs):
+        pytest.fail("The existing measurement should be reused without another SDK call")
+
+    monkeypatch.setattr(service.sdk(), "measure", unexpected_measure)
+    flights.start(fid)
+    flights.wait(10)
+    assert flights.job()["state"] == "done"
+    assert flights.job()["measured"] == 1
+    assert flights.flights()["flights"][0]["analyzed"] == 1
+    assert flights.flight_detail(fid)["ranking"][0]["id"] == item
+    assert flights.start(fid)["total"] == 1  # only the non-radiometric preview remains
+    flights.wait(10)
+
+
 def test_override_measurements_do_not_overwrite_the_summary(flights, service):
     from aeronexus.thermal_sdk import MeasureParams
     item = media_id("dji-cloud", THERMAL)
