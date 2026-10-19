@@ -1,7 +1,7 @@
 # DJI WPML: vollständiger Pflichtfeldabgleich nach Anwendungsfall
 
-**Datum:** 19.10.2026 · **Prüfstand:** AeroNexusAdvanced Draft-PR #82
-(`feat/wpml-heading-turn-offline-20261019`), DJI WPML Namespace 1.0.2.
+**Datum:** 19.10.2026 · **Prüfstand:** AeroNexusAdvanced `main` nach PR #82,
+plus Draft-Branch `feat/wpml-heading-path-backcompat-20261019`, DJI WPML 1.0.2.
 
 **Dies ist kein Nachweis für eine erfolgreiche DJI-Pilot-2-Einfuhr, keine
 Firmware-Kompatibilitätsbescheinigung und keine Flugfreigabe.**
@@ -77,7 +77,7 @@ nicht, dass der Elternblock auf jeder Mission erzeugt werden muss.
 | `Folder/gimbalPitchMode` | Wegpunktvorlage | usePointSetting |
 | `Folder/globalHeight` | Wegpunktvorlage | Vorhanden |
 | `globalWaypointHeadingParam/waypointHeadingMode` | Wenn globalWaypointHeadingParam enthalten | followWayline |
-| `globalWaypointHeadingParam/waypointHeadingPathMode` | Innerhalb des Heading-Blocks nach DJI-Referenztabelle | **Fehlt** im globalen Standardblock; Hinweis A1 |
+| `globalWaypointHeadingParam/waypointHeadingPathMode` | Bei Heading-Block laut DJI | Im neuen Export auf `followBadArc` gesetzt; altes KMZ-Format bleibt lesbar (A1) |
 | `Placemark/Point/coordinates` | Je Wegpunkt | Vorhanden: Longitude,Latitude |
 | `Placemark/index` | Je Wegpunkt | Vorhanden, fortlaufend |
 | `Placemark/useGlobalHeight` | Je Wegpunkt | 1 |
@@ -111,7 +111,7 @@ AeroNexus gibt trotzdem `GPS` aus.
 | `waypointHeadingParam/waypointHeadingMode` | Bei Heading-Block | Vorhanden |
 | `waypointHeadingParam/waypointHeadingAngle` | Bei smoothTransition | Vorhanden, -180°…180° |
 | `waypointHeadingParam/waypointPoiPoint` | Bei towardPOI | Nicht anwendbar: towardPOI gesperrt |
-| `waypointHeadingParam/waypointHeadingPathMode` | Bei Heading-Block laut DJI | Bei smoothTransition vorhanden; **fehlt beim Standardmodus** (A1) |
+| `waypointHeadingParam/waypointHeadingPathMode` | Bei Heading-Block laut DJI | Bei smoothTransition expliziter Wert; im neuen Standardmodus `followBadArc` (A1) |
 | `Placemark/waypointTurnParam` | Je Wegpunkt | Vorhanden |
 | `waypointTurnParam/waypointTurnMode` | Bei Turn-Block | Vorhanden |
 | `waypointTurnParam/waypointTurnDampingDist` | Nur bei mode=coordinateTurn oder Durchflugkurve und dokumentierter Bedingung | Beide Modi gesperrt; neuer Stopp-Kurvenmodus schreibt es nicht |
@@ -172,16 +172,16 @@ als Pflichtfeld für den Wegpunktflug gekennzeichnet.
 
 | ID | Priorität | Befund | Bewertung |
 | --- | --- | --- | --- |
-| A1 | Hoch | `waypointHeadingPathMode` fehlt im globalen Heading-Block und bei normalen followWayline-Ausführungspunkten | DJI-Tabelle: Yes; mögliche Geräte-/Vorlagenabweichung; wird im Offline-Audit als Advisory gemeldet |
+| A1 | Technisch behoben, Flugfreigabe offen | Neue Exporte setzen `waypointHeadingPathMode=followBadArc` im globalen Heading-Block und im normalen followWayline-Wegpunkt | Alte vollständige AeroNexus-KMZ ohne Feld werden beim Import erkannt und mit Advisory versehen; neuer Export vollständig, Pilot-2-Import weiterhin ungetestet |
 | A2 | Mittel | Das kanonische Altformat schreibt `globalUseStraightLine=1` auch bei diskontinuierlicher Geraden/Stopp | DJI formuliert „required iff“ für kontinuierliche Kurven; bestehende Route absichtlich noch nicht geändert |
 | A3 | Mittel | Das Altformat schreibt `waypointTurnDampingDist=0` beim Modus ohne erforderliche Dämpfung | Alte AeroNexus-Missionen bleiben lesbar; für den neuen Stop-Curve-Modus wird das optionale Feld nicht geschrieben |
 | A4 | Hoch | DJI Pilot 2 / Matrice-4-Import und reale Flugsemantik bleiben ungetestet | Kein Produktions- oder Flugfreigabenachweis |
 | A5 | Mittel | WPML 1.0.6 und DJI-externe KMZ dürfen nicht als editierbares 1.0.2-Profil normalisiert werden | Import verweigert unbekannte Strukturen; keine stille Konvertierung |
-| A6 | Hoch | Ein älterer Stand der offiziellen DJI-Common-Elements-Tabelle kennzeichnet `payloadLensIndex` auch für `stopRecord` als erforderlich. Der aktuelle konservative AeroNexus-Export schreibt es für diese Aktion nicht. | **Produktspezifische Pflichtfeldlage mit aktueller DJI-Tabelle/Pilot 2 weiter zu verifizieren**; ohne diesen Nachweis keine vollständige Zertifizierung |
+| A6 | Für M4E/M4T geklärt | `stopRecord/payloadLensIndex` wird nach englischer DJI-Tabelle nur für M30/M30T als Pflichtfeld gelistet; die chinesische Aktualisierung vom 13.10.2026 nennt es optional | Für Matrice 4E/4T kein Pflichtfelddefizit. Keine unbelegte Objektivauswahl ergänzt; reale Pilot-2-Abnahme ausstehend |
 
 **Schlussfolgerung:** Für das explizit implementierte Wegpunkt-Subset
 sind die identifizierten *bedingten Pflichtfelder* in PR #82 abgedeckt,
-mit der vorstehenden offenen Interoperabilitätsfrage bei Headings.
+mit den A1/A6-Korrekturen im nachgelagerten Draft-Branch.
 Der Standard-Export kann nicht als „vollständig DJI-konform“
 gekennzeichnet werden. DJI-Firmware, Pilot-2-Import und reale
 Flugsicherheit müssen unabhängig geprüft werden.
