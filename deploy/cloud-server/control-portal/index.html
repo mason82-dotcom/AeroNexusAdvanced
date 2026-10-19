@@ -4,44 +4,241 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<meta name="description" content="AeroNexusAdvanced: DJI Pilot 2, FlightHub 2 OpenAPI und lokale Drohnenmissionen – ein zentraler, sicher getrennter Arbeitsbereich.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
 <title>AeroNexusAdvanced · Control Center</title>
 <style>
-:root{color-scheme:dark;--bg:#080f1b;--surface:#111d30;--line:#2a3950;--text:#eef4ff;--mute:#9daec6;--blue:#59acff;--mint:#76e1c4;font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--text);background:var(--bg)}
-a{color:inherit;text-decoration:none}a:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:4px}a:hover{color:var(--mint)}
-.shell{max-width:1120px;margin:auto;padding:0 28px}.mast{padding:22px 0;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
-.brand{font-weight:750;font-size:19px}.main-nav{display:flex;gap:20px;align-items:center;font-size:14px}.main-nav [aria-current]{color:var(--blue)}
-.intro{padding:38px 0 24px}.intro h1{font-size:clamp(28px,4vw,42px);letter-spacing:-.03em;margin:0 0 9px;line-height:1.2}.intro p{color:var(--mute);margin:0;max-width:690px}
-h2{font-size:19px;margin:28px 0 14px}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{border:1px solid var(--line);border-radius:12px;padding:22px;background:var(--surface);min-width:0;display:block}.card:hover{border-color:var(--blue);color:var(--text);background:#15253c}.card h3{margin:0 0 7px;font-size:19px}.card p{color:var(--mute);font-size:14px;margin:0 0 14px}.card .link{color:var(--mint);font-size:13px;font-weight:650}
-.analysis{grid-template-columns:repeat(3,minmax(0,1fr))}.analysis .card{padding:18px}.analysis .card h3{font-size:17px}.analysis .card p{margin-bottom:0}
-.setup{border-top:1px solid var(--line);margin-top:30px;padding:18px 0}.setup summary{cursor:pointer;color:var(--mute)}.setup p{max-width:760px;color:var(--mute);font-size:13px}.setup a{color:var(--blue);display:inline-block;padding:9px 0}
-footer{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;border-top:1px solid var(--line);padding:20px 0 28px;color:var(--mute);font-size:12px}.indicator[data-state="error"]{color:#ff9ba8}
-@media(max-width:640px){.shell{padding:0 18px}.intro{padding-top:28px}.cards,.analysis{grid-template-columns:1fr}.main-nav{gap:16px}.card{padding:18px}}
+/* Flight operations console; runtime colour values trace to root DESIGN.md. */
+:root{
+  color-scheme:dark;
+  --bg:#10151c;--surface:#171e28;--line:#344151;
+  --ink:#eaf3ff;--muted:#a6b4c5;--mint:#75e3bd;
+  --blue:#72b9ed;--warning:#e4bd78;--danger:#ff9ba8;
+  --deep:#0d131b;--panel:#19242f;
+  font:14px/1.5 system-ui,"Segoe UI",sans-serif
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scrollbar-color:#536579 #10151c;scrollbar-width:thin}
+html::-webkit-scrollbar,*::-webkit-scrollbar{width:10px;height:10px}
+html::-webkit-scrollbar-thumb,*::-webkit-scrollbar-thumb{background:#536579;border:2px solid #10151c;border-radius:9px}
+html::-webkit-scrollbar-track,*::-webkit-scrollbar-track{background:var(--bg)}
+@media(forced-colors:active){html{scrollbar-color:auto}}
+body{min-height:100vh;margin:0;color:var(--ink);background:var(--bg)}
+a{color:inherit;text-decoration:none}
+a:focus-visible,summary:focus-visible,button:focus-visible{outline:2px solid var(--mint);outline-offset:3px}
+a:hover{color:var(--mint)}
+button{font:inherit}
+.page{display:grid;grid-template-columns:250px minmax(0,1fr);min-height:100vh}
+.rail{position:sticky;top:0;align-self:start;min-height:100vh;padding:27px 18px 22px;border-right:1px solid var(--line);background:#121a24;display:flex;flex-direction:column;gap:20px}
+.brand{display:flex;align-items:center;gap:11px;padding:2px 6px 22px;border-bottom:1px solid var(--line)}
+.brand-mark{width:39px;height:39px;flex:0 0 39px;display:grid;place-items:center;border:1px solid #4e857c;background:#1a3537;color:var(--mint);font:700 24px/1 ui-monospace,Consolas,monospace;clip-path:polygon(0 0,100% 0,100% 74%,74% 100%,0 100%)}
+.brand strong{display:block;letter-spacing:-.02em;font-weight:760;font-size:15px;line-height:1.1}
+.brand span:last-child small{color:var(--muted);display:block;letter-spacing:.11em;font-size:9px;text-transform:uppercase;margin-top:5px}
+.nav-label{font-size:10px;letter-spacing:.17em;color:#8fa1b5;font-weight:750;text-transform:uppercase;margin:0 10px 7px}
+.rail-nav{display:grid;gap:3px}
+.rail-nav a{display:flex;align-items:center;gap:12px;min-height:43px;padding:9px 11px;border:1px solid transparent;border-radius:4px;color:#c2cfdd;font-weight:620;font-size:13px;transition:background-color .12s}
+.rail-nav a:hover{background:#1e2e3c;color:var(--ink)}
+.rail-nav a[aria-current="page"]{color:var(--ink);background:#1c3738;border-color:#38665f;border-left:3px solid var(--mint);padding-left:9px}
+.icon{width:19px;height:19px;display:inline-grid;place-items:center;flex-shrink:0;color:var(--mint)}
+.icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
+.rail-note{margin-top:auto;padding:14px 12px;border:1px solid var(--line);background:#18232e;border-radius:4px;color:var(--muted);font-size:11px}
+.rail-note strong{display:block;margin-bottom:6px;color:#dce7f4;font-size:12px}
+.rail-note a{display:inline-block;margin-top:10px;font-weight:720;color:var(--mint)}
+.work{min-width:0;max-width:1680px;width:100%;margin:0 auto}
+.top{padding:20px 33px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.breadcrumb{font-size:12px;color:var(--muted)}
+.breadcrumb strong{font-weight:740;color:var(--ink)}
+.top-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.system-note{display:flex;align-items:center;gap:8px;color:#c8d4e2;font-size:11px}
+.system-dot{width:8px;height:8px;border-radius:50%;background:var(--warning);box-shadow:0 0 0 3px #e4bd7817}
+.system-dot[data-state="ok"]{background:var(--mint);box-shadow:0 0 0 3px #75e3bd22}
+.system-dot[data-state="error"]{background:var(--danger);box-shadow:0 0 0 3px #ff9ba822}
+.link-chip{border:1px solid #426e73;border-radius:4px;padding:7px 12px;color:#b7ebdf;font-weight:690;font-size:12px}
+.workspace{padding:29px 33px 36px}
+.kicker{color:var(--mint);font-size:10px;font-weight:780;letter-spacing:.16em;text-transform:uppercase}
+.heading{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:23px}
+h1{font-size:clamp(29px,3.5vw,41px);line-height:1.1;letter-spacing:-.039em;margin:6px 0 10px;font-weight:740}
+.heading p{margin:0;color:var(--muted);font-size:13px;max-width:690px}
+.heading-action{padding:10px 13px;border:1px solid #467389;background:#1a3442;border-radius:4px;font-size:12px;font-weight:750;white-space:nowrap}
+.overview{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(270px,.9fr);gap:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:4px;min-width:0}
+.panel-title{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line)}
+.panel-title h2{font-size:14px;font-weight:740;margin:0;letter-spacing:-.01em}
+.panel-title small{font-size:10px;color:var(--muted)}
+.network{position:relative;isolation:isolate;min-height:350px;padding:23px 22px 18px;overflow:hidden;background:radial-gradient(ellipse at 58% 45%,#24434866,transparent 55%),#131f29}
+.network::before{content:"";position:absolute;inset:0;z-index:-1;opacity:.3;background-image:linear-gradient(#71909f22 1px,transparent 1px),linear-gradient(90deg,#71909f22 1px,transparent 1px);background-size:34px 34px}
+.network-head{font:690 10px ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#a1c4ce;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.network-flow{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch;margin-top:55px}
+.net-node{min-height:129px;padding:14px 12px;background:#152633;border:1px solid #466073;border-top:3px solid var(--mint);display:flex;flex-direction:column;gap:5px;border-radius:4px}
+.net-node:nth-child(2){border-top-color:var(--blue)}
+.net-node:nth-child(3){border-top-color:var(--warning)}
+.net-node .num{color:#94afc1;font:650 10px ui-monospace,Consolas,monospace}
+.net-node strong{font-size:14px}
+.net-node p{font-size:11px;color:var(--muted);margin:0;line-height:1.5}
+.network-bottom{margin-top:36px;display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap}
+.network-bottom .legend{font-size:11px;color:#b6c9d4}
+.network-bottom a{color:var(--mint);font-weight:720;font-size:12px}
+.systems{display:grid;grid-template-rows:auto 1fr}
+.service{padding:16px 18px;border-bottom:1px solid var(--line)}
+.service:last-child{border-bottom:0}
+.service .service-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.service strong{font-size:13px}
+.service small{display:block;margin-top:6px;color:var(--muted);font-size:11px;line-height:1.5}
+.status-text{font-size:10px;border:1px solid #526275;border-radius:3px;padding:4px 7px;color:#cbd6e2;white-space:nowrap}
+.status-text[data-state="ok"]{color:var(--mint);border-color:#4b796d}
+.status-text[data-state="error"]{color:var(--danger);border-color:#845968}
+.service a{color:#abdef0;text-decoration:underline;text-underline-offset:3px}
+.section-row{display:flex;justify-content:space-between;gap:15px;align-items:end;margin:33px 0 15px}
+.section-row h2{margin:5px 0 0;font-size:18px;letter-spacing:-.018em}
+.section-row p{margin:0;color:var(--muted);font-size:11px;max-width:500px}
+.feature-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.feature{display:flex;flex-direction:column;gap:9px;min-height:180px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:4px;transition:border-color .12s,background-color .12s}
+.feature:hover{border-color:#649e98;background:#1c2935;color:var(--ink)}
+.feature .feature-number{font:650 10px ui-monospace,Consolas,monospace;color:#98b4c0}
+.feature strong{font-size:15px}
+.feature p{margin:0;font-size:11px;color:var(--muted);line-height:1.55;flex:1}
+.feature .open{font-weight:750;color:var(--mint);font-size:11px;align-self:start}
+.lower{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:14px;margin-top:14px}
+.detail-links{padding:8px 18px}
+.detail-links a{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 3px;color:#d3e0ed;border-bottom:1px solid #34415180;font-size:12px}
+.detail-links a:last-child{border:0}
+.detail-links a:hover{color:var(--mint)}
+.detail-links span{color:var(--mint)}
+.disclaimer{padding:19px 20px;color:var(--muted);font-size:12px}
+.disclaimer strong{color:var(--ink)}
+.disclaimer p{margin:0 0 11px}
+.disclaimer a{color:var(--mint);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.footer{border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:32px;padding:17px 0;color:#93a5b6;font-size:11px}
+.mobile-nav{display:none}
+@media(max-width:1210px){.feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview{grid-template-columns:minmax(0,1.4fr) minmax(255px,.9fr)}}
+@media(max-width:900px){.page{grid-template-columns:1fr}.rail{position:static;min-height:0;padding:15px 21px 5px;display:block;border-right:0;border-bottom:1px solid var(--line)}.brand{border:0;padding:0 0 10px}.rail-nav,.rail-note,.rail .nav-label{display:none}.mobile-nav{display:flex;gap:14px;overflow-x:auto;scrollbar-gutter:stable;padding:4px 0 10px;white-space:nowrap;font-size:12px}.mobile-nav a{padding:6px 0}.mobile-nav a[aria-current]{color:var(--mint);border-bottom:2px solid var(--mint)}.top{padding:14px 22px}.workspace{padding:23px 22px}}
+@media(max-width:720px){.overview,.lower{grid-template-columns:1fr}.network-flow{margin-top:34px}.heading{align-items:start;flex-direction:column}.network{min-height:330px}.systems{display:block}}
+@media(max-width:520px){.workspace{padding:22px 14px}.top{padding:12px 14px}.top-right{width:100%;justify-content:space-between}.network-flow{grid-template-columns:1fr;gap:10px;margin-top:22px}.net-node{min-height:0}.network-bottom{margin-top:25px}.network{min-height:0}.feature-grid{grid-template-columns:1fr}.feature{min-height:155px}.section-row{flex-direction:column;align-items:start}.panel-title{padding:14px}.network{padding:17px}.detail-links{padding:8px 12px}}
+@media(prefers-reduced-motion:reduce){.feature,.rail-nav a{transition:none}}
 </style>
 </head>
 <body>
-<div class="shell">
-<header class="mast">
- <a class="brand" href="./" aria-label="AeroNexus Start">AeroNexusAdvanced</a>
- <nav class="main-nav" aria-label="Hauptnavigation"><a href="./" aria-current="page">Start</a><a href="/pilot-login">Pilot-2-Anmeldung ↗</a><a href="/project">DJI Cloud-Verwaltung ↗</a></nav>
-</header>
-<main>
- <section class="intro" aria-labelledby="page-title"><h1 id="page-title">Ihr Arbeitsbereich</h1><p>Missionen vorbereiten, Geräte prüfen und Aufnahmen auswerten. Wählen Sie Ihre nächste Aufgabe.</p></section>
- <section aria-labelledby="daily-title"><h2 id="daily-title">Planung &amp; Betrieb</h2><div class="cards">
-  <a class="card" data-app="studio" href="#"><h3>Missionen planen</h3><p>Lokale Entwürfe und Cloud-Routen öffnen, Wegpunkte bearbeiten und Routen exportieren.</p><span class="link">Mission Manager öffnen ↗</span></a>
-  <a class="card" data-app="status" href="#"><h3>Live-Status prüfen</h3><p>Verbindung, Akku und aktuelle Telemetrie der Geräte sehen.</p><span class="link">Live-Status öffnen ↗</span></a>
-  <a class="card" data-app="media" href="#"><h3>Medien ansehen</h3><p>Aufnahmen finden, Vorschaubilder öffnen und Bildinformationen prüfen.</p><span class="link">Medien öffnen ↗</span></a>
-  <a class="card" data-app="operations" href="#"><h3>Übersicht öffnen</h3><p>Projekte, Geräte und den Zustand der angebundenen Cloud-Dienste prüfen.</p><span class="link">Übersicht öffnen ↗</span></a>
- </div></section>
- <section aria-labelledby="analysis-title"><h2 id="analysis-title">Auswertungen</h2><div class="cards analysis">
-  <a class="card" data-app="thermal" href="#"><h3>Thermal ↗</h3><p>Wärmebilder und Temperaturen auswerten.</p></a>
-  <a class="card" data-app="multispectral" href="#"><h3>Multispektral ↗</h3><p>Spektralbänder und Vegetationsindizes prüfen.</p></a>
-  <a class="card" data-app="results" href="#"><h3>Ergebnisraster ↗</h3><p>Vorhandene Raster und Geodaten ansehen.</p></a>
- </div></section>
- <details class="setup"><summary>Einrichtung &amp; technische Hinweise</summary><p>Die Fachmodule öffnen in einem neuen Tab über HTTPS auf Port 8000. Die Pilot-2-Anmeldung bleibt auf Port 8085. Dieses Portal speichert keine DJI-Zugangsdaten und startet keine Flugmissionen.</p><p>Die optionalen nativen DJI-Komponenten benötigen einen separaten kompatiblen FlightHub-2-Server und bleiben bis zur ausdrücklichen Aktivierung inaktiv.</p><a data-app="fh2-components" href="#">FlightHub-Komponenten einrichten ↗</a></details>
-</main>
-<footer><span>AeroNexusAdvanced · Lokaler Arbeitsbereich</span><span class="indicator" id="web-state" role="status" aria-live="polite">Webserver wird geprüft</span></footer>
+<div class="page">
+ <aside class="rail" aria-label="Arbeitsbereich-Navigation">
+  <a class="brand" href="./" aria-label="AeroNexusAdvanced – Startseite">
+   <span class="brand-mark" aria-hidden="true">A</span><span><strong>AeroNexus</strong><small>Advanced / Flight Operations</small></span>
+  </a>
+  <div>
+   <div class="nav-label">Arbeitsbereich</div>
+   <nav class="rail-nav" aria-label="Hauptnavigation">
+    <a href="./" aria-current="page"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>Übersicht</a>
+    <a data-app="operations" href="#"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 15l6-5 5 3 7-7"/><path d="M4 5v15h16"/></svg></span>FlightHub-Übersicht ↗</a>
+    <a data-app="status" href="#"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h3l3-7 4 14 3-7h3"/></svg></span>Live-Cockpit ↗</a>
+    <a data-app="studio" href="#"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20L20 4M4 4h7v7M13 13h7v7"/><circle cx="4" cy="20" r="1.5"/></svg></span>Mission Studio ↗</a>
+    <a data-app="media" href="#"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="9" cy="9" r="2"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg></span>Medien ↗</a>
+    <a href="/project"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 8h18M6 4h12l3 4v12H3V8z"/><path d="M8 13h8M8 17h6"/></svg></span>DJI Cloud Control</a>
+   </nav>
+  </div>
+  <div>
+   <div class="nav-label">Auswertung</div>
+   <nav class="rail-nav" aria-label="Auswertungen">
+    <a data-app="thermal" href="#"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 14V5a2 2 0 1 1 4 0v9a4 4 0 1 1-4 0z"/></svg></span>Thermal ↗</a>
+    <a data-app="multispectral" href="#"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 4v16M4 12h16"/></svg></span>Multispektral ↗</a>
+    <a data-app="results" href="#"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 12h16M12 4v16"/></svg></span>Ergebnisse ↗</a>
+   </nav>
+  </div>
+  <section class="rail-note">
+   <strong>DJI FlightHub 2 · Originalkomponenten</strong>
+   Nur mit einer eigenständigen, kompatiblen FlightHub-2-Instanz nutzbar. Die lokale DJI Cloud API ersetzt diesen Server nicht.
+   <a data-app="fh2-components" href="#">Integration über HTTPS ↗</a>
+  </section>
+  <nav class="mobile-nav" aria-label="Mobile Hauptnavigation">
+   <a href="./" aria-current="page">Übersicht</a>
+   <a data-app="operations" href="#">FlightHub ↗</a>
+   <a data-app="status" href="#">Live-Status ↗</a>
+   <a data-app="studio" href="#">Missionen ↗</a>
+   <a href="/pilot-login">Pilot 2</a>
+   <a href="/project">Cloud Control</a>
+   <a data-app="fh2-components" href="#">DJI-Komponenten ↗</a>
+  </nav>
+ </aside>
+ <div class="work">
+  <header class="top">
+   <div class="breadcrumb">AeroNexusAdvanced <span aria-hidden="true">/</span> <strong>Operations Center</strong></div>
+   <div class="top-right">
+    <span class="system-note" role="status" aria-live="polite"><span class="system-dot" id="web-dot"></span><span id="web-state">Webserver wird geprüft</span></span>
+    <a class="link-chip" href="/pilot-login">DJI Pilot 2 ↗</a>
+   </div>
+  </header>
+  <main class="workspace">
+   <section class="heading" aria-labelledby="main-title">
+    <div><div class="kicker">OPERATIONS / FLIGHTHUB 2 OPENAPI</div>
+     <h1 id="main-title">Einsatzzentrale</h1>
+     <p>Verwaltung, Missionen und Live-Daten an einem Ort. DJI Cloud API, FlightHub 2 OpenAPI und lokale Auswertungen behalten ihre eigenen, geschützten Schnittstellen.</p>
+    </div>
+    <a class="heading-action" data-app="operations" href="#">Flottenübersicht öffnen ↗</a>
+   </section>
+   <div class="overview">
+    <section class="panel" aria-labelledby="dataflow-title">
+     <div class="panel-title"><h2 id="dataflow-title">Datenwege &amp; Systeme</h2><small>Architekturansicht · kein Live-Kartenbild</small></div>
+     <div class="network">
+      <div class="network-head"><span>FLIGHT OPERATIONS / LOCAL NETWORK</span><span>READ-ONLY VIEW</span></div>
+      <div class="network-flow">
+       <div class="net-node"><span class="num">01 / FLUGSYSTEM</span><strong>DJI Pilot 2</strong><p>Fernsteuerung, Drohne und lokale Cloud-Anmeldung.</p></div>
+       <div class="net-node"><span class="num">02 / DATENKANAL</span><strong>DJI Cloud API</strong><p>Lokaler MQTT-/OSD-Empfang und Medienverwaltung.</p></div>
+       <div class="net-node"><span class="num">03 / OPENAPI</span><strong>FlightHub 2</strong><p>Separater Projekt-, Geräte- und Auftragskatalog.</p></div>
+      </div>
+      <div class="network-bottom">
+       <span class="legend">DJI Cloud API und FlightHub 2 sind unterschiedliche Plattformen.</span>
+       <a data-app="operations" href="#">Tatsächliche Gerätedaten ansehen ↗</a>
+      </div>
+     </div>
+    </section>
+    <section class="panel systems" aria-labelledby="systems-title">
+     <div class="panel-title"><h2 id="systems-title">Systemzugänge</h2><small>Keine erfundenen Live-Werte</small></div>
+     <div>
+      <div class="service">
+       <div class="service-row"><strong>DJI Pilot 2</strong><span class="status-text" id="pilot-state">Wird geprüft</span></div>
+       <small>Erreichbarkeit der lokalen Pilot-2-Webseite. Keine Aussage über Flug- oder MQTT-Verbindung.</small>
+      </div>
+      <div class="service">
+       <div class="service-row"><strong>FlightHub 2 OpenAPI</strong><span class="status-text">Separater Dienst</span></div>
+       <small>Geräte, HMS und Flugaufträge zeigt die <a data-app="operations" href="#">geschützte Flottenübersicht</a> anhand tatsächlich empfangener Daten.</small>
+      </div>
+      <div class="service">
+       <div class="service-row"><strong>Native DJI-Komponenten</strong><span class="status-text">Optional</span></div>
+       <small>Projektkarte und Cockpit benötigen einen kompatiblen FlightHub-2-Server. <a data-app="fh2-components" href="#">HTTPS-Einbindung</a>.</small>
+      </div>
+     </div>
+    </section>
+   </div>
+   <div class="section-row">
+    <div><div class="kicker">TÄGLICHER BETRIEB</div><h2>Arbeitsbereiche</h2></div>
+    <p>Die Links öffnen bestehende, funktionale Module auf dem geschützten AeroNexus-Server.</p>
+   </div>
+   <section class="feature-grid" aria-label="Arbeitsbereiche">
+    <a class="feature" data-app="operations" href="#"><span class="feature-number">FLIGHTHUB / 01</span><strong>Flotte &amp; Projekte</strong><p>Aktuelle Geräte, DJI-Projekte, Cloud-Quellen und erfasste Flugaufträge.</p><span class="open">Öffnen ↗</span></a>
+    <a class="feature" data-app="status" href="#"><span class="feature-number">TELEMETRY / 02</span><strong>Live-Cockpit</strong><p>RC, Akku, GNSS/RTK, Kamera, Flugzustände und Empfangsfrische.</p><span class="open">Öffnen ↗</span></a>
+    <a class="feature" data-app="studio" href="#"><span class="feature-number">PLANNING / 03</span><strong>Mission Studio</strong><p>Lokale Missionen, Waylines, KMZ/WPML-Export und Routenvergleich.</p><span class="open">Öffnen ↗</span></a>
+    <a class="feature" data-app="media" href="#"><span class="feature-number">MEDIA / 04</span><strong>Aufnahmen &amp; Medien</strong><p>DJI-Medienindex und vorhandene Aufnahmeinformationen.</p><span class="open">Öffnen ↗</span></a>
+   </section>
+   <div class="lower">
+    <section class="panel" aria-labelledby="extra-title">
+     <div class="panel-title"><h2 id="extra-title">Weitere Werkzeuge</h2><small>Bestehende Module</small></div>
+     <div class="detail-links">
+      <a data-app="thermal" href="#">Thermal-Inspektion <span>↗</span></a>
+      <a data-app="multispectral" href="#">Multispektrale Analyse <span>↗</span></a>
+      <a data-app="results" href="#">Geodaten &amp; Rasterergebnisse <span>↗</span></a>
+      <a href="/project">DJI Cloud-API-Verwaltung <span>↗</span></a>
+     </div>
+    </section>
+    <section class="panel" aria-labelledby="native-title">
+     <div class="panel-title"><h2 id="native-title">Offizielle DJI-Integration</h2><small>Getrennt und ausdrücklich aktiviert</small></div>
+     <div class="disclaimer">
+      <p><strong>FlightHub 2 Frontend Standalone</strong> ermöglicht die Original-Projektkarte und das DJI-Cockpit erst mit gültigem FlightHub-2-Host und Projekttoken. Native Komponenten können eigene Steuerungsfunktionen enthalten.</p>
+      <p><strong>FlightHub 2 OpenAPI V2</strong> wird über vorhandene lesende AeroNexus-Backendadapter genutzt. Keine Organisationstokens im HTTP-Browser.</p>
+      <a data-app="fh2-components" href="#">Komponenten sicher konfigurieren ↗</a>
+     </div>
+    </section>
+   </div>
+   <footer class="footer"><span>AeroNexusAdvanced · Flight Operations</span><span>Port 8085: Navigation &amp; DJI Pilot 2 · HTTPS 8000: geschützte Fachmodule</span></footer>
+  </main>
+ </div>
 </div>
 <script>
 "use strict";
@@ -56,13 +253,22 @@ footer{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;border
    link.rel="noopener noreferrer";link.target="_blank";
  }
  const status=document.getElementById("web-state");
+ const dot=document.getElementById("web-dot");
+ const pilot=document.getElementById("pilot-state");
  fetch("/pilot-login",{method:"HEAD",cache:"no-store",credentials:"omit"}).then(function(response){
    const ok=response.ok;
-   status.dataset.state=ok?"ok":"error";
+   const state=ok?"ok":"error";
    status.textContent=ok?"Pilot-2-Webserver erreichbar":"Pilot-2-Webseite nicht bestätigt";
+   dot.dataset.state=state;
+   pilot.dataset.state=state;
+   pilot.textContent=ok?"Webseite erreichbar":"Nicht bestätigt";
  }).catch(function(){
-   status.dataset.state="error";status.textContent="Webserverprüfung fehlgeschlagen";
+   status.textContent="Webserverprüfung fehlgeschlagen";
+   dot.dataset.state="error";
+   pilot.dataset.state="error";
+   pilot.textContent="Nicht erreichbar";
  });
 })();
 </script>
-</body></html>
+</body>
+</html>
