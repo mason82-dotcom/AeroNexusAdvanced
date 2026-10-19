@@ -252,9 +252,13 @@ async def status_devices(
     """Authenticated details, bounded pagination, no external DJI fetch."""
     _no_cache(response)
     _require_viewer_access(request, authorization)
-    devices = app.state.status_runtime.device_views(provider, project_id)
-    return {"total": len(devices), "offset": offset, "limit": limit,
-            "devices": list(devices[offset:offset + limit])}
+    runtime = app.state.status_runtime
+    # Count lightweight inventory entries first; build telemetry, field clocks
+    # and HMS history only for the requested page.
+    total = len(runtime.inventory.devices(provider, project_id))
+    devices = runtime.device_views(provider, project_id, offset=offset, limit=limit)
+    return {"total": total, "offset": offset, "limit": limit,
+            "devices": list(devices)}
 
 
 @app.get("/api/v1/status/hms-history")
