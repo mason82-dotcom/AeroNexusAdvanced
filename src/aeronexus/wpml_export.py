@@ -34,6 +34,13 @@ MODEL_LABELS = {
     "mavic3m": "Mavic 3M", "mavic3ta": "Mavic 3TA",
 }
 MissionModel = Literal["matrice4t", "matrice4e", "mavic3e", "mavic3t", "mavic3m", "mavic3ta"]
+# Narrow, opt-in planning subset. Other DJI modes remain deliberately disabled.
+HeadingMode = Literal["followWayline", "smoothTransition"]
+HeadingPathMode = Literal["clockwise", "counterClockwise", "followBadArc"]
+TurnMode = Literal[
+    "toPointAndStopWithDiscontinuityCurvature",
+    "toPointAndStopWithContinuityCurvature",
+]
 
 
 def _k(tag: str) -> str:
@@ -175,6 +182,7 @@ class Waypoint(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     take_photo: bool = False
+    heading_angle_deg: float | None = Field(default=None, ge=-180, le=180)
     actions: list[WaypointAction] = Field(default_factory=list, max_length=MAX_WAYPOINT_ACTIONS)
 
     @model_serializer(mode="wrap")
@@ -190,6 +198,13 @@ class Waypoint(BaseModel):
         if self.latitude == 0 and self.longitude == 0:
             raise ValueError("Waypoint at 0,0 is not a valid GPS fix")
         return self
+
+    @field_validator("heading_angle_deg")
+    @classmethod
+    def finite_heading_angle(cls, value: float | None) -> float | None:
+        if value is not None and not isfinite(value):
+            raise ValueError("Heading angle must be finite")
+        return value
 
     @field_validator("latitude", "longitude")
     @classmethod
@@ -209,6 +224,9 @@ class WaypointMission(BaseModel):
     takeoff_security_height_m: float = Field(default=20.0, ge=1.2, le=1500)
     rth_height_m: float = Field(default=60.0, ge=2, le=500)
     finish_action: Literal["goHome", "noAction"] = "goHome"
+    heading_mode: HeadingMode = "followWayline"
+    heading_path_mode: HeadingPathMode | None = None
+    turn_mode: TurnMode = "toPointAndStopWithDiscontinuityCurvature"
     close_route: bool = False  # extra real return-to-first waypoint in exported WPML
     waypoints: list[Waypoint] = Field(default_factory=list, max_length=500)
 
@@ -224,6 +242,18 @@ class WaypointMission(BaseModel):
         # Only offline export preparation. Hardware/firmware support remains
         # separately unverified; never send these actions to any aircraft.
         resolved = waypoints_for_export(self)
+        if self.heading_mode == "smoothTransition":
+            # No implicit closing yaw: it changes actual flight semantics.
+            if self.close_route:
+                raise ValueError("Smooth heading with closed route is not verified")
+            if self.heading_path_mode is None:
+                raise ValueError("Smooth heading requires an explicit rotation path")
+            if any(point.heading_angle_deg is None for point in resolved):
+                raise ValueError("Smooth heading requires an angle at every waypoint")
+        elif self.heading_path_mode is not None or any(
+            point.heading_angle_deg is not None for point in resolved
+        ):
+            raise ValueError("Heading angles/path only supported for smoothTransition")
         for index, point in enumerate(resolved):
             for action in point.actions:
                 if action.type not in ACTION_MODEL_MATRIX[self.drone_model]:
@@ -373,7 +403,7 @@ def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int,
         _set(folder, "gimbalPitchMode", "usePointSetting")
         heading = ET.SubElement(folder, _w("globalWaypointHeadingParam"))
         _set(heading, "waypointHeadingMode", "followWayline")
-        _set(folder, "globalWaypointTurnMode", "toPointAndStopWithDiscontinuityCurvature")
+        _set(folder, "globalWaypointTurnMode", mission.turn_mode)
         _set(folder, "globalUseStraightLine", 1)
     else:
         _set(folder, "templateId", 0)
@@ -389,16 +419,26 @@ def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int,
         if template:
             _set(place, "useGlobalHeight", 1)
             _set(place, "useGlobalSpeed", 1)
-            _set(place, "useGlobalHeadingParam", 1)
+            _set(place, "useGlobalHeadingParam",
+                 0 if mission.heading_mode == "smoothTransition" else 1)
+            if mission.heading_mode == "smoothTransition":
+                # Template per-point override matches executable per-point yaw.
+                heading = ET.SubElement(place, _w("waypointHeadingParam"))
+                _set(heading, "waypointHeadingMode", "smoothTransition")
+                _set(heading, "waypointHeadingAngle", _num(wp.heading_angle_deg))
+                _set(heading, "waypointHeadingPathMode", mission.heading_path_mode)
             _set(place, "useGlobalTurnParam", 1)
             _set(place, "gimbalPitchAngle", 0)
         else:
             _set(place, "executeHeight", _num(mission.altitude_m))
             _set(place, "waypointSpeed", _num(mission.speed_mps))
             heading = ET.SubElement(place, _w("waypointHeadingParam"))
-            _set(heading, "waypointHeadingMode", "followWayline")
+            _set(heading, "waypointHeadingMode", mission.heading_mode)
+            if mission.heading_mode == "smoothTransition":
+                _set(heading, "waypointHeadingAngle", _num(wp.heading_angle_deg))
+                _set(heading, "waypointHeadingPathMode", mission.heading_path_mode)
             turning = ET.SubElement(place, _w("waypointTurnParam"))
-            _set(turning, "waypointTurnMode", "toPointAndStopWithDiscontinuityCurvature")
+            _set(turning, "waypointTurnMode", mission.turn_mode)
             _set(turning, "waypointTurnDampingDist", 0)
         if wp.take_photo:
             _photo_action(place, index, mission.drone_model,
@@ -492,6 +532,7 @@ def import_kmz(data: bytes) -> WaypointMission:
     altitude = float(txt(template, ".//" + _w("globalHeight")))
     speed = float(txt(route, ".//" + _w("autoFlightSpeed")))
     waypoints = []
+    custom_paths: set[str] = set()
     for index, (point, plan) in enumerate(zip(route_points, template_points)):
         if txt(point, _w("index")) != str(index) or txt(plan, _w("index")) != str(index):
             raise ValueError("Nonsequential waypoint numbering")
@@ -502,6 +543,18 @@ def import_kmz(data: bytes) -> WaypointMission:
             raise ValueError("Per-point altitude is outside the supported subset")
         if txt(plan, _w("useGlobalHeight")) != "1":
             raise ValueError("Per-point height references are not supported")
+        # Only the full per-waypoint smooth-yaw profile is editable. Import
+        # never guesses omitted angles, yaw paths or mixed heading strategies.
+        heading = _w("waypointHeadingParam") + "/"
+        heading_mode = txt(point, heading + _w("waypointHeadingMode"))
+        use_global = txt(plan, _w("useGlobalHeadingParam"))
+        if use_global == "1" and heading_mode == "followWayline":
+            heading_angle = None
+        elif use_global == "0" and heading_mode == "smoothTransition":
+            heading_angle = float(txt(point, heading + _w("waypointHeadingAngle")))
+            custom_paths.add(txt(point, heading + _w("waypointHeadingPathMode")))
+        else:
+            raise ValueError("Unsupported mixed waypoint heading parameters")
         action_groups = point.findall(_w("actionGroup"))
         template_groups = plan.findall(_w("actionGroup"))
         if len(action_groups) != len(template_groups) or len(action_groups) > MAX_WAYPOINT_ACTIONS + 1:
@@ -540,7 +593,14 @@ def import_kmz(data: bytes) -> WaypointMission:
             raise ValueError("Invalid WGS84 waypoint") from exc
         waypoints.append({"latitude": lat, "longitude": lon,
                           "take_photo": "takePhoto" in action_names,
+                          "heading_angle_deg": heading_angle,
                           "actions": extra})
+    custom = [wp["heading_angle_deg"] is not None for wp in waypoints]
+    if any(custom) and (not all(custom) or len(custom_paths) != 1):
+        raise ValueError("Mixed or inconsistent custom heading settings")
+    heading_mode = "smoothTransition" if any(custom) else "followWayline"
+    heading_path_mode = next(iter(custom_paths)) if any(custom) else None
+    turn_mode = txt(route_points[0], _w("waypointTurnParam") + "/" + _w("waypointTurnMode"))
     # AeroNexus exports "close route" as the actual final flight waypoint.
     # Recover the option from that final duplicate only when no camera action
     # would be discarded. Older explicitly repeated finish points may be
@@ -567,6 +627,9 @@ def import_kmz(data: bytes) -> WaypointMission:
         "takeoff_security_height_m": float(txt(route, ".//" + _w("takeOffSecurityHeight"))),
         "rth_height_m": float(txt(route, ".//" + _w("globalRTHHeight"))),
         "finish_action": txt(route, ".//" + _w("finishAction")),
+        "heading_mode": heading_mode,
+        "heading_path_mode": heading_path_mode,
+        "turn_mode": turn_mode,
         "close_route": closed,
         "waypoints": waypoints,
     })
