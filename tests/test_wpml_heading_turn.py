@@ -54,9 +54,8 @@ def assert_roundtrip(m):
     assert restored.model_dump() == m.model_dump()
     audit = audit_kmz(exported)
     assert audit["editable_in_aeronexus"] is True
-    # The template retains its legacy global-heading block even when every
-    # point overrides it. DJI still lists its path child as required.
-    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" in {
+    # New exports have a complete heading-path field in all heading blocks.
+    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" not in {
         item["code"] for item in audit["findings"]
     }
     return roots(exported)
@@ -71,7 +70,9 @@ def test_default_serialization_remains_backward_compatible():
     assert all("heading_angle_deg" not in point for point in d["waypoints"])
     for root in assert_roundtrip(m):
         assert root.find(".//" + W + "waypointHeadingAngle") is None
-        assert root.find(".//" + W + "waypointHeadingPathMode") is None
+        paths = root.findall(".//" + W + "waypointHeadingPathMode")
+        assert paths
+        assert all(element.text == "followBadArc" for element in paths)
         assert root.find(".//" + W + "waypointTurnMode") is None or all(
             e.text == "toPointAndStopWithDiscontinuityCurvature"
             for e in root.findall(".//" + W + "waypointTurnMode")
