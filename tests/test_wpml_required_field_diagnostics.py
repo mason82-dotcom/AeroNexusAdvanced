@@ -142,6 +142,15 @@ def test_optional_payload_parameter_block_is_not_globally_mandatory():
                  code="DJI_CONDITIONAL_FIELD_MISSING")
 
 
+def test_missing_template_type_is_reported_not_treated_as_mapping():
+    t, r = roots(sample())
+    folder = t.find(K + "Document/" + K + "Folder")
+    folder.remove(folder.find(W + "templateType"))
+    results = required_waypoint_findings(t, r)
+    expect_field(results, document="template.kml",
+                 field="wpml:templateType", code="DJI_REQUIRED_FIELD_MISSING")
+
+
 def test_non_waypoint_template_families_are_not_misclassified():
     t, r = roots(sample())
     t.find(".//" + W + "templateType").text = "mapping3d"
