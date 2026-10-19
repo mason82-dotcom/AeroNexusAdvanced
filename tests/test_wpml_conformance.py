@@ -132,7 +132,8 @@ def test_dtd_and_duplicate_zip_members_are_rejected():
     dest = BytesIO()
     with ZipFile(dest, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr("wpmz/template.kml", b"first")
-        archive.writestr("wpmz/template.kml", b"second")
+        with pytest.warns(UserWarning, match="Duplicate name"):
+            archive.writestr("wpmz/template.kml", b"second")
     assert "DUPLICATE_ZIP_MEMBER" in {
         x["code"] for x in audit_kmz(dest.getvalue())["findings"]
     }
