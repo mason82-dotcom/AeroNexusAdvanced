@@ -39,6 +39,8 @@ Der Web-Build benötigt Pi-Speicher und kann zeitintensiv sein. Freien Platz und
 ~~~bash
 cd ~/Projekte/AeroNexusAdvanced/cloud-server/edge
 docker inspect aeronexusadvanced-cloud-control-1 --format '{{.Config.Image}}'
+# Bestehendes branded-Image vor dem Build explizit als Rückfall erhalten:
+docker image tag aeronexusadvanced/control:branded aeronexusadvanced/control:pre-theme-20261019
 docker compose -f compose.core.yaml -f compose.brand.yaml -f compose.portal.yaml config --quiet
 
 # Das bisherige Web-Image bleibt während des Builds online:
@@ -60,4 +62,12 @@ HTTP 200 beweist nicht, dass die DJI-Lizenz oder die Gestaltung in einer realen 
 
 ## Rückfall
 
-Vor dem Build aktuellen Image-Tag/Digest notieren. Bei rein visuellen Problemen den CSS-Link wieder entfernen und das Web-Image neu bauen oder explizit das zuvor gesicherte Image starten. Das Originalindex-Backup liegt unter cloud-server/edge/pilot-ui-backup/index.html. Vor einer Wiederherstellung kontrollieren, ob seit der Sicherung andere legitime Anpassungen entstanden sind; das Backup keinesfalls blind über neuere Änderungen kopieren. Keine Datenbank-, MQTT-, MinIO- oder Zertifikatsdateien verändern.
+Vor dem Build das Image unter einem eigenen Tag sichern. Bei rein visuellen Problemen das zuvor gesicherte Image wieder unter dem erwarteten branded-Tag aktivieren:
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced/cloud-server/edge
+docker image tag aeronexusadvanced/control:pre-theme-20261019 aeronexusadvanced/control:branded
+docker compose -f compose.core.yaml -f compose.brand.yaml -f compose.portal.yaml up -d --no-deps --no-build --pull never --force-recreate control
+~~~
+
+Alternativ kann der CSS-Link aus dem privaten Vue-HTML entfernt und die Oberfläche erneut gebaut werden. Das Originalindex-Backup liegt unter cloud-server/edge/pilot-ui-backup/index.html. Vor einer Wiederherstellung kontrollieren, ob seit der Sicherung andere legitime Anpassungen entstanden sind; das Backup keinesfalls blind über neuere Änderungen kopieren. Keine Datenbank-, MQTT-, MinIO- oder Zertifikatsdateien verändern.
