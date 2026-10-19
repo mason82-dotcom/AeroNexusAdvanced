@@ -237,15 +237,21 @@ def audit_kmz(blob: bytes) -> dict:
                             _finding(report, "INVALID_CAMERA_LENS_SELECTION", "error")
                         if legacy and mission.drone_model in LENS_MODELS:
                             _finding(report, "LEGACY_CAMERA_FIELDS", "advisory")
-        # DJI's current table calls headingPathMode required; sample exports
-        # differ, so classify the omission as unresolved, not an invalid flight.
-        if (mission.heading_mode != "smoothTransition"
-                and folder.find(W + "globalWaypointHeadingParam") is not None):
-            # The strict importer already proved that smoothTransition has an
-            # explicit per-point heading path in both XML documents.
-            heading = folder.find(W + "globalWaypointHeadingParam")
-            if heading.find(W + "waypointHeadingPathMode") is None:
-                _finding(report, "HEADING_PATH_MODE_INTEROP_UNVERIFIED", "advisory")
+        # DJI marks headingPathMode as required for heading parameter blocks.
+        # An unused global heading block (per-point overrides enabled) can
+        # still contain an omitted child. Surface it, do not claim full DJI
+        # validation and do not rewrite legacy route semantics.
+        missing_path = any(
+            element.tag in (W + "globalWaypointHeadingParam",
+                            W + "waypointHeadingParam")
+            and element.find(W + "waypointHeadingPathMode") is None
+            for element in folder.iter()
+        )
+        if missing_path and not any(
+            entry["code"] == "HEADING_PATH_MODE_INTEROP_UNVERIFIED"
+            for entry in report["findings"]
+        ):
+            _finding(report, "HEADING_PATH_MODE_INTEROP_UNVERIFIED", "advisory")
 
     if any(item["severity"] == "error" for item in report["findings"]):
         report["status"] = "unsupported"
