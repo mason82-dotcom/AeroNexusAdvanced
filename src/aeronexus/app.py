@@ -6,6 +6,7 @@ unless an independent dashboard bearer token is configured.
 import asyncio
 import httpx
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import unquote
 from contextlib import asynccontextmanager
 import os
@@ -702,6 +703,34 @@ def operations_page(request: Request, response: Response) -> str:
         "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
     )
     return render_operations()
+
+
+@app.get("/fh2-components", response_class=HTMLResponse, include_in_schema=False)
+def fh2_components_page(request: Request, response: Response) -> str:
+    """HTTPS-only opt-in official FlightHub 2 component host page.
+
+    No DJI token, native component or control function is loaded by this
+    server; the operator explicitly supplies a separate trusted FH2 host.
+    """
+    if request.url.scheme != "https":
+        raise HTTPException(status_code=403, detail="HTTPS required for FH2 token input")
+    if lan_mode_enabled():
+        require_lan(request)
+    _no_cache(response)
+    response.headers["X-Frame-Options"] = "DENY"
+    # The operator may elect to load a separate trusted HTTPS FH2 paas.js.
+    # DJI's Cesium/SDK assets can use HTTPS, WSS, inline styles and blob URLs.
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'self' 'unsafe-inline' https:; "
+        "style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; "
+        "font-src 'self' data: https:; connect-src 'self' https: wss:; "
+        "worker-src 'self' blob:; frame-src https:; "
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    )
+    page = Path(__file__).resolve().parents[2] / "deploy/cloud-server/control-portal/fh2.html"
+    if not page.is_file():
+        raise HTTPException(status_code=503, detail="FlightHub 2 component page not installed")
+    return page.read_text(encoding="utf-8")
 
 
 @app.get("/media", response_class=HTMLResponse, include_in_schema=False)
