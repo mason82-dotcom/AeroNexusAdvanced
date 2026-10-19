@@ -733,6 +733,8 @@ const browserH264=(()=>{try{return RTCRtpReceiver.getCapabilities("video").codec
   .some(c=>/h264/i.test(c.mimeType));}catch(e){return false;}})();
 function liveBadge(text,cls){const b=$("live-badge");b.textContent=text;b.className="badge"+(cls?" "+cls:"");}
 async function refreshLive(){
+  // Hidden tabs should not poll MediaMTX unless a playback session is active.
+  if(stopped||(document.hidden&&!live.current))return;
   let data;
   try{data=await getJSON("/api/v1/live/streams");}
   catch(error){liveBadge("Unbekannt","warn");message("live-state","Livestream-Status nicht abrufbar: "+error.message);return;}
@@ -924,7 +926,8 @@ function receiveUpdatedAt(summary){
     new Date(timestamp).toLocaleTimeString("de-DE")+" (Serverzeit empfangen)";
 }
 async function refreshAll(){
-  if(refreshing||stopped)return;
+  // Polling a background tab creates avoidable API and map-rendering work.
+  if(refreshing||stopped||document.hidden)return;
   refreshing=true;
   const generation=++refreshCount;
   try{
@@ -1030,6 +1033,12 @@ function wire(){
     (v.requestFullscreen?v.requestFullscreen():v.webkitEnterFullscreen&&v.webkitEnterFullscreen());});
   refreshLive();
   window.setInterval(refreshLive,10000);
+  // Refresh immediately after a hidden tab becomes visible again.
+  if(typeof document.addEventListener==="function"){
+    document.addEventListener("visibilitychange",()=>{
+      if(!document.hidden&&!stopped){refreshAll();refreshLive();}
+    });
+  }
   window.addEventListener("pagehide",()=>{stopped=true;stopLive();});
 }
 wire();
