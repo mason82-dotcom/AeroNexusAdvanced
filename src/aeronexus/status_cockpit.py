@@ -60,6 +60,18 @@ body{padding:20px}main{max-width:1600px}
 .cockpit-fieldrow span{overflow-wrap:anywhere}
 .cockpit-fieldrow .fresh{color:#86dfbb}.cockpit-fieldrow .stale{color:#ffd08d}
 .cockpit-fieldrow .skew{color:#ffaaaa}.cockpit-fieldrow .muted{color:#95b2c8}
+.cockpit-field-focus{display:grid;gap:8px;margin:12px 0 16px}
+.cockpit-focus-row{border:1px solid #36526a;border-radius:9px;background:#0d2032;padding:10px;
+  display:grid;gap:5px;overflow-wrap:anywhere}
+.cockpit-focus-row[data-state="live"]{border-left:4px solid #5bbe97}
+.cockpit-focus-row[data-state="last-known"]{border-left:4px solid #edba6f;background:#302b23}
+.cockpit-focus-row[data-state="not-observed"]{border-left:4px solid #7f94a8}
+.cockpit-focus-title{font-size:12px;color:#c9dff0;font-weight:650}
+.cockpit-focus-state{font-size:11px;font-weight:700;color:#a6dcca}
+.cockpit-focus-row[data-state="last-known"] .cockpit-focus-state{color:#ffce8c}
+.cockpit-focus-row[data-state="not-observed"] .cockpit-focus-state{color:#b5c4d2}
+.cockpit-focus-row b{font-size:14px;color:#f2f8ff}
+.cockpit-focus-row small{font-size:11px;color:#aec6da;line-height:1.5}
 .cockpit-empty{font-size:12px;color:#adc5d8;line-height:1.7}
 .cockpit-legend{font-size:11px;color:#93aec5;margin-top:16px;line-height:1.6}
 .legacy-status{max-width:none!important;margin:18px 0}
@@ -134,7 +146,10 @@ COCKPIT_HTML = r"""
       <div id="cockpit-trends" class="cockpit-chart-wrap"></div></section>
     <section class="cockpit-panel"><h3>Gerätestatus &amp; Datengrundlage</h3><div class="cockpit-items" id="cockpit-diagnostics"></div></section>
     <section class="cockpit-panel"><h3>OSD-/State-Feldqualität</h3>
-      <p class="module-note">Zeitstempel und Kanal pro DJI-Eigenschaft; keine erneute Aktivierung abgelaufener Werte.</p>
+      <p class="module-note">Aktuell, letzter bekannter Wert (nicht live) oder nicht beobachtet.
+        Empfangszeiten stammen vom AeroNexus-Server; historische RTH-Werte sind keine Grundlage für Flugentscheidungen.</p>
+      <div class="cockpit-field-focus" id="cockpit-field-focus" aria-label="Ausgewählte DJI-State-Felder"></div>
+      <p class="module-note">Alle beobachteten DJI-Eigenschaften · Kanal und Feldalter:</p>
       <div class="cockpit-fieldlist" id="cockpit-fields"></div></section>
   </div>
   <p class="cockpit-legend">„Live“ bedeutet: Gerät online, Quelle und Einzelfeld höchstens 15 Sekunden alt. Die Server-Frischegrenze kann großzügiger sein.
@@ -514,6 +529,55 @@ function cockpitRenderFields(dev){
   });
   if(entries.length>250)cardEl(root,"p","cockpit-empty","Weitere Felder in der technischen Tabelle.");
 }
+const cockpitFocusFields={
+  controller:[
+    ["Firmwareversion (Fernsteuerung)","cloud_details.firmware_version"],
+    ["Cloud-Control-Autorisierungen (Anzahl)","cloud_details.cloud_control_authorization_count"],
+    ["Verfügbare Livestreams","cloud_details.live_capacity.available_videos"],
+    ["Gleichzeitige Livestreams","cloud_details.live_capacity.simultaneous_videos"]
+  ],
+  aircraft:[
+    ["RTH-Modus (Code)","cloud_details.rth_mode_code"],
+    ["Aktiver RTH-Modus (Code)","cloud_details.current_rth_mode_code"],
+    ["Steuerquelle","cloud_details.control_source_category"],
+    ["Firmwareversion (Fluggerät)","cloud_details.firmware_version"]
+  ]
+};
+function cockpitRenderFieldFocus(dev){
+  const root=byId("cockpit-field-focus");root.replaceChildren();
+  if(dev.provider!=="dji-cloud-api"){
+    cardEl(root,"p","cockpit-empty","Einzelfeld-Diagnose nur für DJI Cloud API verfügbar.");
+    return;
+  }
+  for(const [label,path] of (cockpitFocusFields[dev.kind]||[])){
+    const clock=cockpitClock(dev,path);
+    const raw=cockpitPath(dev.last_known_telemetry||dev.telemetry||{},path);
+    const known=cockpitRawValue(raw);
+    const observed=Boolean(clock&&typeof clock==="object"&&known!==null);
+    const current=observed?cockpitRawValue(cockpitRead(dev,path)):null;
+    // Live status is exclusively decided by cockpitRead (online, 15 s,
+    // server-side field freshness). Cached values never enter live modules.
+    const state=current!==null?"live":observed?"last-known":"not-observed";
+    const row=cardEl(root,"div","cockpit-focus-row");row.dataset.state=state;
+    cardEl(row,"div","cockpit-focus-title",label);
+    cardEl(row,"span","cockpit-focus-state",
+      state==="live"?"Aktuell · Livewert":state==="last-known"?
+      "Letzter bekannter Wert · NICHT LIVE":"Nicht beobachtet");
+    cardEl(row,"b","",state==="live"?current:state==="last-known"?known:"–");
+    if(!observed){
+      cardEl(row,"small","","Kein Messwert mit verifiziertem Einzel-Feld-Empfangszeitpunkt.");
+      continue;
+    }
+    const ages=[clock.age_seconds,clock.source_age_seconds]
+      .filter(x=>typeof x==="number"&&Number.isFinite(x));
+    const age=ages.length?Math.max(...ages):null;
+    const channel=clock.channel==="osd"?"OSD":clock.channel==="state"?"STATE":"unbekannt";
+    const stateNote=clock.freshness==="clock_skew"?" · Quellzeit unplausibel":
+      clock.freshness==="stale"?" · serverseitig veraltet":"";
+    cardEl(row,"small","",channel+" · Empfang: "+(clock.received_at||"unbekannt")+
+      " · Feldalter: "+(age===null?"unbekannt":Math.floor(Math.max(0,age))+" s")+stateNote);
+  }
+}
 function cockpitValidGps(lat,lon){
   return typeof lat==="number"&&Number.isFinite(lat)&&Math.abs(lat)<=90
     &&typeof lon==="number"&&Number.isFinite(lon)&&Math.abs(lon)<=180
@@ -680,7 +744,8 @@ function cockpitPaint(dev){
     dev?"Frische: "+statusLabel(dev.freshness):"Noch kein Empfang");
   if(!dev){
     for(const id of ["cockpit-navigation","cockpit-energy","cockpit-radio","cockpit-camera",
-      "cockpit-payload","cockpit-safety","cockpit-hms","cockpit-diagnostics","cockpit-fields","cockpit-trends"]){
+      "cockpit-payload","cockpit-safety","cockpit-hms","cockpit-diagnostics","cockpit-fields",
+      "cockpit-field-focus","cockpit-trends"]){
       const el=byId(id);el.replaceChildren();
       cardEl(el,"p","cockpit-empty","Keine gültigen Geräte-Livewerte.");
     }
@@ -700,6 +765,7 @@ function cockpitPaint(dev){
   cockpitRenderHms(dev);
   cockpitRenderDiagnostics(dev);
   cockpitRenderFields(dev);
+  cockpitRenderFieldFocus(dev);
   cockpitRenderTrack(dev);
   cockpitRenderTrends(dev);
 }

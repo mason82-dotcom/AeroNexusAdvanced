@@ -17,7 +17,7 @@ def test_status_is_live_cockpit_with_complete_modules():
     for label in (
         'id="cockpit"', 'id="cockpit-device"', 'id="cockpit-refresh"',
         'id="cockpit-live"', 'id="cockpit-track"', 'id="cockpit-trends"',
-        'id="cockpit-fields"', 'id="cockpit-camera"', 'id="cockpit-radio"',
+        'id="cockpit-fields"', 'id="cockpit-field-focus"', 'id="cockpit-camera"', 'id="cockpit-radio"',
         'id="cockpit-payload"', 'id="cockpit-safety"', 'id="cockpit-energy"',
         'id="cockpit-hms"', 'id="legacy-status"',
     ):
@@ -114,6 +114,12 @@ assert.equal(api.cockpitValidGps(49,8),true);
 api.renderCockpit([first]);
 assert.equal(el("cockpit-battery").textContent,"86 %");
 assert.equal(el("cockpit-live").dataset.state,"live");
+const findFocus=(label)=>el("cockpit-field-focus").children.find(r=>bodyText(r).includes(label));
+assert.equal(el("cockpit-field-focus").children.length,4);
+const neverRth=findFocus("RTH-Modus (Code)");
+assert.equal(neverRth.dataset.state,"not-observed");
+assert.ok(bodyText(neverRth).includes("Nicht beobachtet"));
+assert.ok(bodyText(neverRth).includes("–"));
 assert.equal(el("cockpit-mode").textContent,"Manueller Flug");
 assert.equal(el("cockpit-rtk").textContent,"RTK-Fix");
 assert.ok(el("cockpit-coordinates").textContent.includes("49.123400"));
@@ -143,12 +149,77 @@ const oldBattery={...first,field_status:{...first.field_status,
 api.renderCockpit([oldBattery]);
 assert.equal(el("cockpit-battery").textContent,"–",
   "fresh device cannot make an expired battery field live");
+// A cached RTH value must remain explicitly non-live even when the
+// aircraft is online and its other OSD fields are fresh.
+const staleRth={...first,
+  telemetry:{...first.telemetry,cloud_details:{...first.telemetry.cloud_details,
+    rth_mode_code:null}},
+  last_known_telemetry:{...first.telemetry,cloud_details:{...first.telemetry.cloud_details,
+    rth_mode_code:7}},
+  field_status:{...first.field_status,
+    "cloud_details.rth_mode_code":{freshness:"stale",channel:"state",
+      received_at:"2026-10-18T16:00:00Z",age_seconds:421,source_age_seconds:421}}};
+api.renderCockpit([staleRth]);
+const oldRth=findFocus("RTH-Modus (Code)");
+assert.equal(oldRth.dataset.state,"last-known");
+assert.ok(bodyText(oldRth).includes("Letzter bekannter Wert"));
+assert.ok(bodyText(oldRth).includes("NICHT LIVE"));
+assert.ok(bodyText(oldRth).includes("STATE"));
+assert.ok(bodyText(oldRth).includes("421 s"));
+assert.ok(bodyText(oldRth).includes("2026-10-18T16:00:00Z"));
+assert.ok(bodyText(oldRth).includes("7"));
+assert.ok(!bodyText(el("cockpit-safety")).includes("RTH-Modus (Code)"),
+  "stale RTH must not appear in the live safety panel");
+assert.equal(findFocus("Aktiver RTH-Modus (Code)").dataset.state,"not-observed",
+  "an untransmitted optional field must be separate from historical values");
+const liveRth={...staleRth,
+  telemetry:{...staleRth.telemetry,cloud_details:{...staleRth.telemetry.cloud_details,
+    rth_mode_code:7}},
+  field_status:{...staleRth.field_status,
+    "cloud_details.rth_mode_code":{...staleRth.field_status["cloud_details.rth_mode_code"],
+      freshness:"fresh",age_seconds:2,source_age_seconds:2}}};
+api.renderCockpit([liveRth]);
+assert.equal(findFocus("RTH-Modus (Code)").dataset.state,"live");
+assert.ok(bodyText(el("cockpit-safety")).includes("RTH-Modus (Code)"),
+  "live RTH can appear in the live safety panel");
+const slowRth={...liveRth,field_status:{...liveRth.field_status,
+  "cloud_details.rth_mode_code":{...liveRth.field_status["cloud_details.rth_mode_code"],
+    age_seconds:22,source_age_seconds:22}}};
+api.renderCockpit([slowRth]);
+assert.equal(findFocus("RTH-Modus (Code)").dataset.state,"last-known",
+  "the 15-second cockpit threshold must not be loosened");
+// Controller firmware and authorization data may be historical while
+// its OSD feed and live-capacity State properties remain current.
+const rc={...first,kind:"controller",device_id:"CONTROLLER",
+  telemetry:{...first.telemetry,cloud_details:{
+    firmware_version:null,cloud_control_authorization_count:null,
+    live_capacity:{available_videos:2}}},
+  last_known_telemetry:{...first.telemetry,cloud_details:{
+    firmware_version:marker,cloud_control_authorization_count:4,
+    live_capacity:{available_videos:2}}},
+  field_status:{
+    "cloud_details.firmware_version":{freshness:"stale",channel:"state",
+      received_at:"2026-10-18T16:00:00Z",age_seconds:421,source_age_seconds:421},
+    "cloud_details.cloud_control_authorization_count":{freshness:"stale",channel:"state",
+      received_at:"2026-10-18T16:00:00Z",age_seconds:421,source_age_seconds:421},
+    "cloud_details.live_capacity.available_videos":{freshness:"fresh",channel:"state",
+      received_at:"2026-10-18T16:07:00Z",age_seconds:2,source_age_seconds:2}
+  }};
+api.renderCockpit([rc]);
+assert.equal(findFocus("Firmwareversion (Fernsteuerung)").dataset.state,"last-known");
+assert.ok(bodyText(findFocus("Firmwareversion (Fernsteuerung)")).includes(marker),
+  "DJI text should be inserted safely as textContent");
+assert.equal(findFocus("Cloud-Control-Autorisierungen (Anzahl)").dataset.state,"last-known");
+assert.equal(findFocus("Verfügbare Livestreams").dataset.state,"live");
+assert.equal(findFocus("Gleichzeitige Livestreams").dataset.state,"not-observed");
 api.renderCockpit([{...first,online:false}]);
 assert.equal(el("cockpit-battery").textContent,"–");
 api.cockpitUnavailable("HTTP 401");
 assert.equal(el("cockpit-battery").textContent,"–");
 assert.equal(el("cockpit-live").dataset.state,"error");
 assert.equal(el("cockpit-track").children.length,0);
+assert.ok(!bodyText(el("cockpit-field-focus")).includes(marker),
+  "historical fields must clear after an API authorization error");
 api.renderCockpit([{...first,health:[{
   code:"0x16100083",level:"warning",module:"HMS",message:marker,
   source:"dji-cloud-hms",device_domain:"aircraft",
