@@ -403,10 +403,10 @@ def _previous_aeronexus_camera_kmz(mission):
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr("wpmz/template.kml", _xml(
             mission, template=True, timestamp_ms=1760641200000,
-            legacy_camera_params=True))
+            legacy_camera_params=True, legacy_heading_path=True))
         archive.writestr("wpmz/waylines.wpml", _xml(
             mission, template=False, timestamp_ms=1760641200000,
-            legacy_camera_params=True))
+            legacy_camera_params=True, legacy_heading_path=True))
     return output.getvalue()
 
 
