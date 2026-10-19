@@ -71,7 +71,7 @@ a{color:var(--mint)}.layout{max-width:1490px;padding:28px 32px;margin:auto}.back
    const placeholder=add(maps,"map-app-placeholder");
    if(mode==="cockpit")add(placeholder,"cockpit-dock-live-container");
    add(placeholder,"map-app-container").id="map-app-global";
-   if(mode==="cockpit"){add(placeholder,"cockpit-bottom-border-container");add(right,"project-right").append(add(document.createElement("div"),""));right.lastChild.lastChild.id="cockpit-app-container";}
+   if(mode==="cockpit"){add(placeholder,"cockpit-bottom-border-container");add(add(right,"project-right"),"").id="cockpit-app-container";}
  }
  form.addEventListener("submit",function(e){
    e.preventDefault();if(started||!form.reportValidity())return;
