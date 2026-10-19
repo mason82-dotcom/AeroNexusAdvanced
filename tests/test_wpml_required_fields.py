@@ -240,13 +240,13 @@ def test_mandatory_fields_for_seven_supported_action_types(model):
         assert seen == expected
 
 
-@pytest.mark.parametrize("code,subset", [
-    ("toPointAndPassWithContinuityCurvature", "unsupported"),
-    ("coordinateTurn", "unsupported"),
+@pytest.mark.parametrize("code", [
+    "toPointAndPassWithContinuityCurvature",
+    "coordinateTurn",
 ])
-def test_disallowed_turn_styles_never_enter_mandatory_field_matrix(code, subset):
+def test_disallowed_turn_styles_never_enter_mandatory_field_matrix(code):
     from pydantic import ValidationError
+    values = mission().model_dump()
+    values["turn_mode"] = code
     with pytest.raises(ValidationError):
-        mission(curve=False).model_copy(update={"turn_mode": code}).__class__.model_validate(
-            {**mission().model_dump(), "turn_mode": code}
-        )
+        WaypointMission.model_validate(values)
