@@ -187,3 +187,16 @@ def test_device_api_projects_only_requested_page(api, monkeypatch):
     assert beyond.json()["total"] == 3
     assert beyond.json()["devices"] == []
     assert calls[-1] == (99, 1, 0)
+
+def test_status_html_cache_is_bounded_and_keeps_interval_isolation():
+    from aeronexus.status_page import render_page
+    render_page.cache_clear()
+    first = render_page(30)
+    assert render_page(30) is first
+    other = render_page(12)
+    assert other != first
+    assert "12000" in other and "30000" in first
+    for interval in (13, 14, 15, 16):
+        render_page(interval)
+    assert render_page.cache_info().maxsize == 4
+    assert render_page.cache_info().currsize <= 4
