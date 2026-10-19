@@ -239,7 +239,10 @@ def audit_kmz(blob: bytes) -> dict:
                             _finding(report, "LEGACY_CAMERA_FIELDS", "advisory")
         # DJI's current table calls headingPathMode required; sample exports
         # differ, so classify the omission as unresolved, not an invalid flight.
-        if folder.find(W + "globalWaypointHeadingParam") is not None:
+        if (mission.heading_mode != "smoothTransition"
+                and folder.find(W + "globalWaypointHeadingParam") is not None):
+            # The strict importer already proved that smoothTransition has an
+            # explicit per-point heading path in both XML documents.
             heading = folder.find(W + "globalWaypointHeadingParam")
             if heading.find(W + "waypointHeadingPathMode") is None:
                 _finding(report, "HEADING_PATH_MODE_INTEROP_UNVERIFIED", "advisory")
