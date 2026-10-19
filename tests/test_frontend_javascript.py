@@ -324,6 +324,7 @@ const setup=[
   '"mission-finish":mission.finish_action};for(const [id,v] of Object.entries(f))',
   '$(id).value=String(v);$("close-route").checked=mission.close_route;}',
   'function updateMissionSelect(){$("mission-list").value=missionId||"";}',
+  'function clearCloudWaylinePreview(){};',
   'function resolvedWaypoints(){return mission.waypoints;}',
   'let request=async()=>({json:async()=>({id:"saved-id",mission:EMPTY()})});',
   'async function api(){return request();}',

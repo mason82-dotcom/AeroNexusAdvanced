@@ -166,3 +166,33 @@ Namenszuordnungen bleiben unbestätigt, Modellkonflikte werden benannt und die
 Begrenzung der Kandidatenliste wird berücksichtigt. Codes 4/5 werden numerisch
 angezeigt; keine erfundene Bearbeitungs- oder Kartenvorschau-Aktion.
 Reale Tastatur-/Popup-/Narrow-Viewport-Prüfung im Browser steht separat aus.
+
+# Mission Manager: lokale und Cloud-Routen
+
+Der aktuelle Auftrag erweitert die bisher getrennte Cloud-Bibliothek um eine
+gemeinsame Routenauswahl im Missionspanel. Quellen bleiben die geschützte lokale
+Missions-API und der bestehende Reconciliation-Adapter. Cloud-Metadaten begründen
+keine Bearbeitbarkeit und keine Flugfreigabe; die bestehenden Zugriffsregeln gelten.
+
+| Fähigkeit | Kanonischer Eigentümer | Verhalten | Verifikation |
+|---|---|---|---|
+| Auswahl | `mission-list` / `updateMissionSelect` | Native Quellgruppen, IDs mit Provider und Workspace getrennt | Mission-Manager-JS-Test |
+| Laden | `loadMission` / `previewCloudWayline` | Lokale Entwürfe im Editor, lokale Cloud-Routen als getrennte Kartenansicht | JS-/API-Tests |
+| Status | `mission-manager-state` / Studio `.status` | Quellenfehler und nur teilweise geladene Bestände sichtbar | Fehler-/Retrytests |
+| Aktualisieren | `refreshMissionManager` / `loadWaylines` | Beide Quellen, keine Speicherung oder Cloud-Änderung | JS-/API-Tests |
+
+Cloud-Routen werden bereits beim Start geladen. Eine fehlgeschlagene Quelle
+verhindert nicht die Anzeige der anderen. Eine einzelne inventarisierte Route
+bleibt auch bei einem unvollständigen Gesamtbestand abrufbar; unbekannte IDs
+und fremde Workspaces bleiben gesperrt. Der lokale Cloud-Reader liest bis zu
+200 Seiten mit angefragt 50 Einträgen und einem übergreifenden Zeitlimit;
+bei Erreichen der Grenzen wird keine vollständige Inventur behauptet.
+FlightHub-Routen ohne eingerichteten Geometrieadapter werden als Katalogeinträge
+angezeigt und melden die fehlende Lademöglichkeit ausdrücklich.
+
+Cloud-Laden verändert den lokalen Entwurf nicht. Speichern, Löschen und der
+lokale KMZ-Export sind während einer ausgewählten Cloud-Vorschau gesperrt, damit
+sie nicht versehentlich auf den zurückgehaltenen lokalen Entwurf wirken.
+Die Auswahl eines lokalen Entwurfs oder das Ausblenden der Cloud-Vorschau
+stellt den lokalen Kontext wieder her. Eine neue Vorschau bricht den vorherigen
+Abruf ab; höchstens 25 Sekunden Wartezeit, überholte Antworten werden verworfen.

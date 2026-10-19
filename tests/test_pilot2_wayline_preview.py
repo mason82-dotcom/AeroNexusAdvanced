@@ -151,7 +151,7 @@ def test_api_requires_viewer_and_known_full_inventory(monkeypatch):
         assert seen == [WAYLINE]
 
 
-def test_api_refuses_partial_inventory_before_fetch(monkeypatch):
+def test_api_loads_known_route_in_partial_inventory_and_rejects_unknown(monkeypatch):
     async def partial(self):
         return {"state": "connected", "workspace_id": WORKSPACE,
                 "pagination_complete": False,
@@ -159,11 +159,23 @@ def test_api_refuses_partial_inventory_before_fetch(monkeypatch):
     monkeypatch.setattr(lw.LocalWaylineReader, "read", partial)
     token = "test-wayline-preview-viewer-token-123456789"
     monkeypatch.setenv("AERONEXUS_STATUS_TOKEN", token)
+    monkeypatch.setattr(webapp, "load_credentials", lambda _: CREDS)
+    seen = []
+    async def preview(credentials, ident):
+        seen.append(ident)
+        return {"features": [{"geometry": {"type": "Point", "coordinates": [8, 49]}}],
+                "source": "waylines.wpml", "point_count": 1}
+    monkeypatch.setattr(webapp, "read_preview", preview)
     with TestClient(webapp.app) as client:
         r = client.get("/api/v1/local-cloud/waylines/" + WAYLINE + "/preview",
                        headers={"Authorization": "Bearer " + token})
         assert r.status_code == 200
-        assert r.json() == {"state": "incomplete_inventory", "features": []}
+        assert r.json()["state"] == "connected"
+        assert seen == [WAYLINE]
+        r = client.get("/api/v1/local-cloud/waylines/" + str(UUID(int=17)) + "/preview",
+                       headers={"Authorization": "Bearer " + token})
+        assert r.status_code == 404
+        assert seen == [WAYLINE]
 
 
 def test_studio_preview_never_mutates_local_mission():

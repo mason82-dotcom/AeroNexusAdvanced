@@ -523,8 +523,8 @@ async def local_cloud_wayline_preview(wayline_id: str, request: Request, respons
     inventory = await app.state.local_waylines.read()
     if inventory["state"] != "connected":
         return {"state": inventory["state"], "features": []}
-    if not inventory.get("pagination_complete"):
-        return {"state": "incomplete_inventory", "features": []}
+    # A partial listing still authorizes the explicitly inventoried route.
+    # Missing later pages must not block every route already returned by the source.
     available = {route["wayline_id"]: route for route in inventory["waylines"]}
     if canonical not in available:
         raise HTTPException(status_code=404, detail="Wayline not found")
@@ -785,11 +785,13 @@ def studio_create_mission(mission: WaypointMission, request: Request,
 
 @app.get("/api/v1/studio/missions/reconciliation")
 async def studio_mission_reconciliation(request: Request, response: Response,
+                                  refresh: bool = False,
                                   authorization: str | None = Header(default=None)) -> dict:
     _no_cache(response)
     workspace = _studio_workspace(request, authorization)
     runtime = app.state.status_runtime
-    local = await app.state.local_waylines.read()
+    local = (await app.state.local_waylines.read(force=True) if refresh else
+             await app.state.local_waylines.read())
     return compare_missions(workspace.list_missions(), runtime.catalog,
                             runtime.summary()["flighthub"]["catalog_updated_at"], local)
 

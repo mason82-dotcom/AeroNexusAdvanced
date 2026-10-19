@@ -64,6 +64,7 @@ class Group {
  addLayer(layer){if(!this.layers.includes(layer))this.layers.push(layer);return this}
  removeLayer(layer){this.layers=this.layers.filter(x=>x!==layer);return this}
  clearLayers(){this.layers=[];return this}
+ getLayers(){return this.layers}
  addTo(parent){parent.addLayer(this);return this}
  getBounds(){return {isValid:()=>this.layers.length>0,pad(){return this},extend(){return this}}}
 }
@@ -97,7 +98,7 @@ const main=new Function('$','els','api','map','L','switchTab','getMap','mapWarni
  'errorMessage','clean','cloudOverviewLayer','waylinePreviewLayer',
  'cloudOverviewGeneration','cloudOverviewController','cloudOverviewRoutes',
  'CLOUD_OVERVIEW_COLORS','waylinePreviewRequest','requestAnimationFrame',logic+
- '\nreturn {openCloudOverview,closeCloudOverview,renderCloudOverview,fitCloudRoutes,'+
+ '\nreturn {openCloudOverview,closeCloudOverview,renderCloudOverview,fitCloudRoutes,previewCloudWayline,'+
  'cloudOverviewLineStats,cloudOverviewFormatDistance,syncCloudOverviewShortcut,'+
  'setData(d){waylineData=d},getRoutes(){return cloudOverviewRoutes},getLayer(){return cloudOverviewLayer}};');
 const overview=main($,els,api,map,L,()=>{},()=>{},s=>warn.push(s),e=>e.message,v=>String(v??'–'),
@@ -108,6 +109,12 @@ const routes=Array.from({length:10},(_,n)=>({provider:n===9?'flighthub-public-v2
  wayline_id:'r'+n,name:'Route '+n}));
 overview.setData({waylines:routes,local_pilot:{state:'connected',pagination_complete:true},missions:[]});
 (async()=>{
+ assert.equal(await overview.previewCloudWayline(routes[0],$('load-manager-route')),true);
+ assert.equal($('load-manager-route').disabled,false);
+ assert.equal(await overview.previewCloudWayline(routes[3],$('load-manager-route')),false);
+ assert.equal($('load-manager-route').disabled,false);
+ assert.match($('wayline-state').textContent,/storage_unavailable/);
+ hits=[];
  await overview.openCloudOverview();
  assert.equal(hits.length,8);
  assert.deepEqual(hits.map(h=>h.split('/')[5]),['r0','r1','r2','r3','r4','r5','r6','r7']);
