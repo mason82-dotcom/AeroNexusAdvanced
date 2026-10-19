@@ -29,6 +29,10 @@ Details: [Live-Cockpit](docs/live-telemetry-cockpit.md), [Missions- und Wayline-
 - **Sicherheit:** Der optionale tokenfreie HTTPS-LAN-Modus kann lokalen Geräten **auch Schreibzugriff auf Studio-Missionen und lokale Medien** ermöglichen. Nicht ins Internet weiterleiten. [LAN-Zugriffsmodell](docs/phase-14-token-free-lan.md).
 - Die technische Blockierung von Flugbefehlen ersetzt **nicht** die manuelle Sicherheitsprüfung exportierter DJI-KMZ/WPML-Dateien vor einem Flug.
 
+## Optionales Control Center auf Port 8085
+
+Ein eigenständiges, responsives [AeroNexus-Control-Portal](docs/control-portal-fh2.md) kann per ausschließlich lesendem Docker-Bind-Mount unter `/aeronexus/` neben der bestehenden DJI-Pilot-2-Anmeldung bereitgestellt werden. Es verlinkt die bestehenden geschützten Fachmodule, während die native FlightHub-2-Projektkarte bzw. das DJI-Cockpit eine **separate FlightHub-2-Installation**, eigene Projektberechtigungen und eine bewusste Aktivierung voraussetzen. Dieses optionale Portal enthält keine DJI-Secrets und startet keine Flüge. **Das Vorbereiten auf GitHub ist kein produktiver Pi-Rollout.**
+
 ## Installation und Entwicklung
 
 Voraussetzung: Python 3.11 oder neuer. Die Grundinstallation ist nicht gleichbedeutend mit einer betriebsbereiten DJI-/MinIO-Anbindung.

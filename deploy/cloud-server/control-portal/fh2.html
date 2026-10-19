@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>AeroNexusAdvanced · DJI FlightHub 2 Komponenten</title>
+<style>
+:root{color-scheme:dark;font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;background:#091320;color:#e9f1ff;--edge:#30445d;--muted:#a7bbd0;--mint:#7de3c7}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% 0%,#16415c70,transparent 40%),#091320}
+a{color:var(--mint)}.layout{max-width:1490px;padding:28px 32px;margin:auto}.back{display:inline-block;margin:0 0 30px;text-decoration:none}.intro{display:flex;justify-content:space-between;align-items:flex-start;gap:25px;flex-wrap:wrap}.eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--mint);font-weight:800}.intro h1{font-size:clamp(28px,3.6vw,46px);line-height:1.1;letter-spacing:-.03em;margin:10px 0}.intro p{color:var(--muted);max-width:690px;margin:0 0 20px}.note{border:1px solid #866c43;color:#f2d9a7;border-radius:9px;background:#3d302344;padding:14px 18px;margin:20px 0}.panel{background:#111f31;border:1px solid var(--edge);border-radius:14px;padding:24px}.cols{display:grid;grid-template-columns:380px minmax(0,1fr);gap:18px}.fields{display:grid;gap:12px}label{font-weight:650;font-size:12px;color:#c9d8e9;display:block}input,select{display:block;width:100%;height:43px;color:white;background:#0a1625;border:1px solid #44617d;border-radius:7px;padding:8px 10px;margin-top:5px;font:inherit}input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--mint);outline-offset:2px}.consent{display:flex;align-items:flex-start;gap:11px;font-size:12px;font-weight:500;color:#efcea4}.consent input{width:18px;height:18px;min-width:18px;margin:0}button{background:#72bffc;color:#071524;font:inherit;font-weight:760;border:0;border-radius:8px;padding:11px 18px;cursor:pointer}button:hover{background:#b3dcff}button:disabled{opacity:.55;cursor:not-allowed}.sub{color:var(--muted);font-size:12px}.result{display:flex;flex-direction:column;min-width:0}.result .head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}.result h2{font-size:18px;margin:0}.state{color:#e8c990;font-size:12px}#fh2-mount{min-height:580px;position:relative;background:#0a1727;border:1px dashed #3c5974;border-radius:10px;overflow:hidden;display:flex;flex-direction:column}.placeholder{margin:auto;max-width:450px;padding:30px;text-align:center;color:var(--muted)}.project-details{display:flex;flex:1;min-height:580px}.right-micro-app{display:flex;position:relative;flex:1;min-width:0}.maps-micro-app,.map-app-placeholder,.map-app-container{display:flex;flex:1;min-width:0;min-height:0}.project-right{display:flex;flex:1;min-width:0}#project-app-container,#project-middle-container,#cockpit-app-container{min-width:0}#project-app-container>div,#cockpit-app-container>div,.map-app-container>div{height:100%;width:100%}.router-cockpit{display:flex;flex:1}.cockpit-dock-live-container,.cockpit-bottom-border-container,.cockpit-left-border-container{position:relative}.fh2-container{display:flex;flex-direction:column;min-height:580px;height:75vh;width:100%}
+@media(max-width:1020px){.cols{grid-template-columns:1fr}.layout{padding:18px}.panel{padding:16px}.fh2-container{min-height:520px;height:65vh}}
+</style>
+</head>
+<body><div class="layout">
+<a class="back" href="./">← AeroNexus Control Center</a>
+<header class="intro"><div><div class="eyebrow">Optional · Originalkomponenten von DJI</div><h1>FlightHub 2 – Native Components</h1><p>Offizielle DJI-Frontend-Komponenten werden erst nach Eingabe eines kompatiblen FlightHub-2-Servers geladen. Die lokale AeroNexus-DJI-Cloud-API auf Port 8085 ersetzt diesen Server nicht.</p></div><a href="https://github.com/dji-sdk/FlightHub-2-Frontend-Standalone-Component" target="_blank" rel="noopener noreferrer">DJI-Originalprojekt ↗</a></header>
+<div class="note" role="note"><strong>Achtung:</strong> Eine native DJI-Komponente kann eigene Bedienelemente einschließlich möglicher Steuerfunktionen bereitstellen. Dies ist <strong>kein schreibgeschützter Modus</strong>. Nur mit einem vertrauenswürdigen FlightHub-2-Server und bei ausgeschlossener unbeabsichtigter Flugausführung verwenden. Auf Port 8085 läuft ohne ausdrückliche Aktivierung weiterhin ausschließlich die bestehende Pilot-2-Weboberfläche.</div>
+<div class="cols">
+<section class="panel"><h2>Verbindung konfigurieren</h2><p class="sub">Keine Zugangsdaten werden in localStorage, Cookies oder der URL gespeichert. Das Token wird beim Laden an das vertrauenswürdige DJI-SDK im Browser übergeben.</p>
+<form id="config" class="fields" autocomplete="off">
+<label for="host">FlightHub-2-Frontend-Host (paas.js)
+<input id="host" placeholder="https://fh2.example.local" required autocapitalize="off" spellcheck="false"></label>
+<label for="server">FlightHub-2-Backend-Adresse
+<input id="server" placeholder="https://fh2.example.local:30812" required spellcheck="false"></label>
+<label for="project">Projekt-UUID
+<input id="project" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required spellcheck="false"></label>
+<label for="token">DJI-Projekttoken (nur für diese Sitzung)
+<input id="token" type="password" autocomplete="new-password" required spellcheck="false"></label>
+<label for="view">Komponente
+<select id="view"><option value="project">Projektkarte</option><option value="cockpit">DJI Cockpit</option></select></label>
+<label for="gateway">Fernsteuerung / Gateway-SN (für Cockpit)
+<input id="gateway" placeholder="Nur Cockpit" spellcheck="false"></label>
+<label for="drone">Drohnen-SN (für Cockpit)
+<input id="drone" placeholder="Nur Cockpit" spellcheck="false"></label>
+<label class="consent" for="consent"><input id="consent" type="checkbox" required>Ich verwende ausschließlich meinen vertrauenswürdigen FlightHub-2-Server und akzeptiere, dass DJI-Komponenten eigene Schreib- oder Flugsteuerungsfunktionen enthalten können.</label>
+<button id="load" type="submit">Native DJI-Komponente laden</button>
+</form>
+<p class="sub">Nur HTTPS oder HTTP auf privaten IPv4-Adressen / localhost. Frontend- und Backend-Host müssen übereinstimmen. Bei Fehlern Seite neu laden. Die URL allein genügt nicht: DJI-Dienst, Freischaltung und Token werden benötigt.</p></section>
+<section class="panel result" aria-label="DJI Komponente"><div class="head"><h2>DJI-Ansicht</h2><span class="state" id="state" role="status" aria-live="polite">Nicht initialisiert</span></div>
+<div id="fh2-mount"><div class="placeholder">Noch keine Verbindung.<p>Eine native DJI-Komponente wird erst nach expliziter Eingabe der Serveradresse und Zustimmung aktiviert. Die AeroNexus-Module für Telemetrie und Missionen funktionieren unabhängig davon.</p></div></div></section>
+</div>
+</div>
+<script>
+"use strict";
+(function(){
+ const form=document.getElementById("config"), mount=document.getElementById("fh2-mount");
+ const state=document.getElementById("state"), button=document.getElementById("load");
+ let started=false;
+ function privateHost(host){
+   if(host==="localhost"||host==="127.0.0.1")return true;
+   const parts=host.split(".");if(parts.length!==4||parts.some(x=>!/^\d{1,3}$/.test(x)||+x>255))return false;
+   const a=+parts[0],b=+parts[1];
+   return a===10||(a===172&&b>=16&&b<=31)||(a===192&&b===168)||(a===127);
+ }
+ function origin(raw){
+   const u=new URL(raw);
+   if(u.username||u.password||u.pathname!=="/"||u.search||u.hash)throw new Error("Nur eine reine Host-Adresse ohne Pfad verwenden.");
+   if(u.protocol!=="https:"&&!(u.protocol==="http:"&&privateHost(u.hostname)))throw new Error("HTTPS erforderlich; HTTP ist nur für private IPv4-Server erlaubt.");
+   return u;
+ }
+ function add(parent,cls){const node=document.createElement("div");node.className=cls;parent.append(node);return node}
+ function renderFrame(mode){
+   mount.replaceChildren();
+   const container=add(mount,"fh2-container");
+   if(mode==="cockpit")add(container,"cockpit-header-container").id="cockpit-header-container";
+   const details=add(container,"project-details"+(mode==="cockpit"?" router-cockpit":""));
+   add(details,"").id="project-app-container";
+   add(details,"").id="project-middle-container";
+   const right=add(details,"right-micro-app");
+   const maps=add(right,"maps-micro-app");
+   if(mode==="cockpit")add(maps,"cockpit-left-border-container");
+   const placeholder=add(maps,"map-app-placeholder");
+   if(mode==="cockpit")add(placeholder,"cockpit-dock-live-container");
+   add(placeholder,"map-app-container").id="map-app-global";
+   if(mode==="cockpit"){add(placeholder,"cockpit-bottom-border-container");add(add(right,"project-right"),"").id="cockpit-app-container";}
+ }
+ form.addEventListener("submit",function(e){
+   e.preventDefault();if(started||!form.reportValidity())return;
+   try{
+     const host=origin(document.getElementById("host").value.trim());
+     const server=origin(document.getElementById("server").value.trim());
+     if(host.hostname!==server.hostname)throw new Error("Frontend und Backend müssen denselben Hostnamen verwenden.");
+     if(host.protocol==="https:"&&server.protocol!=="https:")throw new Error("HTTPS-Frontend benötigt HTTPS-Backend.");
+     const project=document.getElementById("project").value.trim();
+     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(project))throw new Error("Ungültige Projekt-UUID.");
+     const token=document.getElementById("token").value;
+     const mode=document.getElementById("view").value;
+     const gateway=document.getElementById("gateway").value.trim(),drone=document.getElementById("drone").value.trim();
+     if(mode==="cockpit"&&(!gateway||!drone))throw new Error("Für das Cockpit sind Gateway-SN und Drohnen-SN erforderlich.");
+     if(!document.getElementById("consent").checked)throw new Error("Explizite Zustimmung erforderlich.");
+     started=true;button.disabled=true;state.textContent="DJI-SDK wird geladen…";
+     // The official component script runs in this page's origin: use only YOUR trusted FH2 host.
+     const script=document.createElement("script");
+     script.src=new URL("/paas.js",host).href;
+     script.setAttribute("fh2","");
+     script.referrerPolicy="no-referrer";
+     script.onload=function(){
+       try{
+         if(!window.FH2||typeof window.FH2.initConfig!=="function")throw new Error("FH2 SDK nicht verfügbar.");
+         const ws=new URL(server.href);
+         ws.protocol=server.protocol==="https:"?"wss:":"ws:";
+         ws.pathname="/duplex/web";
+         window.FH2.initConfig({serverUrl:server.origin,wssUrl:ws.href,hostUrl:host.origin,prjId:project,projectToken:token});
+         // Forget the visible form copy; the SDK may keep its session token in memory.
+         document.getElementById("token").value="";
+         renderFrame(mode);
+         if(mode==="cockpit"){
+           if(typeof window.FH2.loadCockpit!=="function")throw new Error("Cockpit wird von diesem SDK nicht angeboten.");
+           window.FH2.loadCockpit("cockpit-app-container",{gateway_sn:gateway,drone_sn:drone});
+         }else{
+           if(typeof window.FH2.loadProject!=="function")throw new Error("Projektansicht wird von diesem SDK nicht angeboten.");
+           window.FH2.loadProject("project-app-container");
+         }
+         state.textContent="Initialisiert (DJI-Livedaten nicht verifiziert)";
+       }catch(err){state.textContent="SDK-Initialisierung fehlgeschlagen";mount.textContent=err.message||"Unbekannter SDK-Fehler";}
+     };
+     script.onerror=function(){state.textContent="paas.js konnte nicht geladen werden";mount.textContent="DJI-SDK-Datei am angegebenen Frontend-Host nicht erreichbar."};
+     document.head.append(script);
+   }catch(err){state.textContent="Konfigurationsfehler";mount.textContent=err.message||"Ungültige Konfiguration."}
+ });
+})();
+</script>
+</body></html>

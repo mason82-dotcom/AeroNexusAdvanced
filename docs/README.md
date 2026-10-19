@@ -41,6 +41,7 @@
 - [Thermal und PV](thermal.md), [Multispektral / Mavic 3M](multispectral.md)
 - [Metashape-Workflow](metashape-integration.md)
 - [Webbranding für lokalen DJI-Cloud-Server](pilot2-web-branding.md)
+- [Port 8085: neues Control Center und optionale native FlightHub-2-Komponenten](control-portal-fh2.md) – sicherer Compose-Overlay, Freigabegrenzen und Rückfall
 
 ## Validierung und historische Entwicklungsprotokolle
 
