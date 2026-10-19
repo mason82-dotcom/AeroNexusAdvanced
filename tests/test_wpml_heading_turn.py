@@ -54,10 +54,11 @@ def assert_roundtrip(m):
     assert restored.model_dump() == m.model_dump()
     audit = audit_kmz(exported)
     assert audit["editable_in_aeronexus"] is True
-    if m.heading_mode == "smoothTransition":
-        assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" not in {
-            item["code"] for item in audit["findings"]
-        }
+    # The template retains its legacy global-heading block even when every
+    # point overrides it. DJI still lists its path child as required.
+    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" in {
+        item["code"] for item in audit["findings"]
+    }
     return roots(exported)
 
 
