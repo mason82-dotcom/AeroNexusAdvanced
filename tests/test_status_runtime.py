@@ -150,3 +150,34 @@ def test_utc_iso_rejects_naive():
 def test_invalid_settings(stale, interval):
     with pytest.raises(ValueError):
         StatusSettings(stale, interval)
+
+def test_summary_single_pass_preserves_all_freshness_and_warning_counts():
+    rt = setup_runtime()
+    for device_id in ("stale", "skew", "unknown", "missing"):
+        rt.inventory.add_device(Device(K, "p", device_id, DeviceType.AIRCRAFT, device_id))
+    now = datetime(2026, 10, 19, tzinfo=timezone.utc)
+    for device_id, online in (("a", True), ("rc", False),
+                              ("stale", True), ("skew", True), ("unknown", True)):
+        rt.inventory.update_telemetry("p", DeviceSnapshot(K, device_id, online=online))
+    for device_id, timestamp in (
+        ("a", now - timedelta(seconds=5)),
+        ("rc", now - timedelta(seconds=10)),
+        ("stale", now - timedelta(seconds=91)),
+        ("skew", now + timedelta(seconds=3)),
+    ):
+        rt.inventory._received_at[(K, "p", device_id)] = timestamp
+    rt.inventory._received_at.pop((K, "p", "unknown"))
+    rt.health[(K, "p", "a")] = ({"level": "warning"},)
+    rt.health[(K, "p", "stale")] = ({"level": "info"},)
+
+    summary = rt.summary(now=now)
+    assert summary["registered_devices"] == 6
+    assert (summary["aircraft"], summary["controllers"]) == (5, 1)
+    assert {key: summary[key] for key in
+            ("fresh", "stale", "missing", "unknown_age", "clock_skew")} == {
+                "fresh": 2, "stale": 1, "missing": 1,
+                "unknown_age": 1, "clock_skew": 1,
+            }
+    assert (summary["online_fresh"], summary["offline_fresh"]) == (1, 1)
+    assert summary["health_warnings"] == 1
+    assert "device_id" not in summary
