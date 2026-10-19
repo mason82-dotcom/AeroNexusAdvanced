@@ -40,10 +40,10 @@ def test_empty_state_example_parses_only_with_explicit_opt_in():
 def test_empty_state_with_nonfinite_sibling_is_rejected():
     # Even when /state permits data={}, its whole JSON envelope must remain valid.
     ingest = CloudOsdIngest(StatusRuntime())
-    for invalid in ("NaN", "Infinity", "-Infinity"):
+    for invalid in ("NaN", "Infinity", "-Infinity", "1e9999", "-1e9999"):
         raw = ('{"timestamp": 1, "data": {}, "unexpected": ' + invalid + '}').encode()
         assert not ingest.handle(STATE, raw, allow_state=True)
-    assert (ingest.accepted, ingest.rejected, ingest.ignored) == (0, 3, 0)
+    assert (ingest.accepted, ingest.rejected, ingest.ignored) == (0, 5, 0)
     assert not ingest.runtime.inventory.devices()
 
 

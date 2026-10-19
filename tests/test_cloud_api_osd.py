@@ -70,6 +70,16 @@ def test_nonfinite_json_constants_are_rejected_even_in_unknown_properties():
                 osd_data(raw)
 
 
+@pytest.mark.parametrize("token", ["1e9999", "-1e9999"])
+@pytest.mark.parametrize("field", ["elevation", "unknown_dji_property"])
+def test_json_exponent_overflow_is_rejected_in_known_and_unknown_fields(token, field):
+    # The literals are valid JSON but Python's float parser otherwise returns inf.
+    raw = (f'{{"timestamp": 1, "data": {{'
+           f'"mode_code": 3, "{field}": {token}}}}}').encode()
+    with pytest.raises(CloudOsdError):
+        osd_data(raw)
+
+
 def test_direct_decoder_rejects_nonfinite_python_numbers():
     # Direct normalization (without the JSON parser) must also fail closed.
     for number in (float("nan"), float("inf"), float("-inf")):

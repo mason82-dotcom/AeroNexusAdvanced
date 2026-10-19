@@ -59,8 +59,16 @@ def osd_data(payload: bytes) -> Mapping:
 
 
 def _reject_nonfinite_json_constant(_value: str):
-    """JSON permits finite numbers only; Python's decoder otherwise accepts NaN/Infinity."""
+    """Reject non-JSON NaN and Infinity tokens."""
     raise ValueError("Non-finite JSON number")
+
+
+def _finite_json_float(value: str) -> float:
+    """Reject valid JSON numeric literals that overflow Python's float."""
+    number = float(value)
+    if not isfinite(number):
+        raise ValueError("Non-finite JSON number")
+    return number
 
 
 def osd_envelope(payload: bytes, *, allow_empty_data: bool = False) -> tuple[Mapping, int | None]:
@@ -73,7 +81,8 @@ def osd_envelope(payload: bytes, *, allow_empty_data: bool = False) -> tuple[Map
         raise CloudOsdError("Invalid OSD payload size")
     try:
         message = json.loads(bytes(payload).decode("utf-8"),
-                             parse_constant=_reject_nonfinite_json_constant)
+                             parse_constant=_reject_nonfinite_json_constant,
+                             parse_float=_finite_json_float)
     except (UnicodeError, ValueError) as exc:
         raise CloudOsdError("OSD payload is not JSON") from exc
     data = message.get("data") if isinstance(message, dict) else None

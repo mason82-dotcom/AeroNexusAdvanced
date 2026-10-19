@@ -27,6 +27,9 @@ Python's `json.loads` accepts the non-JSON numeric tokens `NaN`,
 `Infinity` and `-Infinity` by default. These are not permitted JSON numbers.
 The MQTT OSD/state envelope decoder now rejects them, including inside
 unknown vendor properties, before mapping anything to the inventory.
+Valid JSON numeric literals with exponents so large that Python would parse
+them as positive or negative infinity (for example `1e9999`) are rejected
+as well, even in unknown fields or next to an empty `state.data` object.
 Direct `normalize_osd()` calls also reject nonfinite Python floats.
 
 Positive finite numbers, signed finite values and documented nullable
@@ -34,8 +37,9 @@ properties retain their existing behavior. The runtime's per-field source
 clocks, device classification, output schema, subscription ACL and
 no-publish policy are unchanged.
 
-An independent open PR (#83) addresses DJI's documented **empty** state
-envelopes. This branch intentionally leaves that separate behavior unchanged.
+The combined draft PR #85 integrates the complementary fixes from PR #83
+(valid empty `state.data={}` as a no-op) and PR #84 (strict JSON decoding).
+It is not a hardware acceptance or an authorization to deploy.
 
 ## Verification
 
