@@ -22,4 +22,7 @@ jobs:
         run: |
           python scripts/pi/fetch_leaflet_test_assets.py --output "$RUNNER_TEMP/aeronexus-leaflet"
           echo "AERONEXUS_LEAFLET_TEST_ASSETS=$RUNNER_TEMP/aeronexus-leaflet" >> "$GITHUB_ENV"
+      - name: Offline status performance sample (synthetic data)
+        if: github.event_name == 'pull_request'
+        run: python scripts/maintenance/benchmark_refactor.py --devices 40 --events 1600 --iterations 25
       - run: pytest -q

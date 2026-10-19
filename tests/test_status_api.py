@@ -165,3 +165,49 @@ def test_malformed_server_token_fails_closed(api, monkeypatch, configured):
     res = api.get("/api/v1/status/devices", headers={"Authorization": "Bearer " + TOKEN})
     assert res.status_code == 503
     assert "ABC123" not in res.text
+
+def test_device_api_projects_only_requested_page(api, monkeypatch):
+    monkeypatch.setenv("AERONEXUS_STATUS_TOKEN", TOKEN)
+    runtime = app.state.status_runtime
+    calls = []
+    original = runtime.device_views
+    def spy(provider=None, project_id=None, **kwargs):
+        result = original(provider, project_id, **kwargs)
+        calls.append((kwargs.get("offset"), kwargs.get("limit"), len(result)))
+        return result
+    monkeypatch.setattr(runtime, "device_views", spy)
+    headers = {"Authorization": "Bearer " + TOKEN}
+    result = api.get("/api/v1/status/devices?limit=1&offset=1", headers=headers)
+    assert result.status_code == 200
+    assert result.json()["total"] == 3
+    assert len(result.json()["devices"]) == 1
+    assert calls == [(1, 1, 1)]
+    beyond = api.get("/api/v1/status/devices?limit=1&offset=99", headers=headers)
+    assert beyond.status_code == 200
+    assert beyond.json()["total"] == 3
+    assert beyond.json()["devices"] == []
+    assert calls[-1] == (99, 1, 0)
+
+def test_status_html_cache_is_bounded_and_keeps_interval_isolation():
+    from aeronexus.status_page import render_page
+    render_page.cache_clear()
+    first = render_page(30)
+    assert render_page(30) is first
+    other = render_page(12)
+    assert other != first
+    assert "12000" in other and "30000" in first
+    for interval in (13, 14, 15, 16):
+        render_page(interval)
+    assert render_page.cache_info().maxsize == 4
+    assert render_page.cache_info().currsize <= 4
+
+def test_background_cockpit_tab_does_not_schedule_avoidable_reads():
+    page = render_page(30)
+    assert "function refreshVisible(callback){if(!document.hidden)callback();}" in page
+    assert "setInterval(()=>refreshVisible(updateSummary),intervalMs);" in page
+    assert "setInterval(()=>refreshVisible(updateDevices),Math.min(intervalMs,5000));" in page
+    assert "setInterval(()=>refreshVisible(updateCloud),15000);" in page
+    assert "setInterval(()=>refreshVisible(updateCatalog),60000);" in page
+    assert 'document.addEventListener("visibilitychange",()=>{' in page
+    assert "updateSummary();updateDevices();updateCloud();updateCatalog();" in page
+    assert "/api/v1/flight/command" not in page

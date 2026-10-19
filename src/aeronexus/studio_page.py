@@ -4,6 +4,7 @@ Static HTML shell; direct trusted-HTTPS-LAN workspace access with no token
 prompt. No flight commands, DJI upload or automatic geolocation sharing.
 """
 from html import escape
+from functools import lru_cache
 
 from .wpml_export import MODELS, MODEL_LABELS
 
@@ -3061,8 +3062,12 @@ loadWorkspace();
 </html>"""
 
 
+@lru_cache(maxsize=1)
 def render_studio() -> str:
-    """The shell includes no credentials or mission content."""
+    """Return the immutable, public HTML shell without rebuilding 176 KiB.
+
+    Only static WPML model choices are injected; no per-user or secret data.
+    """
     options = "".join(f'<option value="{escape(model, quote=True)}">{escape(MODEL_LABELS[model])}</option>'
                       for model in MODELS)
     return HTML.replace("__MISSION_MODEL_OPTIONS__", options)

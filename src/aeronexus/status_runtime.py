@@ -62,11 +62,19 @@ class StatusRuntime:
     def device_views(
         self, provider: ProviderKind | None = None,
         project_id: str | None = None, *, now: datetime | None = None,
+        offset: int = 0, limit: int | None = None,
+        include_hms_history: bool = True,
     ) -> tuple[dict, ...]:
+        """Project only requested device rows; summaries omit HMS history lookups."""
+        if type(offset) is not int or offset < 0 or (
+                limit is not None and (type(limit) is not int or limit < 1)):
+            raise ValueError("Invalid device view pagination")
         now = utc_now() if now is None else now
         utc_iso(now)
+        devices = self.inventory.devices(provider, project_id)
+        selected = devices[offset:] if limit is None else devices[offset:offset + limit]
         views = []
-        for device in self.inventory.devices(provider, project_id):
+        for device in selected:
             snapshot = self.inventory.telemetry(device.provider, device.project_id, device.device_id)
             received = self.inventory.telemetry_received_at(
                 device.provider, device.project_id, device.device_id)
@@ -112,33 +120,45 @@ class StatusRuntime:
                 "telemetry": sample,
                 "health": list(self.health.get(
                     (device.provider, device.project_id, device.device_id), ())),
-                "hms_history": self.hms_history.list_events(
+                "hms_history": (self.hms_history.list_events(
                     provider=device.provider.value, project_id=device.project_id,
-                    device_id=device.device_id, limit=12)["events"],
+                    device_id=device.device_id, limit=12)["events"]
+                    if include_hms_history else []),
                 **cloud,
             })
         return tuple(views)
 
     def summary(self, *, now: datetime | None = None) -> dict:
         now = utc_now() if now is None else now
-        views = self.device_views(now=now)
-        freshness = ("fresh", "stale", "missing", "unknown_age", "clock_skew")
+        views = self.device_views(now=now, include_hms_history=False)
+        # The summary endpoint is polled regularly. Accumulate counters in one
+        # pass instead of traversing every device for each individual metric.
+        freshness_counts = dict.fromkeys(
+            ("fresh", "stale", "missing", "unknown_age", "clock_skew"), 0)
+        aircraft = controllers = online_fresh = offline_fresh = health_warnings = 0
+        for view in views:
+            aircraft += view["kind"] == DeviceType.AIRCRAFT.value
+            controllers += view["kind"] == DeviceType.CONTROLLER.value
+            if view["freshness"] in freshness_counts:
+                freshness_counts[view["freshness"]] += 1
+            online_fresh += view["online"] is True
+            offline_fresh += view["online"] is False
+            health_warnings += any(a.get("level") == "warning" for a in view["health"])
         return {
             "server_time": utc_iso(now),
             "registered_devices": len(views),
-            "aircraft": sum(v["kind"] == DeviceType.AIRCRAFT.value for v in views),
-            "controllers": sum(v["kind"] == DeviceType.CONTROLLER.value for v in views),
-            **{status: sum(v["freshness"] == status for v in views) for status in freshness},
-            "online_fresh": sum(v["online"] is True for v in views),
-            "offline_fresh": sum(v["online"] is False for v in views),
+            "aircraft": aircraft,
+            "controllers": controllers,
+            **freshness_counts,
+            "online_fresh": online_fresh,
+            "offline_fresh": offline_fresh,
             "stale_after_seconds": self.settings.stale_after_seconds,
             "refresh_every_seconds": self.settings.refresh_every_seconds,
             "polling": self.polling,
             "last_refresh_at": utc_iso(self.last_refresh_at),
             "last_refresh_success_at": utc_iso(self.last_refresh_success_at),
             "live_feed": {"state": "disabled"} if self.live_feed is None else self.live_feed(),
-            "health_warnings": sum(any(a.get("level") == "warning" for a in v["health"])
-                                   for v in views),
+            "health_warnings": health_warnings,
             "hms_history_events": len(self.hms_history.events),
             "hms_history_persistent": (self.hms_history.path is not None
                                        and not self.hms_history.storage_error),

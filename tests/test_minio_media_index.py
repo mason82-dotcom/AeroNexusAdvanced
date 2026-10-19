@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 import importlib
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -186,3 +187,30 @@ def test_stale_index_refuses_to_serve_changed_object(tmp_path, monkeypatch, mini
         path = "/api/v1/studio/dji-media/" + media_id("dji-cloud", "a.jpg") + "/file"
         assert api.get(path, headers=HEADERS).status_code == 409
         assert client.streams == []
+
+def test_unchanged_minio_scan_refreshes_marker_without_rewriting_metadata(tmp_path):
+    index = DjiMediaIndex(tmp_path / "private")
+    client = FakeMinio({"flight/A.JPG": (b"photo-one", "etag-a")})
+    first = index.scan(client, "dji-cloud")
+    assert (first["added"], first["unchanged"]) == (1, 0)
+
+    def index_record():
+        with sqlite3.connect(index.path) as db:
+            return db.execute(
+                "SELECT filename,mime,size_bytes,etag,modified_at,scan_marker "
+                "FROM media WHERE id=?",
+                (media_id("dji-cloud", "flight/A.JPG"),),
+            ).fetchone()
+
+    old = index_record()
+    second = index.scan(client, "dji-cloud")
+    new = index_record()
+    assert second["unchanged"] == 1
+    assert second["updated"] == second["removed_from_index"] == 0
+    assert old[:5] == new[:5]
+    assert old[5] != new[5]
+
+    client.items.clear()
+    third = index.scan(client, "dji-cloud")
+    assert third["removed_from_index"] == 1
+    assert index.list()["total"] == 0

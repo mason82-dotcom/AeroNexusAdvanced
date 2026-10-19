@@ -150,3 +150,64 @@ def test_utc_iso_rejects_naive():
 def test_invalid_settings(stale, interval):
     with pytest.raises(ValueError):
         StatusSettings(stale, interval)
+
+def test_summary_single_pass_preserves_all_freshness_and_warning_counts():
+    rt = setup_runtime()
+    for device_id in ("stale", "skew", "unknown", "missing"):
+        rt.inventory.add_device(Device(K, "p", device_id, DeviceType.AIRCRAFT, device_id))
+    now = datetime(2026, 10, 19, tzinfo=timezone.utc)
+    for device_id, online in (("a", True), ("rc", False),
+                              ("stale", True), ("skew", True), ("unknown", True)):
+        rt.inventory.update_telemetry("p", DeviceSnapshot(K, device_id, online=online))
+    for device_id, timestamp in (
+        ("a", now - timedelta(seconds=5)),
+        ("rc", now - timedelta(seconds=10)),
+        ("stale", now - timedelta(seconds=91)),
+        ("skew", now + timedelta(seconds=3)),
+    ):
+        rt.inventory._received_at[(K, "p", device_id)] = timestamp
+    rt.inventory._received_at.pop((K, "p", "unknown"))
+    rt.health[(K, "p", "a")] = ({"level": "warning"},)
+    rt.health[(K, "p", "stale")] = ({"level": "info"},)
+
+    summary = rt.summary(now=now)
+    assert summary["registered_devices"] == 6
+    assert (summary["aircraft"], summary["controllers"]) == (5, 1)
+    assert {key: summary[key] for key in
+            ("fresh", "stale", "missing", "unknown_age", "clock_skew")} == {
+                "fresh": 2, "stale": 1, "missing": 1,
+                "unknown_age": 1, "clock_skew": 1,
+            }
+    assert (summary["online_fresh"], summary["offline_fresh"]) == (1, 1)
+    assert summary["health_warnings"] == 1
+    assert "device_id" not in summary
+
+def test_summary_omits_unused_per_device_hms_queries(monkeypatch):
+    rt = setup_runtime()
+    def forbid_history_lookup(**kwargs):
+        raise AssertionError("Anonymous summary must not scan HMS device history")
+    monkeypatch.setattr(rt.hms_history, "list_events", forbid_history_lookup)
+    assert rt.summary()["registered_devices"] == 2
+    # Detailed device responses still request device-local HMS history.
+    with pytest.raises(AssertionError, match="must not scan"):
+        rt.device_views()
+
+
+def test_device_view_page_only_projects_selected_telemetry(monkeypatch):
+    rt = setup_runtime()
+    rt.inventory.update_telemetry("p", DeviceSnapshot(K, "a", online=True))
+    rt.inventory.update_telemetry("p", DeviceSnapshot(K, "rc", online=False))
+    scanned = []
+    telemetry = rt.inventory.telemetry
+    def counted(provider, project_id, device_id):
+        scanned.append(device_id)
+        return telemetry(provider, project_id, device_id)
+    monkeypatch.setattr(rt.inventory, "telemetry", counted)
+    page = rt.device_views(offset=1, limit=1)
+    assert [row["device_id"] for row in page] == ["rc"]
+    assert scanned == ["rc"]
+    assert rt.device_views(offset=20, limit=1) == ()
+    assert scanned == ["rc"]
+    for offset, limit in ((-1, 1), (0, 0), (True, 1), (0, True)):
+        with pytest.raises(ValueError, match="pagination"):
+            rt.device_views(offset=offset, limit=limit)
