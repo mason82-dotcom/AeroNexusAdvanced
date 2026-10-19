@@ -30,6 +30,9 @@ unknown vendor properties, before mapping anything to the inventory.
 Valid JSON numeric literals with exponents so large that Python would parse
 them as positive or negative infinity (for example `1e9999`) are rejected
 as well, even in unknown fields or next to an empty `state.data` object.
+Deeply nested JSON below the 64 KiB MQTT payload limit is also rejected
+safely if Python's decoder reaches its recursion limit, without raising
+into the event-loop callback or updating the device inventory.
 Direct `normalize_osd()` calls also reject nonfinite Python floats.
 
 Positive finite numbers, signed finite values and documented nullable

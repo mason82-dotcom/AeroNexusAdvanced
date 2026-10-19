@@ -80,6 +80,18 @@ def test_json_exponent_overflow_is_rejected_in_known_and_unknown_fields(token, f
         osd_data(raw)
 
 
+def test_deeply_nested_json_is_rejected_without_mutating_telemetry():
+    # Below the MQTT size limit; CPython can raise RecursionError while decoding.
+    nested = b"[" * 20000 + b"0" + b"]" * 20000
+    payload = b'{"data":{"mode_code":3,"vendor":' + nested + b"}}"
+    assert len(payload) < 65536
+    ingest = CloudOsdIngest(StatusRuntime())
+    assert not ingest.handle(topic(DRONE), payload)
+    assert ingest.rejected == 1 and ingest.accepted == 0
+    assert not ingest.runtime.inventory.devices()
+    assert ingest.last_message_at is None
+
+
 def test_direct_decoder_rejects_nonfinite_python_numbers():
     # Direct normalization (without the JSON parser) must also fail closed.
     for number in (float("nan"), float("inf"), float("-inf")):

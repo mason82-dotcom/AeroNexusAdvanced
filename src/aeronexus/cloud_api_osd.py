@@ -83,7 +83,9 @@ def osd_envelope(payload: bytes, *, allow_empty_data: bool = False) -> tuple[Map
         message = json.loads(bytes(payload).decode("utf-8"),
                              parse_constant=_reject_nonfinite_json_constant,
                              parse_float=_finite_json_float)
-    except (UnicodeError, ValueError) as exc:
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        # Deeply nested, otherwise size-bounded JSON must not escape the
+        # passive MQTT ingest callback as an unhandled exception.
         raise CloudOsdError("OSD payload is not JSON") from exc
     data = message.get("data") if isinstance(message, dict) else None
     if not isinstance(data, dict) or (not data and not allow_empty_data):
