@@ -517,10 +517,20 @@ byId("message").textContent="Gerätedaten werden automatisch geladen…";
 updateDevices();
 updateCatalog();
 updateSummary();
-setInterval(updateSummary,intervalMs);
-setInterval(()=>{if(!document.hidden)updateDevices();},Math.min(intervalMs,5000));
-updateCloud();setInterval(updateCloud,15000);
-setInterval(updateCatalog,60000);
+// A hidden cockpit must not keep polling the Pi for data nobody can see.
+// Returning to the tab triggers an immediate catch-up without fabricating freshness.
+function refreshVisible(callback){if(!document.hidden)callback();}
+setInterval(()=>refreshVisible(updateSummary),intervalMs);
+setInterval(()=>refreshVisible(updateDevices),Math.min(intervalMs,5000));
+updateCloud();setInterval(()=>refreshVisible(updateCloud),15000);
+setInterval(()=>refreshVisible(updateCatalog),60000);
+if(typeof document.addEventListener==="function"){
+  document.addEventListener("visibilitychange",()=>{
+    if(!document.hidden){
+      updateSummary();updateDevices();updateCloud();updateCatalog();
+    }
+  });
+}
 </script>
 </body>
 </html>"""
