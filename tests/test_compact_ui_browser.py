@@ -3,7 +3,20 @@
 The generated HTML is tested without credentials, network calls, or DJI hardware.
 These are geometric UI assertions, not a live-Pi acceptance.
 """
+import os
+
 import pytest
+
+
+def _launch_or_skip(runtime):
+    """Normal pytest can skip missing Chromium; the dedicated job must not."""
+    from playwright.sync_api import Error
+    try:
+        return runtime.chromium.launch(headless=True, args=["--no-sandbox"])
+    except Error as exc:
+        if os.environ.get("AERONEXUS_REQUIRE_BROWSER") == "1":
+            pytest.fail(f"Mandatory Chromium layout audit unavailable: {exc}")
+        pytest.skip(f"Chromium not installed in this test environment: {exc}")
 
 from aeronexus.dji_media_page import render_dji_media_page
 from aeronexus.multispectral_page import render_multispectral_page
@@ -30,7 +43,7 @@ def test_compact_layout_in_real_chromium(width, height):
     playwright = pytest.importorskip("playwright.sync_api")
     try:
         with playwright.sync_playwright() as runtime:
-            browser = runtime.chromium.launch(headless=True, args=["--no-sandbox"])
+            browser = _launch_or_skip(runtime)
             try:
                 for name, render in PAGES:
                     page = browser.new_page(
@@ -84,7 +97,7 @@ def test_portal_compact_rail_in_real_chromium():
         / "deploy/cloud-server/control-portal/index.html"
     ).read_text(encoding="utf-8")
     with playwright.sync_playwright() as runtime:
-        browser = runtime.chromium.launch(headless=True, args=["--no-sandbox"])
+        browser = _launch_or_skip(runtime)
         try:
             for width, height in VIEWPORTS:
                 page = browser.new_page(viewport={"width": width, "height": height})
