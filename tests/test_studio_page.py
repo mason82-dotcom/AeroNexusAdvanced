@@ -315,3 +315,10 @@ def test_phase19_wgs84_terrain_overlay_profile_and_map_controls():
     assert "innerHTML" not in page
     assert "localStorage" not in page
     assert "/api/v1/flight/command" not in page
+
+def test_studio_shell_is_cached_and_contains_no_per_request_state():
+    first = render_studio()
+    second = render_studio()
+    assert first is second
+    assert "__MISSION_MODEL_OPTIONS__" not in first
+    assert 'id="auth-token"' not in first
