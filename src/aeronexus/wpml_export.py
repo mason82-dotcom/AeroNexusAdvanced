@@ -190,6 +190,8 @@ class Waypoint(BaseModel):
         data = handler(self)
         if not self.actions:
             data.pop("actions", None)
+        if self.heading_angle_deg is None:
+            data.pop("heading_angle_deg", None)
         return data
 
     @model_validator(mode="after")
@@ -229,6 +231,18 @@ class WaypointMission(BaseModel):
     turn_mode: TurnMode = "toPointAndStopWithDiscontinuityCurvature"
     close_route: bool = False  # extra real return-to-first waypoint in exported WPML
     waypoints: list[Waypoint] = Field(default_factory=list, max_length=500)
+
+    @model_serializer(mode="wrap")
+    def dump_without_default_navigation(self, handler):
+        # Preserve pre-extension workspace and API JSON when not opted in.
+        data = handler(self)
+        if self.heading_mode == "followWayline":
+            data.pop("heading_mode", None)
+        if self.heading_path_mode is None:
+            data.pop("heading_path_mode", None)
+        if self.turn_mode == "toPointAndStopWithDiscontinuityCurvature":
+            data.pop("turn_mode", None)
+        return data
 
     @field_validator("altitude_m", "speed_mps", "takeoff_security_height_m", "rth_height_m")
     @classmethod
