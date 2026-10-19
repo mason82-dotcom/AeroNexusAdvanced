@@ -149,9 +149,10 @@ def test_cli_is_read_only_and_does_not_print_path_or_mission_content(tmp_path, c
     assert "PRIVATE_NAME_MUST_NOT_LEAK" not in out
 
 
-def test_heading_path_mode_is_an_advisory_not_a_false_flight_failure():
+def test_complete_default_heading_path_avoids_interop_advisory():
     report = audit_kmz(kmz())
     assert report["editable_in_aeronexus"]
-    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" in {
+    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" not in {
         x["code"] for x in report["findings"]
     }
+    assert report["full_dji_wpml_conformance_verified"] is False
