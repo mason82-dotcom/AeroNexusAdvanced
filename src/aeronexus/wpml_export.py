@@ -453,7 +453,13 @@ def _xml(mission: WaypointMission, *, template: bool, timestamp_ms: int,
                 _set(heading, "waypointHeadingPathMode", mission.heading_path_mode)
             turning = ET.SubElement(place, _w("waypointTurnParam"))
             _set(turning, "waypointTurnMode", mission.turn_mode)
-            _set(turning, "waypointTurnDampingDist", 0)
+            if mission.turn_mode == "toPointAndStopWithContinuityCurvature":
+                # DJI waylines.wpml: conditional mandatory segment geometry flag.
+                # Damping distance is NOT required for this stop-at-point mode.
+                _set(place, "useStraightLine", 1)
+            else:
+                # Preserve the preexisting canonical AeroNexus format.
+                _set(turning, "waypointTurnDampingDist", 0)
         if wp.take_photo:
             _photo_action(place, index, mission.drone_model,
                           legacy_camera_params=legacy_camera_params)
