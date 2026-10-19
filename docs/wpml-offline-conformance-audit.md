@@ -47,6 +47,24 @@ exakt zwei erwartete Mitglieder, keine Duplikate, Symlinks, verschlüsselten
 Mitglieder oder XML-DTD. Ein reparierender oder allgemeiner DJI-Import
 ist absichtlich nicht vorhanden.
 
+## Integrierte Exportprüfung (isolierter PR, nicht produktiv)
+
+Der bestehende authentifizierte lokale Endpunkt
+`GET /api/v1/studio/missions/{mission_id}/export.kmz` erzeugt zuerst
+wie bisher die KMZ im Speicher und führt anschließend den Offline-Audit
+**auf genau den zu sendenden Bytes** aus. Nur `editable_in_aeronexus=true`
+führt zur Auslieferung. Andernfalls wird die Ausgabe mit neutralem
+HTTP 422 (`Offline WPML export validation failed`) verweigert.
+Keine XML-Autokorrektur, kein Upload, kein neuer DJI-API-Aufruf.
+Ein Smoke-Test manipuliert gezielt die Exportfunktion und prüft
+das fail-closed-Verhalten; bestehende Studio-HTTP-Tests kontrollieren
+den unveränderten normalen Export.
+
+Die Prüfung dient ausschließlich dem Eigendaten-Roundtrip. Sie garantiert
+weder importierbare Pilot-2-Aufträge noch Vollständigkeit der DJI-
+Spezifikation. Bei großen KMZ-Dateien greifen die dokumentierten
+Größengrenzen des Audits.
+
 ## Explizite Grenzen
 
 - Neuere DJI-Pilot-2-WPML-1.0.6-Missionen bleiben `unsupported`, auch
