@@ -48,7 +48,7 @@ from .thermal_flights import ThermalFlights, ThermalJobRunning
 from .media_sync import read_status as read_media_sync_status
 from .photo_catalog import PhotoCatalog
 from .cloud_stack import CloudStackHealth, fleet_view, overall as cloud_overall
-from .livestream import LiveError, LiveNotFound, LiveStreams, LiveUnavailable
+from .livestream import LiveError, LiveNotFound, LiveStreams, LiveUnavailable, MAX_SDP_BYTES
 from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, MetashapePackageNotFound,
                                list_packages, package_path, prepare_package, remove_package)
 from .raster_results import (RasterResults, RasterError, RasterUnavailable,
@@ -447,9 +447,23 @@ async def live_whep_offer(stream_id: str, request: Request,
     # application/sdp is not a CORS-safelisted type: cross-site pages cannot post here.
     if (content_type or "").split(";")[0].strip().lower() != "application/sdp":
         raise HTTPException(status_code=415, detail="Content-Type application/sdp required")
-    body = await request.body()
+    length = request.headers.get("content-length")
+    if length is not None:
+        try:
+            size = int(length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length") from exc
+        if size < 0:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+        if size > MAX_SDP_BYTES:
+            raise HTTPException(status_code=413, detail="Maximum SDP size is 64 KiB")
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_SDP_BYTES:
+            raise HTTPException(status_code=413, detail="Maximum SDP size is 64 KiB")
+        body.extend(chunk)
     try:
-        answer, session = await asyncio.to_thread(_live_streams().offer, stream_id, body)
+        answer, session = await asyncio.to_thread(_live_streams().offer, stream_id, bytes(body))
     except (LiveError, LiveUnavailable) as exc:
         raise _live_http_error(exc) from exc
     return Response(content=answer, status_code=201, media_type="application/sdp",

@@ -633,8 +633,8 @@ def import_kmz(data: bytes) -> WaypointMission:
     heading_path_mode = next(iter(custom_paths)) if any(custom) else None
     turn_mode = txt(route_points[0], _w("waypointTurnParam") + "/" + _w("waypointTurnMode"))
     # AeroNexus exports "close route" as the actual final flight waypoint.
-    # Recover the option from that final duplicate only when no camera action
-    # would be discarded. Older explicitly repeated finish points may be
+    # Recover the option only when no camera action or heading would be
+    # discarded. Older explicitly repeated finish points may be
     # normalized to the same flight path with a separate reversible switch.
     closed = (
         len(waypoints) >= 4
@@ -642,6 +642,7 @@ def import_kmz(data: bytes) -> WaypointMission:
             == (waypoints[0]["latitude"], waypoints[0]["longitude"])
         and not waypoints[-1]["take_photo"]
         and not waypoints[-1].get("actions")
+        and waypoints[-1]["heading_angle_deg"] is None
         and len({(point["latitude"], point["longitude"]) for point in waypoints[:-1]}) >= 3
     )
     if closed:

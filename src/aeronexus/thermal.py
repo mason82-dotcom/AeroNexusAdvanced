@@ -386,15 +386,18 @@ class ThermalService:
         params = params or MeasureParams()
         key = (record["id"], record["etag"], tuple(sorted(params.overrides().items())))
         with self._lock:
-            if key in self._measurements:
+            result = self._measurements.get(key)
+            if result is not None:
                 self._measurements.move_to_end(key)
-                return self._measurements[key]
-        data = self._bytes(record, cache=cache)
-        if not thermal_metadata(data)["radiometric"]:
-            raise ThermalError("Image has no radiometric DJI thermal data")
-        width, height, grid = self.sdk().measure(data, params)
-        result = Measurement(width, height, grid, temperature_stats(width, height, grid),
-                             params.overrides())
+        if result is None:
+            data = self._bytes(record, cache=cache)
+            if not thermal_metadata(data)["radiometric"]:
+                raise ThermalError("Image has no radiometric DJI thermal data")
+            width, height, grid = self.sdk().measure(data, params)
+            result = Measurement(width, height, grid, temperature_stats(width, height, grid),
+                                 params.overrides())
+        # Flight storage may have been attached after an interactive measurement.
+        # Persist cached results too, outside the cache lock and without another SDK call.
         if not params.overrides() and self.stats_sink is not None:
             try:  # persisted per-image summary for flight analysis and the map
                 self.stats_sink(record["id"], record["etag"], result.stats)

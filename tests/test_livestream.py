@@ -1,4 +1,5 @@
 """Livestream relay: MediaMTX path list, WHEP signalling, safety limits, API."""
+import asyncio
 import importlib
 import json
 
@@ -7,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aeronexus.livestream import (LiveError, LiveNotFound, LiveSettings, LiveStreams,
-                                  LiveUnavailable, dji_stream, stream_id)
+                                  LiveUnavailable, MAX_SDP_BYTES, dji_stream, stream_id)
 
 APP_MODULE = importlib.import_module("aeronexus.app")
 TOKEN = "livestream-test-only-dashboard-token-123456"
@@ -140,6 +141,44 @@ def test_api_reports_unavailable_server(client, monkeypatch):
     r = client.post(f"/api/v1/live/streams/{stream_id(PATH)}/whep", content=OFFER,
                     headers={**HEADERS, "Content-Type": "application/sdp"})
     assert r.status_code == 503
+
+
+@pytest.mark.parametrize("declared_length", [None, str(MAX_SDP_BYTES + 1), "1"])
+def test_oversized_offer_stops_reading_before_relay(client, monkeypatch, declared_length):
+    consumed = []
+
+    def unexpected_relay():
+        pytest.fail("Oversized SDP must not contact MediaMTX")
+
+    monkeypatch.setattr(APP_MODULE, "_live_streams", unexpected_relay)
+
+    async def run():
+        async def chunks():
+            for _ in range(8):
+                consumed.append(True)
+                yield b"x" * (MAX_SDP_BYTES // 2)
+
+        headers = {**HEADERS, "Content-Type": "application/sdp"}
+        if declared_length is not None:
+            headers["Content-Length"] = declared_length
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=APP_MODULE.app),
+                                     base_url="http://localhost") as http:
+            response = await http.post(f"/api/v1/live/streams/{stream_id(PATH)}/whep",
+                                       headers=headers, content=chunks())
+        assert response.status_code == 413
+
+    asyncio.run(run())
+    assert len(consumed) <= 3
+    if declared_length == str(MAX_SDP_BYTES + 1):
+        assert not consumed
+
+
+def test_offer_at_size_limit_still_relays(client):
+    response = client.post(f"/api/v1/live/streams/{stream_id(PATH)}/whep",
+                           headers={**HEADERS, "Content-Type": "application/sdp"},
+                           content=OFFER + b" " * (MAX_SDP_BYTES - len(OFFER)))
+    assert response.status_code == 201
+    assert response.content == ANSWER
 
 
 def test_operations_page_has_live_panel(client):
