@@ -724,6 +724,11 @@ function renderFlights(){
     card.append(el("small",`${f.model||"–"} · ${f.images} Bilder · ${f.with_position} mit Position · ${f.analyzed} gemessen`+(f.max_c!=null?` · Max ${deg(f.max_c)}`:"")));
     const running=job.state==="running"&&job.flight_id===f.id;
     if(running){const pr=el("progress");pr.max=job.total||1;pr.value=job.processed;card.append(pr,el("small",`${job.processed}/${job.total} · ${fmt(job.seconds,0)} s`+(job.failed?` · ${job.failed} Fehler`:"")));}
+    if(job.flight_id===f.id&&(job.state==="done"||job.state==="cancelled")){
+      const title=job.state==="cancelled"?"Auswertung abgebrochen":job.failed?"Auswertung mit Fehlern beendet":"Auswertung beendet";
+      const summary=el("small",`${title}: ${job.measured||0} gespeichert · ${job.skipped||0} übersprungen · ${job.failed||0} Fehler`);
+      summary.setAttribute("role","status");card.append(summary);
+    }
     const row=el("div",null,"row");row.style.marginTop="6px";
     const go=el("button",running?"Abbrechen":(f.analyzed<f.images?"Auswerten":"Erneut prüfen"));go.type="button";
     go.disabled=!running&&job.state==="running";

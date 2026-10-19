@@ -196,3 +196,22 @@ sie nicht versehentlich auf den zurückgehaltenen lokalen Entwurf wirken.
 Die Auswahl eines lokalen Entwurfs oder das Ausblenden der Cloud-Vorschau
 stellt den lokalen Kontext wieder her. Eine neue Vorschau bricht den vorherigen
 Abruf ab; höchstens 25 Sekunden Wartezeit, überholte Antworten werden verworfen.
+
+# Thermal: Abschluss und Fehler einer Flugauswertung
+
+Fachliche Quellen: `docs/thermal.md`, `ThermalService.measure` und
+`ThermalFlights._run`. Die bestehende Flugkarte und ihre Auswerten-/Abbrechen-
+Aktionen bleiben die kanonischen Eigentümer. Visuelle Tokens und Layout ändern
+sich nicht.
+
+Eine als gemessen gezählte Batch-Aufnahme muss ihre Zusammenfassung gespeichert
+haben. Nicht gespeicherte Aufnahmen bleiben erneut auswertbar; interaktive
+Einzelmessungen dürfen unabhängig von ihrem optionalen Statistikcache angezeigt
+werden. Unerwartete Fehler dürfen keinen dauerhaft laufenden Auftrag hinterlassen.
+
+Die Statuszeile der betroffenen Flugkarte bleibt nach Abschluss sichtbar und
+unterscheidet beendet, mit Fehlern beendet und abgebrochen. Sie nennt gespeicherte,
+übersprungene und fehlgeschlagene Bilder als Text in einer Statusregion. Keine
+Diagnose mit Dateipfaden, Zugangsdaten oder unverarbeiteten Exception-Texten.
+Verifikation: tatsächliche SDK-/SQLite-Testfixtures, Fehler und Wiederholung
+für neue und gecachte Messungen sowie Node-Laufzeittest der Flugkarten.

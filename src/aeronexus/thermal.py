@@ -36,6 +36,10 @@ class ThermalChanged(ThermalError):
     pass
 
 
+class ThermalStatsError(RuntimeError):
+    """A required batch summary was not stored; contains no database details."""
+
+
 THERMAL_SUFFIX = "_T.JPG"
 VISUAL_SUFFIXES = ("_V", "_W", "_Z")  # M3T visible / M4T wide / M4T zoom
 _XMP_HEADER = b"http://ns.adobe.com/xap/1.0/\x00"
@@ -381,9 +385,11 @@ class ThermalService:
                 "visual_id": self.visual_id(record), **meta}
 
     def measure(self, item_id: str, params: MeasureParams | None = None, *,
-                cache: bool = True) -> Measurement:
+                cache: bool = True, require_persistence: bool = False) -> Measurement:
         record = self.record(item_id)
         params = params or MeasureParams()
+        if require_persistence and (self.stats_sink is None or params.overrides()):
+            raise ThermalStatsError("Thermal statistics storage unavailable")
         key = (record["id"], record["etag"], tuple(sorted(params.overrides().items())))
         with self._lock:
             result = self._measurements.get(key)
@@ -401,8 +407,10 @@ class ThermalService:
         if not params.overrides() and self.stats_sink is not None:
             try:  # persisted per-image summary for flight analysis and the map
                 self.stats_sink(record["id"], record["etag"], result.stats)
-            except Exception:  # never fail a measurement because of the summary cache
-                pass
+            except Exception as exc:
+                if require_persistence:
+                    raise ThermalStatsError("Thermal statistics could not be stored") from exc
+                # Interactive measurements remain usable without their optional summary.
         if not cache:
             return result
         with self._lock:
