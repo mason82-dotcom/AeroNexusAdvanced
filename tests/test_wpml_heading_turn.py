@@ -52,7 +52,12 @@ def assert_roundtrip(m):
     exported = export_kmz(m, timestamp_ms=1792367700000)
     restored = import_kmz(exported)
     assert restored.model_dump() == m.model_dump()
-    assert audit_kmz(exported)["editable_in_aeronexus"] is True
+    audit = audit_kmz(exported)
+    assert audit["editable_in_aeronexus"] is True
+    if m.heading_mode == "smoothTransition":
+        assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" not in {
+            item["code"] for item in audit["findings"]
+        }
     return roots(exported)
 
 
