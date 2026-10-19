@@ -68,7 +68,7 @@ nav.app-nav .app-nav-menu{min-width:170px;padding:4px;box-shadow:0 8px 20px #000
 .side .studio-disclosure{padding:8px}
 .side .route-option,.wayline-card{padding:8px}
 .status{padding:8px 10px;margin:8px 0}
-.layout:has(.side){grid-template-columns:minmax(280px,310px) minmax(0,1fr)}
+/* Studio three-column mission inspector layout is owned by studio_page.py. */
 body:has(#operations-map) .layout,body:has(#thermal-map) .layout{
  gap:8px;padding:8px;grid-template-columns:minmax(208px,255px) minmax(320px,1fr) minmax(240px,300px)
 }
@@ -148,7 +148,7 @@ body:has(#cockpit) .hms-entry{padding:7px}
 @media(max-width:1150px) and (min-width:761px){
  body:has(#operations-map) .layout,body:has(#thermal-map) .layout{grid-template-columns:minmax(205px,245px) minmax(0,1fr)}
  body:has(#operations-map) .right,body:has(#thermal-map) .right{grid-column:1/-1}
- .layout:has(.side){grid-template-columns:minmax(265px,300px) minmax(0,1fr)}
+ /* Keep the Studio responsive grid and map inspector unchanged. */
 }
 @media(max-width:900px){
  body:has(#operations-map) .layout,body:has(#thermal-map) .layout,body:has(#map[role="region"]) .layout{grid-template-columns:minmax(0,1fr)}
