@@ -26,24 +26,18 @@ from datetime import datetime
 
 from .cloud_api_mqtt import CloudMqttFeed, CloudOsdIngest, MqttSettings
 from .dji_media_index import MediaIndexError, browse_media, index_summary
-from .dji_media_page import render_dji_media_page
 from .cloud_api2_bridge import CloudApi2Bridge, CloudApi2Settings
 from .flighthub_catalog import read_task_track, read_task_media
 from .flighthub_poller import FlightHubFleetRefresher, FlightHubPollSettings
 from .providers import ProviderKind
-from .status_page import render_page
-from .studio_page import render_studio
-from .operations_page import render_operations
 from .studio_workspace import Workspace, WorkspaceError, MAX_MEDIA_BYTES, MEDIA_TYPES
 from .minio_media_index import (DjiMediaChanged, DjiMediaIndex, DjiMediaError, MinioMediaSettings,
                                 minio_client, BROWSER_PREVIEW_MIMES,
                                 MAX_BROWSER_PREVIEW_BYTES)
 from .geo_planning import GeoObject, SurveyPlanRequest, generate_survey_preview
 from .thermal import ThermalChanged, ThermalError, ThermalNotFound, ThermalService
-from .thermal_page import render_thermal_page
 from .multispectral import (LAYERS, MultispectralBusy, MultispectralError, MultispectralNotFound,
                             MultispectralService)
-from .multispectral_page import render_multispectral_page
 from .thermal_flights import ThermalFlights, ThermalJobRunning
 from .media_sync import read_status as read_media_sync_status
 from .photo_catalog import PhotoCatalog
@@ -53,7 +47,6 @@ from .metashape_bridge import (MetashapeExportBusy, MetashapeExportError, Metash
                                list_packages, package_path, prepare_package, remove_package)
 from .raster_results import (RasterResults, RasterError, RasterUnavailable,
                              RasterNotFound, RasterChanged, RasterBusy, _libraries)
-from .results_page import render_results_page
 from .multispectral_report import build_report, report_csv
 from .pv_inspection import PvConditions, PvInspectionError, PvThresholds, Region
 from .thermal_sdk import MeasureParams, ThermalSdkBusy, ThermalSdkError, ThermalSdkUnavailable
@@ -648,6 +641,7 @@ async def status_page(request: Request, response: Response) -> str:
         "style-src 'unsafe-inline'; connect-src 'self'; "
         "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
+    from .status_page import render_page
     return render_page(app.state.status_runtime.settings.refresh_every_seconds)
 
 
@@ -682,6 +676,7 @@ def operations_page(request: Request, response: Response) -> str:
         "connect-src 'self' https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
     )
+    from .operations_page import render_operations
     return render_operations()
 
 
@@ -698,6 +693,7 @@ def dji_media_page(request: Request, response: Response) -> str:
         "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
+    from .dji_media_page import render_dji_media_page
     return render_dji_media_page()
 
 
@@ -743,6 +739,7 @@ def studio_page(request: Request, response: Response) -> str:
         "media-src 'self' blob:; frame-ancestors 'none'; "
         "base-uri 'none'; form-action 'none'"
     )
+    from .studio_page import render_studio
     return render_studio()
 
 
@@ -1209,6 +1206,7 @@ def thermal_page(request: Request, response: Response) -> str:
         "connect-src 'self'; "
         "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
+    from .thermal_page import render_thermal_page
     return render_thermal_page()
 
 
@@ -1478,6 +1476,7 @@ def results_page(request: Request, response: Response) -> str:
         "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
         "frame-ancestors 'none'; form-action 'none'"
     )
+    from .results_page import render_results_page
     return render_results_page()
 
 
@@ -1564,6 +1563,7 @@ def multispectral_page(request: Request, response: Response) -> str:
         "img-src 'self' blob: data: https://cdn.jsdelivr.net https://tile.openstreetmap.org https://server.arcgisonline.com; "
         "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
     )
+    from .multispectral_page import render_multispectral_page
     return render_multispectral_page()
 
 

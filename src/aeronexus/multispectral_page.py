@@ -6,6 +6,7 @@ contacts MinIO and never sees object keys.
 """
 
 import json
+from functools import lru_cache
 
 from .multispectral_report import CSV_FIELDS
 
@@ -705,6 +706,7 @@ loadPackages().catch(e=>{$("ortho-state").textContent="Pakete nicht abrufbar: "+
 """
 
 
+@lru_cache(maxsize=1)
 def render_multispectral_page() -> str:
     return HTML.replace("__MS_REPORT_CSV_FIELDS__", json.dumps(CSV_FIELDS))
 
