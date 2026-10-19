@@ -200,3 +200,14 @@ def test_status_html_cache_is_bounded_and_keeps_interval_isolation():
         render_page(interval)
     assert render_page.cache_info().maxsize == 4
     assert render_page.cache_info().currsize <= 4
+
+def test_background_cockpit_tab_does_not_schedule_avoidable_reads():
+    page = render_page(30)
+    assert "function refreshVisible(callback){if(!document.hidden)callback();}" in page
+    assert "setInterval(()=>refreshVisible(updateSummary),intervalMs);" in page
+    assert "setInterval(()=>refreshVisible(updateDevices),Math.min(intervalMs,5000));" in page
+    assert "setInterval(()=>refreshVisible(updateCloud),15000);" in page
+    assert "setInterval(()=>refreshVisible(updateCatalog),60000);" in page
+    assert 'document.addEventListener("visibilitychange",()=>{' in page
+    assert "updateSummary();updateDevices();updateCloud();updateCatalog();" in page
+    assert "/api/v1/flight/command" not in page
