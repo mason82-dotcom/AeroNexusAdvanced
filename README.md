@@ -79,3 +79,5 @@ Die ursprünglichen detaillierten Phasenprotokolle bleiben zur Nachvollziehbarke
 ## Lizenz, Rechte und externe Dienste
 
 Siehe [NOTICE](NOTICE) und die jeweils verlinkten Anleitungen. DJI-SDKs, DJI-Cloud-API-Dokumentation, Kartendienste und optionale externe Werkzeuge haben eigene Nutzungsbedingungen. Kartenaufrufe können den sichtbaren Kartenausschnitt an die jeweiligen Tile-Provider übertragen.
+
+Der [FlightHub-orientierte Arbeitsbereich](docs/flighthub2-premium-workspace.md) bündelt bestehende Funktionen über Port 8085, ohne den DJI-Vue-Server neu zu bauen. Die originalen DJI-FlightHub-Frontend-Komponenten brauchen weiterhin einen separat betriebenen kompatiblen FlightHub-2-Server; DJI OpenAPI V2 wird durch die vorhandenen geschützten Adapter gelesen.
