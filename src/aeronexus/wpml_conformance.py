@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from .wpml_export import (
     KML_NS, WPML_NS, MODELS, import_kmz, waypoints_for_export,
 )
+from .wpml_required_fields import required_waypoint_findings
 
 DJI_REFERENCE = (
     "https://developer.dji.com/doc/cloud-api-tutorial/en/"
@@ -140,6 +141,16 @@ def audit_kmz(blob: bytes) -> dict:
         )
         return report
 
+    # Independent, scoped rules give precise diagnostics for missing mandatory
+    # or conditionally mandatory fields before the strict canonical round-trip.
+    # The heading-path interoperability discrepancy remains an advisory below,
+    # since current DJI reference revisions differ in default/profile behavior.
+    missing = required_waypoint_findings(roots[0], roots[1])
+    if missing:
+        report["status"] = "unsupported"
+        report["findings"].extend(missing)
+        return report
+
     # Importer proves full representation of BOTH documents by reconstructing
     # and comparing their canonical expanded XML signatures. In particular, it
     # refuses unknown actions/params and mixed legacy/new camera formats.
@@ -237,12 +248,21 @@ def audit_kmz(blob: bytes) -> dict:
                             _finding(report, "INVALID_CAMERA_LENS_SELECTION", "error")
                         if legacy and mission.drone_model in LENS_MODELS:
                             _finding(report, "LEGACY_CAMERA_FIELDS", "advisory")
-        # DJI's current table calls headingPathMode required; sample exports
-        # differ, so classify the omission as unresolved, not an invalid flight.
-        if folder.find(W + "globalWaypointHeadingParam") is not None:
-            heading = folder.find(W + "globalWaypointHeadingParam")
-            if heading.find(W + "waypointHeadingPathMode") is None:
-                _finding(report, "HEADING_PATH_MODE_INTEROP_UNVERIFIED", "advisory")
+        # DJI marks headingPathMode as required for heading parameter blocks.
+        # An unused global heading block (per-point overrides enabled) can
+        # still contain an omitted child. Surface it, do not claim full DJI
+        # validation and do not rewrite legacy route semantics.
+        missing_path = any(
+            element.tag in (W + "globalWaypointHeadingParam",
+                            W + "waypointHeadingParam")
+            and element.find(W + "waypointHeadingPathMode") is None
+            for element in folder.iter()
+        )
+        if missing_path and not any(
+            entry["code"] == "HEADING_PATH_MODE_INTEROP_UNVERIFIED"
+            for entry in report["findings"]
+        ):
+            _finding(report, "HEADING_PATH_MODE_INTEROP_UNVERIFIED", "advisory")
 
     if any(item["severity"] == "error" for item in report["findings"]):
         report["status"] = "unsupported"
