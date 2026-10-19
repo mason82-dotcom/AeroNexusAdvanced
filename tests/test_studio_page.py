@@ -101,7 +101,8 @@ def test_lan_workspace_auto_loads_without_any_browser_token():
     assert 'headerToken' not in page
     assert 'Authorization' not in page
     assert 'loadWorkspace();' in page
-    assert 'await Promise.allSettled([loadMedia(),loadDjiMedia(),loadFleet(),loadGeoObjects()]);' in page
+    assert 'const routes=loadWaylines();' in page
+    assert 'await Promise.allSettled([loadMedia(),loadDjiMedia(),loadFleet(),loadGeoObjects(),routes]);' in page
     assert 'async function api(path,options={})' in page
     assert 'textContent' in page
 

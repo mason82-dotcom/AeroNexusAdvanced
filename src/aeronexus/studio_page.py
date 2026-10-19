@@ -214,9 +214,11 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </header>
 <div class="layout">
 <aside class="side" id="mission-panel">
-<div class="flex between"><div><h1>Missionsplanung</h1><div class="note">Offline-Entwurf · keine Flugausführung</div></div><span class="badge">WPML</span></div>
+<div class="flex between"><div><h1>Mission Manager</h1><div class="note">Lokale Entwürfe und Cloud-Routen · keine Flugausführung</div></div><span class="badge">WPML</span></div>
 <div class="status" id="notice" role="status">Missionen werden automatisch vom Raspberry Pi geladen…</div>
-<label>Gespeicherte Missionen<select id="mission-list"><option value="">Neuer Entwurf</option></select></label>
+<label for="mission-list">Alle Routen<select id="mission-list"><option value="">Neuer Entwurf</option></select></label>
+<div class="button-row"><button id="load-manager-route">Route laden</button><button id="refresh-manager-routes">Routen aktualisieren</button></div>
+<div id="mission-manager-state" class="status" role="status" aria-live="polite">Lokale Entwürfe und Cloud-Routen werden geladen…</div>
 <div class="button-row"><button id="new-mission">Neu</button><button id="save-mission" class="primary">Speichern</button><button id="delete-mission" class="danger" disabled>Löschen</button></div>
 <div class="editor-tools"><button id="undo-edit" disabled title="Strg+Z (außer in Eingabefeldern)">↶ Rückgängig</button><button id="redo-edit" disabled title="Strg+Umschalt+Z / Strg+Y">↷ Wiederherstellen</button></div>
 <div id="editor-dirty" class="editor-dirty" role="status" aria-live="polite">Keine ungespeicherten Änderungen</div>
@@ -1113,15 +1115,62 @@ function fitMission(){
   if(mission.waypoints.length===1){map.setView([mission.waypoints[0].latitude,mission.waypoints[0].longitude],16);return;}
   map.fitBounds(L.latLngBounds(mission.waypoints.map(p=>[p.latitude,p.longitude])),{padding:[55,55],maxZoom:17});
 }
+let managerRouteKey="",managerRefreshSerial=0;
+function managerKey(route){return "cloud:"+JSON.stringify([route.provider,route.project_id||route.workspace_id||"",route.wayline_id]);}
 function updateMissionSelect(){
   const select=$("mission-list");select.replaceChildren();
   const opt=els("option","", "Neuer Entwurf");opt.value="";select.appendChild(opt);
-  knownMissions.forEach(item=>{const option=els("option","",item.name+" · "+item.waypoints+" WP");option.value=item.id;select.appendChild(option)});
-  select.value=missionId||"";
-  $("delete-mission").disabled=!missionId;
+  const localGroup=els("optgroup");localGroup.label="Lokale Entwürfe";
+  knownMissions.forEach(item=>{const option=els("option","",item.name+" · "+item.waypoints+" WP");option.value=item.id;localGroup.appendChild(option)});
+  if(knownMissions.length)select.appendChild(localGroup);
+  const groups=new Map();
+  for(const route of waylineData?.waylines||[]){
+    if(!route.wayline_id)continue;
+    const label=waylineSource(route.provider);
+    if(!groups.has(label)){const group=els("optgroup");group.label=label;groups.set(label,group);select.appendChild(group);}
+    const option=els("option","",(route.name||"Unbenannte Route")+" · "+waylineType(route));
+    option.value=managerKey(route);groups.get(label).appendChild(option);
+  }
+  if(managerRouteKey&&waylineData&&!waylineData.waylines.some(r=>managerKey(r)===managerRouteKey))managerRouteKey="";
+  select.value=managerRouteKey||missionId||"";
+  $("delete-mission").disabled=!!managerRouteKey||!missionId;
+  $("save-mission").disabled=!!managerRouteKey;
+  $("export-mission").disabled=!!managerRouteKey;
 }
 async function loadMissions(){
   const res=await api("/api/v1/studio/missions");knownMissions=(await res.json()).missions;
+  updateMissionSelect();
+  return knownMissions;
+}
+function missionManagerState(message,isError=false){
+  const state=$("mission-manager-state");state.textContent=message;state.className="status"+(isError?" error":"");
+}
+async function refreshMissionManager(){
+  const serial=++managerRefreshSerial,button=$("refresh-manager-routes");button.disabled=true;
+  missionManagerState("Lokale Entwürfe und Cloud-Routen werden geladen…");
+  const results=await Promise.allSettled([loadMissions(),loadWaylines(true)]);
+  if(serial!==managerRefreshSerial)return;
+  updateMissionSelect();
+  const local=results[0].status==="fulfilled"?knownMissions.length+" lokale Entwürfe":"Lokaler Speicher nicht erreichbar";
+  missionManagerState(local+". "+(waylineData?waylineSourceState(waylineData):"Cloud-Routen nicht erreichbar. Routen aktualisieren, um erneut zu laden."),
+    results[0].status!=="fulfilled"||!waylineData);
+  button.disabled=false;
+}
+async function openManagerRoute(value){
+  if(!value.startsWith("cloud:")){
+    const loaded=await loadMission(value);
+    if(loaded){managerRouteKey="";clearCloudWaylinePreview();updateMissionSelect();missionManagerState("Lokaler Entwurf geladen.");}
+    return;
+  }
+  const route=(waylineData?.waylines||[]).find(item=>managerKey(item)===value);
+  if(!route){updateMissionSelect();throw new Error("Route nicht mehr im Bestand. Routen aktualisieren.");}
+  if(route.provider!=="pilot2-local-cloud"){
+    updateMissionSelect();
+    missionManagerState("Route „"+route.name+"“ ist im "+waylineSource(route.provider)+"-Katalog vorhanden. Für diese Quelle ist noch kein Geometrieabruf eingerichtet.",true);
+    return;
+  }
+  const loaded=await previewCloudWayline(route,$("load-manager-route"));
+  if(loaded)managerRouteKey=value;
   updateMissionSelect();
 }
 async function loadMission(id,{skipConfirm=false}={}){
@@ -1136,14 +1185,16 @@ async function loadMission(id,{skipConfirm=false}={}){
     updateMissionSelect();
     throw new Error("Entwurf wurde während des Ladens geändert; Mission nicht übernommen.");
   }
-  mission=data.mission;missionId=data.id;selected=-1;
+  mission=data.mission;missionId=data.id;selected=-1;managerRouteKey="";
+  clearCloudWaylinePreview();
   syncForm();updateMissionSelect();redraw();fitMission();historyReset();
   notice("Mission geladen: "+mission.name);
   return true;
 }
 function newMission({skipConfirm=false}={}){
   if(!skipConfirm&&!allowDiscard()){updateMissionSelect();return false;}
-  mission=EMPTY();missionId=null;selected=-1;
+  mission=EMPTY();missionId=null;selected=-1;managerRouteKey="";
+  clearCloudWaylinePreview();
   syncForm();updateMissionSelect();redraw();historyReset();
   notice("Neuer Entwurf. Klicke auf die Karte, um Wegpunkte hinzuzufügen.");
   return true;
@@ -1324,6 +1375,7 @@ async function exportMission(){
 }
 // Read-only library: no KMZ import, editor mutation or cloud commands.
 let waylineData=null,waylinePage=1,waylineSerial=0,waylineAbort=null;
+let waylinePreviewController=null;
 const WAYLINE_PAGE_SIZE=12;
 function waylineModel(key){
   const names={"0-77-0":"Mavic 3E","0-77-1":"Mavic 3T","0-77-2":"Mavic 3M","0-77-3":"Mavic 3TA",
@@ -1398,6 +1450,9 @@ function centerCloudWaylinePreview(){
 }
 function clearCloudWaylinePreview(){
   ++waylinePreviewRequest;
+  waylinePreviewController?.abort();waylinePreviewController=null;
+  $("load-manager-route").disabled=false;
+  if(typeof updateMissionSelect==="function"){managerRouteKey="";updateMissionSelect();}
   waylinePreviewBounds=null;
   $("wayline-preview-fit").hidden=true;
   if(waylinePreviewLayer){waylinePreviewLayer.clearLayers();if(map)map.removeLayer(waylinePreviewLayer);}
@@ -1406,6 +1461,10 @@ function clearCloudWaylinePreview(){
 }
 async function previewCloudWayline(route,button){
   closeCloudOverview(true);
+  if(typeof updateMissionSelect==="function"){managerRouteKey="";updateMissionSelect();}
+  waylinePreviewController?.abort();
+  const controller=new AbortController();waylinePreviewController=controller;
+  const timer=setTimeout(()=>controller.abort(),25000);
   const request=++waylinePreviewRequest;
   waylinePreviewBounds=null;
   $("wayline-preview-fit").hidden=true;
@@ -1414,9 +1473,10 @@ async function previewCloudWayline(route,button){
   button.disabled=true;
   $("wayline-state").className="status";
   $("wayline-state").textContent="KMZ-Vorschau wird schreibgeschützt gelesen…";
+  if(typeof missionManagerState==="function")missionManagerState("Route „"+route.name+"“ wird auf der Karte geladen…");
   try{
     const response=await api("/api/v1/local-cloud/waylines/"+
-      encodeURIComponent(route.wayline_id)+"/preview");
+      encodeURIComponent(route.wayline_id)+"/preview",{signal:controller.signal});
     const data=await response.json();
     if(request!==waylinePreviewRequest)return;
     if(data.state!=="connected")throw new Error("Vorschau nicht verfügbar: "+clean(data.state));
@@ -1449,13 +1509,20 @@ async function previewCloudWayline(route,button){
     mapWarning("Schreibgeschützte Cloud-Vorschau: "+clean(data.name)+" · "+
       data.features.length+" Geometrie(n) aus "+clean(data.source)+
       ". Keine Bearbeitung, keine Flugfreigabe.");
+    if(typeof missionManagerState==="function")missionManagerState("Cloud-Route geladen: "+clean(data.name)+". Schreibgeschützte Kartenansicht; der lokale Entwurf bleibt erhalten.");
+    if(typeof updateMissionSelect==="function"){managerRouteKey=managerKey(route);updateMissionSelect();}
+    return true;
   }catch(error){
     if(request!==waylinePreviewRequest)return;
     $("wayline-state").className="status error";
     $("wayline-state").textContent=errorMessage(error)+
       " · Cloud-KMZ bleibt unverändert. Kein Import in den Editor.";
+    if(typeof missionManagerState==="function")missionManagerState("Route nicht geladen: "+errorMessage(error)+". Routen aktualisieren und erneut laden.",true);
+    return false;
   }finally{
-    button.disabled=false;
+    clearTimeout(timer);
+    if(button!==$("load-manager-route")||request===waylinePreviewRequest)button.disabled=false;
+    if(request===waylinePreviewRequest)waylinePreviewController=null;
   }
 }
 
@@ -1817,13 +1884,13 @@ function waylineSourceState(data){
     " Lokaler Abruf: "+waylineTime({updated_at_ms:Date.parse(data.local_pilot?.updated_at||"")})+"."+
     (incomplete?" Mindestens eine Sammlung ist nicht lesbar oder begrenzt.":"")+" Routeninhalt ungeprüft; keine vollständige Inventur bestätigt.";
 }
-async function loadWaylines(){
+async function loadWaylines(force=false){
   const serial=++waylineSerial;waylineAbort?.abort();const controller=new AbortController();waylineAbort=controller;
   const timer=setTimeout(()=>controller.abort(),20000);
   waylineData=null;renderWaylines();$("refresh-waylines").disabled=true;$("wayline-grid").setAttribute("aria-busy","true");
   $("wayline-state").className="status";$("wayline-state").textContent="Cloud-Routen werden geladen…";
   try{
-    const response=await api("/api/v1/studio/missions/reconciliation",{signal:controller.signal});const data=await response.json();
+    const response=await api("/api/v1/studio/missions/reconciliation"+(force?"?refresh=true":""),{signal:controller.signal});const data=await response.json();
     if(serial!==waylineSerial)return;
     if(!Array.isArray(data.waylines)||!Array.isArray(data.missions))throw new Error("Routenliste ist nicht lesbar.");
     waylineData=data;renderWaylines();$("wayline-state").textContent=waylineSourceState(data);
@@ -1831,7 +1898,13 @@ async function loadWaylines(){
     if(serial!==waylineSerial)return;
     waylineData=null;renderWaylines();$("wayline-state").className="status error";
     $("wayline-state").textContent=(controller.signal.aborted?"Zeitlimit beim Laden erreicht.":errorMessage(err))+" Über Routen aktualisieren erneut versuchen.";
-  }finally{clearTimeout(timer);if(serial===waylineSerial){$("refresh-waylines").disabled=false;$("wayline-grid").setAttribute("aria-busy","false");waylineAbort=null;}}
+  }finally{clearTimeout(timer);if(serial===waylineSerial){$("refresh-waylines").disabled=false;$("wayline-grid").setAttribute("aria-busy","false");waylineAbort=null;
+    if(typeof updateMissionSelect==="function"){
+      if(managerRouteKey&&(!waylineData||!waylineData.waylines.some(r=>managerKey(r)===managerRouteKey)))clearCloudWaylinePreview();
+      updateMissionSelect();
+    }
+    if(typeof missionManagerState==="function")missionManagerState(waylineData?waylineSourceState(waylineData):$("wayline-state").textContent,!waylineData);
+  }}
 }
 function switchTab(id){
   if(id!=="waylines-pane")clearPilot2ActionSummary();
@@ -1853,6 +1926,7 @@ function switchTab(id){
 }
 async function loadWorkspace(){
   statusMessage("LAN-Verbindung wird geprüft…");
+  const routes=loadWaylines();
   try{
     const missions=await loadMissions();
     notice("Lokaler Missionsarbeitsbereich bereit.");
@@ -1862,7 +1936,7 @@ async function loadWorkspace(){
     notice("Missionsspeicher nicht verfügbar: "+msg,true);
     statusMessage("Missionsspeicherfehler: "+msg,true);
   }
-  await Promise.allSettled([loadMedia(),loadDjiMedia(),loadFleet(),loadGeoObjects()]);
+  await Promise.allSettled([loadMedia(),loadDjiMedia(),loadFleet(),loadGeoObjects(),routes]);
 }
 function revokeMedia(){mediaUrls.forEach(url=>URL.revokeObjectURL(url));mediaUrls=[];}
 function closePreview(){const dlg=$("media-dialog");if(dlg.open)dlg.close();$("preview-content").replaceChildren();if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null;}}
@@ -2887,7 +2961,9 @@ function connectStudioEvents(){
 }
 function wire(){
   document.querySelectorAll("nav button[data-tab]").forEach(el=>el.addEventListener("click",()=>switchTab(el.dataset.tab)));
-  $("mission-list").addEventListener("change",e=>loadMission(e.target.value).catch(err=>notice(err.message,true)));
+  $("mission-list").addEventListener("change",e=>openManagerRoute(e.target.value).catch(err=>notice(err.message,true)));
+  $("load-manager-route").addEventListener("click",()=>openManagerRoute($("mission-list").value).catch(err=>notice(err.message,true)));
+  $("refresh-manager-routes").addEventListener("click",()=>refreshMissionManager().catch(err=>missionManagerState(errorMessage(err),true)));
   $("new-mission").addEventListener("click",()=>newMission());
   $("undo-edit").addEventListener("click",undoEdit);
   $("redo-edit").addEventListener("click",redoEdit);
@@ -2912,7 +2988,7 @@ function wire(){
     }
   });
   $("save-mission").addEventListener("click",()=>saveMission().catch(err=>notice(err.message,true)));
-  $("refresh-waylines").addEventListener("click",loadWaylines);
+  $("refresh-waylines").addEventListener("click",()=>loadWaylines(true));
   $("pilot2-action-load").addEventListener("click",()=>loadPilot2ActionSummary());
   $("wayline-overview-open").addEventListener("click",()=>openCloudOverview().catch(err=>{
     $("wayline-state").className="status error";$("wayline-state").textContent=errorMessage(err);

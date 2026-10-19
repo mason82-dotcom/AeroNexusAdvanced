@@ -467,3 +467,24 @@ schreibgeschützten Einzel-GETs, die Zugriffsprüfung, die maximalen
 Dateigrößen und die vollständige Trennung vom Missionseditor
 bleiben unverändert. Die gemeinsame Anzeige auf dem Android-Browser
 steht noch zur Live-Abnahme aus.
+
+## Gemeinsamer Mission Manager
+
+Im Missionspanel enthält „Alle Routen“ nun lokale Studio-Entwürfe und die
+vorhandenen Cloud-Kataloge, nach Quelle gruppiert. Die Cloud-Liste wird direkt
+beim Öffnen von Studio angefragt. „Routen aktualisieren“ lädt beide Quellen neu;
+„Route laden“ erlaubt auch einen erneuten Abruf der bereits gewählten Route.
+Lokale Entwürfe werden im Editor geöffnet, Pilot-2-Cloud-Routen über den
+bestehenden schreibgeschützten KMZ-Geometrieadapter auf der Karte. FlightHub
+bleibt ohne Geometrieadapter ein sichtbar gekennzeichneter Metadatenkatalog.
+
+Ein fehlender/abgelaufener Cloud-Sitzungszugriff wird im Missionspanel gemeldet;
+er wird nicht als leere, erfolgreich geladene Routenliste dargestellt. Die
+bestehende Einrichtung und Sitzungsübernahme bleiben erforderlich. Der Abruf
+ist weiterhin begrenzt, liest aber bis zu 200 statt zehn Seiten. Bereits
+inventarisierte Routen sind unabhängig von der Vollständigkeit der gesamten
+Liste abrufbar; die Prüfung der UUID und des angemeldeten Workspaces bleibt erhalten.
+
+Explizites Aktualisieren verwendet `?refresh=true` am bestehenden geschützten
+Reconciliation-GET und umgeht den 30-Sekunden-Metadatencache der lokalen Cloud.
+Automatische Erstaufrufe und einzelne Routenvorschauen verwenden den Cache weiter.

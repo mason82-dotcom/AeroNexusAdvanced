@@ -201,3 +201,11 @@ der vorhandenen technischen Dichte. Karten sind ausdrücklich keine klickbaren
 Editoren. Lange Namen/Workspace-IDs umbrechen, statt Nachbarspalten zu verbreitern.
 Unter schmalen Breiten bleibt eine Kartenspalte; höchstens zwölf Karten je Seite.
 Die vorhandenen Scrollbereiche bleiben erhalten. Keine neuen Farben oder Fonts.
+
+## Mission Manager: gemeinsame Routenauswahl
+
+Der Mission Manager verwendet die bestehende native Auswahl `mission-list` mit
+Quellgruppen für lokale Entwürfe, Pilot-2-Cloud und FlightHub. Betriebssystem-Popup,
+Studio-Tokens, Sidebar-Scrollbereich und bestehende Buttons bleiben erhalten.
+`mission-manager-state` ist die sichtbare Statusregion für Laden, Quellenfehler
+und schreibgeschützte Cloud-Vorschauen. Es gibt keine neuen Farben oder Fonts.

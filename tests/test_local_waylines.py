@@ -71,11 +71,23 @@ def test_limit_is_explicit_never_complete_claim():
         page = int(request.url.params["page"])
         calls.append(page)
         items = [row((page - 1) * 50 + i + 1) for i in range(50)]
+        return httpx.Response(200, json=envelope(items, page=page, total=lw.MAX_PAGES * 50 + 1))
+    result = read(handler)
+    assert len(calls) == lw.MAX_PAGES and len(result["waylines"]) == lw.MAX_PAGES * 50
+    assert result["reported_total"] == lw.MAX_PAGES * 50 + 1
+    assert result["pagination_complete"] is False
+
+
+def test_workspace_with_more_than_500_routes_reads_the_last_page():
+    def handler(request):
+        page = int(request.url.params["page"])
+        start = (page - 1) * 50 + 1
+        items = [row(i) for i in range(start, min(start + 50, 502))]
         return httpx.Response(200, json=envelope(items, page=page, total=501))
     result = read(handler)
-    assert len(calls) == 10 and len(result["waylines"]) == 500
-    assert result["reported_total"] == 501
-    assert result["pagination_complete"] is False
+    assert len(result["waylines"]) == 501
+    assert result["pagination_complete"] is True
+    assert result["waylines"][-1]["wayline_id"] == str(UUID(int=501))
 
 
 def test_successfully_empty_is_connected():
@@ -207,14 +219,15 @@ def test_api_local_source_and_no_unauthorized_network(tmp_path, monkeypatch):
     monkeypatch.setenv("AERONEXUS_WORKSPACE_DIR", str(tmp_path / "workspace"))
     monkeypatch.setattr(app.state, "status_runtime", StatusRuntime())
     calls = []
-    async def fake_read(self):
-        calls.append(1)
+    async def fake_read(self, *, force=False):
+        calls.append(force)
         result = await lw.read_waylines(CREDENTIALS, transport=httpx.MockTransport(lambda _: httpx.Response(200, json=envelope([row()]))))
         return result
     monkeypatch.setattr(lw.LocalWaylineReader, "read", fake_read)
     with TestClient(app) as client:
         url = "/api/v1/studio/missions/reconciliation"
         assert client.get(url).status_code == 401
+        assert client.get(url + "?refresh=true").status_code == 401
         assert not calls
         headers = {"Authorization": "Bearer " + token}
         client.post("/api/v1/studio/missions", headers=headers, json={"name": "Dach Nord", "drone_model": "mavic3m"})
@@ -230,6 +243,9 @@ def test_api_local_source_and_no_unauthorized_network(tmp_path, monkeypatch):
         assert data["local_pilot"]["pagination_complete"] is True
         assert "private" not in response.text and CREDENTIALS.access_token not in response.text
         assert response.headers["cache-control"] == "no-store"
+        assert calls == [False]
+        assert client.get(url + "?refresh=true", headers=headers).status_code == 200
+        assert calls == [False, True]
 
 
 @pytest.mark.parametrize("failure", ["network", "configuration"])
@@ -280,3 +296,26 @@ def test_cli_configuration_verifies_before_replacing_session(tmp_path, monkeypat
     assert "never-save-this-password" not in output
     assert replacement.access_token not in output
     assert "never-save-this-password" not in path.read_text()
+
+
+def test_explicit_refresh_reads_past_the_metadata_cache(tmp_path, monkeypatch):
+    path = tmp_path / "private" / "session.json"
+    lw.save_credentials(path, CREDENTIALS)
+    monkeypatch.setenv("AERONEXUS_LOCAL_WAYLINES_FILE", str(path))
+    calls = []
+
+    async def get(credentials):
+        calls.append(credentials)
+        return {"state": "connected", "waylines": [row(i + 1) for i in range(len(calls))]}
+
+    monkeypatch.setattr(lw, "read_waylines", get)
+
+    async def run():
+        reader = lw.LocalWaylineReader()
+        assert len((await reader.read())["waylines"]) == 1
+        assert len((await reader.read())["waylines"]) == 1
+        assert len((await reader.read(force=True))["waylines"]) == 2
+        assert len((await reader.read())["waylines"]) == 2
+        assert len(calls) == 2
+
+    asyncio.run(run())

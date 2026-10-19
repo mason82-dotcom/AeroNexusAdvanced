@@ -23,7 +23,9 @@ import httpx
 
 ORIGIN = "http://127.0.0.1:6789"
 PAGE_SIZE = 50
-MAX_PAGES = 10
+# Larger workspaces must not silently disappear after the first 500 routes.
+# Keep a finite network/response budget and report partial coverage at the bound.
+MAX_PAGES = 200
 MAX_BODY = 1024 * 1024
 CACHE_SECONDS = 30
 TEMPLATE_TYPES = {0: "waypoint", 1: "mapping_2d", 2: "mapping_3d", 3: "mapping_strip"}
@@ -199,7 +201,7 @@ class LocalWaylineReader:
         self._until = 0.0
         self._result = None
 
-    async def read(self) -> dict:
+    async def read(self, *, force: bool = False) -> dict:
         async with self._lock:
             try:
                 credentials = load_credentials(credentials_path())
@@ -209,7 +211,7 @@ class LocalWaylineReader:
             if credentials is None:
                 self._credentials, self._result = None, None
                 return {"state": "awaiting_browser_session" if handoff_enabled() else "not_configured", "waylines": []}
-            if credentials == self._credentials and time.monotonic() < self._until:
+            if not force and credentials == self._credentials and time.monotonic() < self._until:
                 return self._result
             try:
                 result = await asyncio.wait_for(read_waylines(credentials), timeout=15)
