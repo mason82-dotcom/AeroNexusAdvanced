@@ -80,3 +80,66 @@ durch die Optimierung weder freigegeben noch umgangen werden.
 `main`, die lokale Pi-Arbeitskopie und der systemd-Produktivdienst bleiben
 ohne expliziten Rollout unverändert. Vor einem späteren Deployment sind
 echte DJI-Status-, Pilot-2-, HTTPS- und Browsertests notwendig.
+
+## Phase 2 – Statuspfad, HMS-Lookups und Browser-Last
+
+Nach dem ersten isolierten Patch wurde das aktualisierte `main` mit
+WPML-Offline-Konformitätsaudit (PR #80, Commit `f4f7458`) kontrolliert
+eingebracht; die vorhandene Exportprüfung und alle WPML-Tests bleiben
+erhalten.
+
+- `/api/v1/status/devices` ermittelt zuerst die unveränderte Gesamtzahl
+  aus dem Inventar, projiziert aber nur `offset..offset+limit`. Dadurch
+  wird nicht mehr für jedes andere Gerät der vollständige Snapshot
+  serialisiert, dessen Cloud-Feldstatus geprüft und HMS-Historie gelesen.
+- `StatusRuntime.summary()` verzichtet auf gerätebezogene
+  HMS-Verlaufsanfragen. Die ausgegebenen Kennzahlen und Sicherheitsgrenzen
+  bleiben unverändert; Detailansichten enthalten weiterhin die Historie.
+- `HmsHistory` führt einen gerätebezogenen Index aus **Referenzen auf
+  bereits gespeicherte Ereignisse**. Bei der Retention werden sowohl
+  globale als auch gerätebezogene Einträge synchron entfernt. Allgemeine
+  oder teilgefilterte Verlaufsabfragen bleiben unverändert unterstützt.
+- `render_page` cachet die statische Status-Cockpit-HTML-Shell mit maximal
+  vier verschiedenen Intervallen.
+- Im Operations Center und Status-Cockpit pausieren die regulären
+  Dashboard-GETs während `document.hidden`; beim Zurückwechseln wird
+  sofort aktualisiert. Ein laufender Operations-Center-WebRTC-Livestream
+  behält seine Statusprüfung und Wiedergabe.
+
+Die Funktionalität wird durch zusätzliche unit-, API- und
+Frontend-Vertragstests abgedeckt. Ein GitHub-Runner ersetzt jedoch keine
+spätere Pi-/Pilot-2-Abnahme.
+
+### Reproduzierbarer Offline-Benchmark
+
+Das neue Skript erzeugt ausschließlich synthetische RAM-Testdaten und
+öffnet **keine** Netzwerkverbindungen, Datenbanken oder Gerätedienste:
+
+~~~bash
+cd ~/Projekte/AeroNexusAdvanced
+.venv/bin/python scripts/maintenance/benchmark_refactor.py \
+  --devices 40 --events 1600 --iterations 25
+~~~
+
+Es prüft die Gleichheit der alten und neuen Datenprojektion sowie der
+HMS-Paginierung, dann misst es fünf Stichproben für vier Funktionen:
+vollständige gegenüber paginierter Geräteprojektion und globale gegenüber
+geräteindizierter HMS-Suche. Die PR-CI führt dieses Skript auf
+GitHub-Runnern ebenfalls aus und protokolliert die Messwerte. Solche
+CPU-Zeitwerte sind **nur synthetische Entwicklungsbenchmarks**. Sie
+belegen weder konkrete Einsparungen im Pi-Produktivbetrieb noch die
+Qualität einer DJI-Funkverbindung.
+
+### Noch offene Grenzen
+
+- Router-Aufteilung von `app.py` und Auslagerung der großen eingebetteten
+  UI-Assets sind ein **weiterer** Schritt. Wegen Authentifizierung,
+  CSP, eingebetteter JS-Verträge und WPML-Kompatibilität dürfen sie nicht
+  allein anhand der Dateigröße erfolgen.
+- Das Abschalten von Hintergrundabfragen ist nur für versteckte
+  Browser-Tabs vorgesehen. Die Frischelogik des Backends bleibt davon
+  unabhängig.
+- In der CI wurden sporadische Chromium-Prozessabbrüche mit Exit `-6`
+  auch außerhalb der veränderten Codepfade beobachtet; einzelne
+  fehlgeschlagene Runnerläufe müssen mitsamt Testnamen bewertet werden.
+  Ein grüner PR-Check ist kein Ersatz für Browser-/Pilot-2-Hardwaretests.
