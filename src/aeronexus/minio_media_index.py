@@ -219,6 +219,11 @@ class DjiMediaIndex:
                         added += 1
                     elif tuple(old) == (values[4], values[5], values[6], values[7]):
                         unchanged += 1
+                        # A full UPSERT rewrites unchanged metadata and touches
+                        # its indexes. Only mark the object as seen this scan.
+                        db.execute("UPDATE media SET scan_marker=? WHERE id=?",
+                                   (marker, item_id))
+                        continue
                     else:
                         updated += 1
                     db.execute("""INSERT INTO media
