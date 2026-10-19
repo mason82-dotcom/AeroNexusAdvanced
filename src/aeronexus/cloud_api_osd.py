@@ -58,8 +58,12 @@ def osd_data(payload: bytes) -> Mapping:
     return osd_envelope(payload)[0]
 
 
-def osd_envelope(payload: bytes) -> tuple[Mapping, int | None]:
-    """Decode once; preserve optional source milliseconds for ordering and age."""
+def osd_envelope(payload: bytes, *, allow_empty_data: bool = False) -> tuple[Mapping, int | None]:
+    """Decode once; allow DJI's documented empty /state only when opted in.
+
+    Empty OSD remains invalid. Empty state carries no telemetry and must never
+    count as a liveness sample or update device/field clocks.
+    """
     if not isinstance(payload, (bytes, bytearray)) or not 0 < len(payload) <= MAX_PAYLOAD_BYTES:
         raise CloudOsdError("Invalid OSD payload size")
     try:
@@ -67,7 +71,7 @@ def osd_envelope(payload: bytes) -> tuple[Mapping, int | None]:
     except (UnicodeError, ValueError) as exc:
         raise CloudOsdError("OSD payload is not JSON") from exc
     data = message.get("data") if isinstance(message, dict) else None
-    if not isinstance(data, dict) or not data:
+    if not isinstance(data, dict) or (not data and not allow_empty_data):
         raise CloudOsdError("OSD payload has no data object")
     timestamp = message.get("timestamp")
     if timestamp is not None and (type(timestamp) is not int or not 0 <= timestamp <= 253402300799999):
