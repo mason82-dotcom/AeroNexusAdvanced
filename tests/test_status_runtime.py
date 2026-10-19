@@ -181,3 +181,33 @@ def test_summary_single_pass_preserves_all_freshness_and_warning_counts():
     assert (summary["online_fresh"], summary["offline_fresh"]) == (1, 1)
     assert summary["health_warnings"] == 1
     assert "device_id" not in summary
+
+def test_summary_omits_unused_per_device_hms_queries(monkeypatch):
+    rt = setup_runtime()
+    def forbid_history_lookup(**kwargs):
+        raise AssertionError("Anonymous summary must not scan HMS device history")
+    monkeypatch.setattr(rt.hms_history, "list_events", forbid_history_lookup)
+    assert rt.summary()["registered_devices"] == 2
+    # Detailed device responses still request device-local HMS history.
+    with pytest.raises(AssertionError, match="must not scan"):
+        rt.device_views()
+
+
+def test_device_view_page_only_projects_selected_telemetry(monkeypatch):
+    rt = setup_runtime()
+    rt.inventory.update_telemetry("p", DeviceSnapshot(K, "a", online=True))
+    rt.inventory.update_telemetry("p", DeviceSnapshot(K, "rc", online=False))
+    scanned = []
+    telemetry = rt.inventory.telemetry
+    def counted(provider, project_id, device_id):
+        scanned.append(device_id)
+        return telemetry(provider, project_id, device_id)
+    monkeypatch.setattr(rt.inventory, "telemetry", counted)
+    page = rt.device_views(offset=1, limit=1)
+    assert [row["device_id"] for row in page] == ["rc"]
+    assert scanned == ["rc"]
+    assert rt.device_views(offset=20, limit=1) == ()
+    assert scanned == ["rc"]
+    for offset, limit in ((-1, 1), (0, 0), (True, 1), (0, True)):
+        with pytest.raises(ValueError, match="pagination"):
+            rt.device_views(offset=offset, limit=limit)
