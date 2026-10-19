@@ -111,7 +111,12 @@ def test_curvature_still_stops_at_every_waypoint(mode):
     assert template.findtext(".//" + W + "globalWaypointTurnMode") == mode
     for point in route.findall(".//" + K + "Placemark"):
         assert point.findtext(W + "waypointTurnParam/" + W + "waypointTurnMode") == mode
-        assert point.findtext(W + "waypointTurnParam/" + W + "waypointTurnDampingDist") == "0"
+        if mode == "toPointAndStopWithContinuityCurvature":
+            assert point.findtext(W + "useStraightLine") == "1"
+            assert point.find(W + "waypointTurnParam/" + W + "waypointTurnDampingDist") is None
+        else:
+            assert point.find(W + "useStraightLine") is None
+            assert point.findtext(W + "waypointTurnParam/" + W + "waypointTurnDampingDist") == "0"
 
 
 def test_smooth_heading_combines_with_curve_stop_offline():
@@ -200,3 +205,29 @@ def test_mixed_per_waypoint_paths_cannot_be_silently_normalized():
 def test_legacy_closed_route_still_roundtrips():
     m = mission(close_route=True)
     assert_roundtrip(m)
+
+
+def test_missing_conditional_straight_line_flag_cannot_pass_import():
+    m = mission(turn_mode="toPointAndStopWithContinuityCurvature")
+    original = export_kmz(m, timestamp_ms=1)
+    dest = BytesIO()
+    with ZipFile(BytesIO(original)) as inp, ZipFile(dest, "w", compression=ZIP_DEFLATED) as out:
+        for name in inp.namelist():
+            data = inp.read(name)
+            if name == "wpmz/waylines.wpml":
+                root = ET.fromstring(data)
+                first = root.find(".//" + K + "Placemark")
+                first.remove(first.find(W + "useStraightLine"))
+                data = ET.tostring(root)
+            out.writestr(name, data)
+    with pytest.raises(ValueError, match="WPML settings disagree"):
+        import_kmz(dest.getvalue())
+    assert audit_kmz(dest.getvalue())["editable_in_aeronexus"] is False
+
+
+def test_continuous_stop_never_writes_damping_without_selected_turn_mode():
+    m = mission(turn_mode="toPointAndStopWithContinuityCurvature")
+    for root in assert_roundtrip(m):
+        if root.findtext(".//" + W + "executeHeightMode") is not None:
+            assert root.findall(".//" + W + "useStraightLine")
+            assert not root.findall(".//" + W + "waypointTurnDampingDist")
