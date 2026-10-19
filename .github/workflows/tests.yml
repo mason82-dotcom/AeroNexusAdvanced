@@ -38,4 +38,6 @@ jobs:
       - name: Install Chromium and system dependencies
         run: python -m playwright install --with-deps chromium
       - name: Assert compact layout at 390 / 760 / 1024 / 1440 px
+        env:
+          AERONEXUS_REQUIRE_BROWSER: '1'
         run: pytest -q tests/test_compact_ui_browser.py
