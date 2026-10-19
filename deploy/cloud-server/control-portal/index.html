@@ -7,57 +7,41 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
 <title>AeroNexusAdvanced · Control Center</title>
 <style>
-:root{color-scheme:dark;--bg:#080f1b;--surface:#111d30;--surface2:#15253c;--line:#2a3950;--text:#eef4ff;--mute:#9daec6;--blue:#59acff;--mint:#76e1c4;--gold:#efc98c;font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(ellipse 68% 48% at 80% -10%,#16427280,transparent),radial-gradient(ellipse 52% 30% at 8% 30%,#0b5c6340,transparent),var(--bg)}
-a{color:inherit;text-decoration:none}button{font:inherit}button:focus-visible,a:focus-visible{outline:2px solid var(--mint);outline-offset:4px}
-.shell{max-width:1460px;margin:auto;padding:0 42px}.mast{min-height:88px;display:flex;align-items:center;justify-content:space-between;gap:25px;border-bottom:1px solid #ffffff16}
-.brand{display:flex;align-items:center;gap:13px}.symbol{width:39px;height:39px;display:grid;place-items:center;background:linear-gradient(135deg,#48a9ff,#68e8c2);color:#07131e;font-size:22px;font-weight:950;clip-path:polygon(0 0,100% 0,100% 75%,77% 100%,0 100%)}.brand strong{font-size:16px;letter-spacing:.055em}.brand small{display:block;color:var(--mute);font-size:10px;letter-spacing:.22em;font-weight:700}
-.main-nav{display:flex;gap:23px;flex-wrap:wrap;align-items:center;color:#b9c9db;font-size:13px;font-weight:620}.main-nav a:hover,.quick-link:hover{color:var(--mint)}.main-nav .active{color:white}.indicator{border:1px solid #41536b;background:#17263a;padding:7px 12px;border-radius:30px;color:#bdcce0;display:inline-flex;gap:8px;align-items:center;font-size:12px}.indicator:before{content:"";width:7px;height:7px;background:#ecba76;border-radius:50%}.indicator[data-state="ok"]:before{background:var(--mint)}.indicator[data-state="error"]:before{background:#ff8b93}
-.hero{padding:76px 0 55px;display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.6fr);align-items:end;gap:30px}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.22em;color:var(--mint);font-weight:800}.hero h1{font-size:clamp(40px,5.5vw,77px);line-height:1.05;letter-spacing:-.045em;font-weight:740;margin:19px 0 21px;max-width:950px}.hero h1 em{font-style:normal;color:#7fc5ff}.hero p{color:var(--mute);font-size:16px;max-width:650px;margin:0}.hero-side{border-left:1px solid var(--line);padding:12px 0 12px 26px}.hero-side strong{font-size:13px;font-weight:700}.hero-side p{font-size:13px;margin:9px 0 0}.actions{display:flex;gap:11px;margin-top:30px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:43px;padding:10px 17px;border-radius:9px;border:1px solid #597da1;background:#192c46;color:white;font-weight:700;font-size:13px;transition:background .15s,transform .15s}.btn:hover{background:#244362;transform:translateY(-1px)}.btn.primary{background:var(--blue);color:#051426;border-color:var(--blue)}.btn.primary:hover{background:#8ec7ff}
-.strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;border:1px solid var(--line);background:var(--line);border-radius:12px;overflow:hidden}.strip>a,.strip>div{background:#101e30;padding:20px 22px;min-width:0}.strip span{display:block;font-size:11px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;color:#9bafc5}.strip strong{font-size:18px;display:block;margin:9px 0 3px;font-weight:670;overflow-wrap:anywhere}.strip small{font-size:12px;color:var(--mute)}.strip a:hover{background:#182b42}
-.section-head{margin:63px 0 21px;display:flex;align-items:end;justify-content:space-between;gap:20px}.section-head h2{margin:5px 0 0;font-size:29px;letter-spacing:-.026em}.section-head p{color:var(--mute);margin:0;font-size:13px}
-.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.card{min-height:246px;border:1px solid var(--line);border-radius:14px;padding:23px;display:flex;flex-direction:column;align-items:flex-start;background:linear-gradient(155deg,#15253b,#0d1727);transition:border-color .18s,transform .18s}.card:hover{border-color:#5ba9db;transform:translateY(-2px)}.card.large{grid-column:span 2;background:radial-gradient(ellipse 70% 100% at 100% 0,#164c6190,transparent),linear-gradient(155deg,#162d40,#102131)}.card-icon{font-size:26px;display:grid;place-items:center;width:48px;height:48px;border:1px solid #35536d;border-radius:12px;background:#152c40}.card h3{margin:19px 0 6px;font-size:18px}.card p{margin:0 0 23px;color:var(--mute);font-size:13px;max-width:490px}.card .link{margin-top:auto;color:var(--mint);font-weight:740;font-size:13px}.card .tag{font-size:10px;letter-spacing:.12em;font-weight:800;text-transform:uppercase;color:#8ec3ee;margin-top:13px}
-.bottom{margin:62px 0 26px;border:1px solid var(--line);border-radius:14px;padding:26px;display:flex;justify-content:space-between;gap:25px;align-items:center;background:#0f1d30}.bottom h3{margin:4px 0 6px;font-size:18px}.bottom p{margin:0;color:var(--mute);font-size:13px;max-width:850px}.quick-link{color:var(--mint);font-size:13px;font-weight:700;white-space:nowrap}
-footer{display:flex;gap:18px;justify-content:space-between;flex-wrap:wrap;border-top:1px solid #ffffff19;padding:23px 0 32px;color:#92a6c0;font-size:12px}.kbd{font-family:ui-monospace,Consolas,monospace;font-size:11px}
-@media(max-width:1050px){.mast{flex-wrap:wrap;padding:17px 0}.main-nav{order:3;width:100%}.hero{grid-template-columns:1fr;padding:55px 0 35px}.hero-side{max-width:680px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.strip{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:640px){.shell{padding:0 19px}.hero{padding-top:42px}.hero h1{font-size:42px}.mast{align-items:flex-start}.indicator{font-size:11px}.main-nav{gap:12px}.strip{grid-template-columns:1fr 1fr}.strip>a,.strip>div{padding:15px}.strip strong{font-size:15px}.cards{grid-template-columns:1fr}.card.large{grid-column:auto}.section-head{align-items:flex-start;flex-direction:column}.bottom{flex-direction:column;align-items:flex-start}}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn,.card{transition:none}.btn:hover,.card:hover{transform:none}}
+:root{color-scheme:dark;--bg:#080f1b;--surface:#111d30;--line:#2a3950;--text:#eef4ff;--mute:#9daec6;--blue:#59acff;--mint:#76e1c4;font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--text);background:var(--bg)}
+a{color:inherit;text-decoration:none}a:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:4px}a:hover{color:var(--mint)}
+.shell{max-width:1120px;margin:auto;padding:0 28px}.mast{padding:22px 0;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.brand{font-weight:750;font-size:19px}.main-nav{display:flex;gap:20px;align-items:center;font-size:14px}.main-nav [aria-current]{color:var(--blue)}
+.intro{padding:38px 0 24px}.intro h1{font-size:clamp(28px,4vw,42px);letter-spacing:-.03em;margin:0 0 9px;line-height:1.2}.intro p{color:var(--mute);margin:0;max-width:690px}
+h2{font-size:19px;margin:28px 0 14px}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{border:1px solid var(--line);border-radius:12px;padding:22px;background:var(--surface);min-width:0;display:block}.card:hover{border-color:var(--blue);color:var(--text);background:#15253c}.card h3{margin:0 0 7px;font-size:19px}.card p{color:var(--mute);font-size:14px;margin:0 0 14px}.card .link{color:var(--mint);font-size:13px;font-weight:650}
+.analysis{grid-template-columns:repeat(3,minmax(0,1fr))}.analysis .card{padding:18px}.analysis .card h3{font-size:17px}.analysis .card p{margin-bottom:0}
+.setup{border-top:1px solid var(--line);margin-top:30px;padding:18px 0}.setup summary{cursor:pointer;color:var(--mute)}.setup p{max-width:760px;color:var(--mute);font-size:13px}.setup a{color:var(--blue);display:inline-block;padding:9px 0}
+footer{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;border-top:1px solid var(--line);padding:20px 0 28px;color:var(--mute);font-size:12px}.indicator[data-state="error"]{color:#ff9ba8}
+@media(max-width:640px){.shell{padding:0 18px}.intro{padding-top:28px}.cards,.analysis{grid-template-columns:1fr}.main-nav{gap:16px}.card{padding:18px}}
 </style>
 </head>
 <body>
 <div class="shell">
 <header class="mast">
-  <a class="brand" href="./" aria-label="AeroNexus Start"><span class="symbol" aria-hidden="true">A</span><span><strong>AeroNexusAdvanced</strong><small>FLIGHT OPERATIONS PLATFORM</small></span></a>
-  <nav class="main-nav" aria-label="Hauptnavigation"><a class="active" href="./" aria-current="page">Control Center</a><a href="/pilot-login">DJI Pilot 2</a><a data-app="operations" href="#">Operations</a><a data-app="studio" href="#">Mission Studio</a><a data-app="fh2-components" href="#">FlightHub-Komponenten</a></nav>
-  <span class="indicator" id="web-state" role="status" aria-live="polite">Webserver wird geprüft</span>
+ <a class="brand" href="./" aria-label="AeroNexus Start">AeroNexusAdvanced</a>
+ <nav class="main-nav" aria-label="Hauptnavigation"><a href="./" aria-current="page">Start</a><a href="/pilot-login">Pilot-2-Anmeldung ↗</a></nav>
 </header>
 <main>
-<section class="hero" aria-labelledby="hero-heading">
- <div><div class="eyebrow">AeroNexus · Cloud & Mission Control</div><h1 id="hero-heading">Präzision im Flug.<br><em>Kontrolle im System.</em></h1>
- <p>Eine zentrale, moderne Einstiegsoberfläche für DJI Pilot 2, lokale Drohnentelemetrie, FlightHub 2 und deine Missionsauswertung – mit klar getrennten Systemen und Berechtigungen.</p>
- <div class="actions"><a class="btn primary" data-app="operations" href="#">Operations Center ↗</a><a class="btn" href="/pilot-login">Pilot-2-Anmeldung ↗</a></div></div>
- <aside class="hero-side"><div class="eyebrow">Sicherheitsarchitektur</div><strong>Bewährte Datenpfade bleiben unverändert</strong><p>Die DJI-Cloud-Control läuft weiterhin auf Port 8085. Die geschützten AeroNexus-Fachmodule öffnen über HTTPS auf Port 8000. Dieses Portal speichert keine DJI-Zugangsdaten und startet keine Flugmissionen.</p></aside>
-</section>
-<div class="strip" aria-label="Systemzugänge">
- <a href="/pilot-login"><span>DJI Cloud API</span><strong>Pilot 2</strong><small>Originalanmeldung · Port 8085 ↗</small></a>
- <a data-app="status" href="#"><span>MQTT / OSD</span><strong>Live-Telemetrie</strong><small>Geschützter Gerätestatus ↗</small></a>
- <a data-app="operations" href="#"><span>FlightHub OpenAPI V2</span><strong>Flottenübersicht</strong><small>Offizielle Daten im AeroNexus-Backend ↗</small></a>
- <a data-app="studio" href="#"><span>Missionen / WPML</span><strong>Mission Studio</strong><small>Planung und lokale Dateien ↗</small></a>
-</div>
-<div class="section-head" id="workspace"><div><div class="eyebrow">Module</div><h2>Dein Arbeitsbereich</h2></div><p>Alle Module mit eigenem Funktionsumfang – keine simulierten Live-Daten.</p></div>
-<div class="cards">
- <a class="card large" data-app="operations" href="#"><span class="card-icon" aria-hidden="true">◎</span><span class="tag">Operations</span><h3>FlightHub & Geräteübersicht</h3><p>Projekte, Gerätezustände, Karten, OpenAPI-V2-Daten, DJI-Cloud-Status und vorhandene Flugspuren aus deiner bestehenden Integration.</p><span class="link">Operations Center öffnen →</span></a>
- <a class="card" data-app="status" href="#"><span class="card-icon" aria-hidden="true">⌁</span><span class="tag">Telemetrie</span><h3>Live-Cockpit</h3><p>OSD- und State-Telemetrie, RC, GNSS/RTK, Akku, Kamera und HMS – inklusive Frischebewertung.</p><span class="link">Live-Status öffnen →</span></a>
- <a class="card" data-app="studio" href="#"><span class="card-icon" aria-hidden="true">⌘</span><span class="tag">Planung</span><h3>Mission Studio</h3><p>Wegpunkte, Karten, DJI-WPML/KMZ, Routenvergleich und lokale Missionsbearbeitung.</p><span class="link">Studio öffnen →</span></a>
- <a class="card" data-app="media" href="#"><span class="card-icon" aria-hidden="true">▧</span><span class="tag">Medien</span><h3>DJI Media Hub</h3><p>Medienindex, Aufnahmen, Metadaten und lokale Synchronisierungsübersicht.</p><span class="link">Medien öffnen →</span></a>
- <a class="card" data-app="thermal" href="#"><span class="card-icon" aria-hidden="true">◈</span><span class="tag">Analyse</span><h3>Thermal & Inspektion</h3><p>Thermische Aufnahmen, Temperaturauswertungen und Inspektionswerkzeuge.</p><span class="link">Thermal öffnen →</span></a>
- <a class="card" data-app="multispectral" href="#"><span class="card-icon" aria-hidden="true">◉</span><span class="tag">Analyse</span><h3>Multispektral</h3><p>Spektralbänder, Vegetationsindizes und GIS-orientierte Verarbeitung.</p><span class="link">Multispektral öffnen →</span></a>
- <a class="card" data-app="results" href="#"><span class="card-icon" aria-hidden="true">▤</span><span class="tag">Ergebnisse</span><h3>Raster & Geodaten</h3><p>Kartenergebnisse, Rasterdaten und vorhandene GeoTIFF/COG-Produkte.</p><span class="link">Ergebnisraster öffnen →</span></a>
- <a class="card" data-app="fh2-components" href="#"><span class="card-icon" aria-hidden="true">⬡</span><span class="tag">DJI · Optional</span><h3>Native FlightHub-2-Komponenten</h3><p>Offizielle DJI-Projektkarte und DJI-Cockpit, nur mit separatem kompatiblem FlightHub-2-Server und expliziter Aktivierung.</p><span class="link">Komponenten vorbereiten →</span></a>
-</div>
-<section class="bottom" aria-label="Integrationshinweis"><div><div class="eyebrow">Integration</div><h3>Zwei DJI-Plattformen. Eine konsistente Arbeitsoberfläche.</h3><p>Lokale Pilot-2-Cloud und FlightHub 2 OpenAPI sind keine austauschbaren Backends. AeroNexus hält sie getrennt und führt nur die dafür freigegebenen Ansichten zusammen. Die experimentellen nativen DJI-Komponenten sind standardmäßig inaktiv.</p></div><a class="quick-link" data-app="fh2-components" href="#">DJI-Integration ansehen ↗</a></section>
+ <section class="intro" aria-labelledby="page-title"><h1 id="page-title">Ihr Arbeitsbereich</h1><p>Missionen vorbereiten, Geräte prüfen und Aufnahmen auswerten. Wählen Sie Ihre nächste Aufgabe.</p></section>
+ <section aria-labelledby="daily-title"><h2 id="daily-title">Planung &amp; Betrieb</h2><div class="cards">
+  <a class="card" data-app="studio" href="#"><h3>Missionen planen</h3><p>Lokale Entwürfe und Cloud-Routen öffnen, Wegpunkte bearbeiten und Routen exportieren.</p><span class="link">Mission Manager öffnen ↗</span></a>
+  <a class="card" data-app="status" href="#"><h3>Live-Status prüfen</h3><p>Verbindung, Akku und aktuelle Telemetrie der Geräte sehen.</p><span class="link">Live-Status öffnen ↗</span></a>
+  <a class="card" data-app="media" href="#"><h3>Medien ansehen</h3><p>Aufnahmen finden, Vorschaubilder öffnen und Bildinformationen prüfen.</p><span class="link">Medien öffnen ↗</span></a>
+  <a class="card" data-app="operations" href="#"><h3>Übersicht öffnen</h3><p>Projekte, Geräte und den Zustand der angebundenen Cloud-Dienste prüfen.</p><span class="link">Übersicht öffnen ↗</span></a>
+ </div></section>
+ <section aria-labelledby="analysis-title"><h2 id="analysis-title">Auswertungen</h2><div class="cards analysis">
+  <a class="card" data-app="thermal" href="#"><h3>Thermal ↗</h3><p>Wärmebilder und Temperaturen auswerten.</p></a>
+  <a class="card" data-app="multispectral" href="#"><h3>Multispektral ↗</h3><p>Spektralbänder und Vegetationsindizes prüfen.</p></a>
+  <a class="card" data-app="results" href="#"><h3>Ergebnisraster ↗</h3><p>Vorhandene Raster und Geodaten ansehen.</p></a>
+ </div></section>
+ <details class="setup"><summary>Einrichtung &amp; technische Hinweise</summary><p>Die Fachmodule öffnen in einem neuen Tab über HTTPS auf Port 8000. Die Pilot-2-Anmeldung bleibt auf Port 8085. Dieses Portal speichert keine DJI-Zugangsdaten und startet keine Flugmissionen.</p><p>Die optionalen nativen DJI-Komponenten benötigen einen separaten kompatiblen FlightHub-2-Server und bleiben bis zur ausdrücklichen Aktivierung inaktiv.</p><a data-app="fh2-components" href="#">FlightHub-Komponenten einrichten ↗</a></details>
 </main>
-<footer><span>© AeroNexusAdvanced · Lokale Cloud-Control</span><span class="kbd">Web: 8085 · Fachmodule: HTTPS 8000</span><span>Keine automatischen Flugbefehle aus diesem Portal</span></footer>
+<footer><span>AeroNexusAdvanced · Lokaler Arbeitsbereich</span><span class="indicator" id="web-state" role="status" aria-live="polite">Webserver wird geprüft</span></footer>
 </div>
 <script>
 "use strict";

@@ -4,6 +4,9 @@ Never embeds MinIO credentials, presigned links or physical object paths.
 Every list request is made against the local, access-controlled FastAPI API.
 """
 
+from .ui_navigation import with_navigation
+
+
 HTML = r"""<!doctype html>
 <html lang="de">
 <head>
@@ -62,11 +65,9 @@ footer{color:#94adc7;font-size:12px;padding:10px 0}
 <body>
 <main>
 <header>
-<div><div class="eyebrow">AERONEXUS ADVANCED · PHASE 20</div>
-<h1>DJI-MinIO-Medienindex</h1></div>
-<nav aria-label="Bereiche"><a href="/operations">Operations Center</a>
-<a href="/status">Live-Status</a><a href="/studio">Mission Studio</a>
-<a href="/thermal">Thermal</a><a href="/multispectral">Multispektral</a><a href="/results">Ergebnisraster</a></nav>
+<div><div class="eyebrow">AERONEXUS ADVANCED</div>
+<h1>Medien</h1></div>
+__APP_NAVIGATION__
 </header>
 <p>Schreibgeschützter Index der DJI-Pilot-2-Uploads. Originale verbleiben in MinIO.
 Der Fotokatalog liest Drohnenmodell, Kamera, Aufnahmezeit, Position und Gimbal aus den
@@ -372,6 +373,9 @@ refresh();
 window.setInterval(refresh,60000);
 </script>
 </body></html>"""
+
+
+HTML = with_navigation(HTML, "media")
 
 
 def render_dji_media_page() -> str:

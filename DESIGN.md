@@ -207,5 +207,28 @@ Die vorhandenen Scrollbereiche bleiben erhalten. Keine neuen Farben oder Fonts.
 Der Mission Manager verwendet die bestehende native Auswahl `mission-list` mit
 Quellgruppen für lokale Entwürfe, Pilot-2-Cloud und FlightHub. Betriebssystem-Popup,
 Studio-Tokens, Sidebar-Scrollbereich und bestehende Buttons bleiben erhalten.
-`mission-manager-state` ist die sichtbare Statusregion für Laden, Quellenfehler
-und schreibgeschützte Cloud-Vorschauen. Es gibt keine neuen Farben oder Fonts.
+`mission-manager-state` besitzt die ausführlichen Quelleninformationen; die
+sichtbare Zusammenfassung nennt den Bestand. Fehler und Teilbestände öffnen
+die Details automatisch. Schreibgeschützte Cloud-Vorschauen bleiben benannt. Es gibt keine neuen Farben oder Fonts.
+
+## Gemeinsame Navigation und vereinfachte Arbeitsabläufe
+
+`src/aeronexus/ui_navigation.py` ist der kanonische Eigentümer der Navigation
+aller sieben Fachmodule. Die bestehenden Studio-Farben sind die Laufzeitquelle:
+Text `#eaf3ff`, Hintergrund `#111e31`, Rahmen `#2c425c`, Fokus `#7ccaff` und
+Auswahl `#23496b`. Systemschrift, 13px Navigation und 8px-Radien entsprechen
+den bisherigen Arbeitsbereichen. Die fachlichen Viewer behalten ihre Tokens.
+
+Vier direkte Ziele (Live-Status, Missionen, Medien, Übersicht) und eine native
+Disclosure für die drei Auswertungen ersetzen die wechselnden Linklisten.
+Die aktuelle Seite trägt `aria-current="page"`. Auf schmalen Bildschirmen
+öffnet die Auswertungsliste im Dokumentfluss. Studio-Werkzeuge stehen in einer
+eigenen Zeile. Auf Desktop übernimmt ein flexibler Rahmen die tatsächliche
+Headerhöhe; Seitenleiste und Karte behalten ihre eigenen Scrollbereiche.
+
+Der Mission Manager zeigt Routenauswahl und Grunddaten zuerst. Start/Rückkehr,
+Dateiimport, theoretische Routenanalyse und Erläuterungen sind über native
+`details` erreichbar. Eingaben bleiben beim Zuklappen erhalten. Quellenzusammenfassung,
+Fehler, Speicherzustand und schreibgeschützte Cloud-Vorschauen bleiben sichtbar.
+Die Portalseite verwendet dieselbe aufgabenbezogene Sprache, vier tägliche
+Einstiege und drei Analyseziele. Technische Einrichtung liegt in einer Disclosure.

@@ -7,6 +7,9 @@ thermal image, thermal/visual overlay, map of image positions and
 footprints; PV inspection panel (IEC TS 62446-3 orientation).
 """
 
+from .ui_navigation import with_navigation
+
+
 HTML = r"""<!doctype html>
 <html lang="de">
 <head>
@@ -97,14 +100,7 @@ details.section summary{cursor:pointer;font-weight:700;font-size:13px;padding:4p
 <body>
 <header>
 <div class="logo"><small>AERONEXUS ADVANCED</small>Thermal</div>
-<nav class="tabs" aria-label="Projektbereiche">
-<a href="/operations">Operations Center</a>
-<a href="/studio">Mission Studio</a>
-<a href="/status">Live-Status</a>
-<a href="/media">DJI Medien</a>
-<span class="active" aria-current="page">Thermal</span>
-<a href="/multispectral">Multispektral</a>
-<a href="/results">Ergebnisraster</a></nav>
+__APP_NAVIGATION__
 <span class="header-state" id="sdk-state" role="status" aria-live="polite">Prüfe DJI Thermal SDK…</span>
 </header>
 <div class="layout">
@@ -839,6 +835,9 @@ loadStatus();loadList();loadFlights();
 </body>
 </html>
 """
+
+
+HTML = with_navigation(HTML, "thermal")
 
 
 def render_thermal_page() -> str:

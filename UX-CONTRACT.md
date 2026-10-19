@@ -215,3 +215,23 @@ unterscheidet beendet, mit Fehlern beendet und abgebrochen. Sie nennt gespeicher
 Diagnose mit Dateipfaden, Zugangsdaten oder unverarbeiteten Exception-Texten.
 Verifikation: tatsächliche SDK-/SQLite-Testfixtures, Fehler und Wiederholung
 für neue und gecachte Messungen sowie Node-Laufzeittest der Flugkarten.
+
+# Vereinfachte Navigation und Missionseinstellungen
+
+Die gemeinsame Hauptnavigation führt auf allen sieben Fachseiten zu denselben
+Zielen. `ui_navigation.navigation` besitzt Reihenfolge, Beschriftungen und
+aktuelle Seite; native `details` besitzt den Auswertungsbereich. Links bleiben
+normale Browsernavigation. Die sechs Studio-Werkzeuge behalten ihre bisherigen
+Panel-IDs und ihren bestehenden Auswahl-/Ladezustand.
+
+Native Disclosures steuern nur die Sichtbarkeit zusätzlicher Einstellungen.
+Zuklappen setzt keine Werte zurück und speichert nichts. Speichern, Löschen,
+Undo/Redo, CSV-Prüfung und KMZ-Export bleiben bei ihren bisherigen Eigentümern.
+Start- und Rückkehrparameter sind unter „Start, Rückkehr & weitere Einstellungen“
+erreichbar. Die Quellenzusammenfassung nennt Entwürfe und Cloud-Routen;
+Quellenprobleme und Teilbestände öffnen ihre Details automatisch. Cloud-Vorschauen bleiben schreibgeschützt.
+
+Das optionale Portal bietet direkte Aufgabenlinks und eine geschlossene
+Einrichtungssektion. Die Erreichbarkeitsprüfung bezeichnet ausschließlich den
+Pilot-2-Webserver. Sie behauptet keine Geräteverbindung. Die vorhandene
+explizite Aktivierung nativer FlightHub-Komponenten bleibt erhalten.

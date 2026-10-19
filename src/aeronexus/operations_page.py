@@ -6,6 +6,9 @@ commands or raw upstream API responses are embedded in the public HTML.
 """
 
 
+from .ui_navigation import with_navigation
+
+
 HTML = r"""<!doctype html>
 <html lang="de">
 <head>
@@ -125,14 +128,7 @@ div[hidden],section[hidden],aside[hidden]{display:none!important}
 <body>
 <header>
 <div class="logo"><small>AERONEXUS ADVANCED</small>Operations Center</div>
-<nav class="tabs" aria-label="Projektbereiche">
-<span class="active">FlightHub 2 Übersicht</span>
-<a href="/studio">Mission Studio ↗</a>
-<a href="/status">Live-Status ↗</a>
-<a href="/media">DJI Medien ↗</a>
-<a href="/thermal">Thermal ↗</a>
-<a href="/multispectral">Multispektral ↗</a>
-<a href="/results">Ergebnisraster</a></nav>
+__APP_NAVIGATION__
 <span class="header-state" id="connection" role="status" aria-live="polite">Lade lokalen FlightHub-Status…</span>
 </header>
 <div class="layout">
@@ -1045,6 +1041,9 @@ wire();
 </script>
 </body>
 </html>"""
+
+
+HTML = with_navigation(HTML, "operations")
 
 
 def render_operations() -> str:

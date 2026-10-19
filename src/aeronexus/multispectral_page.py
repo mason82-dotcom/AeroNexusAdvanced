@@ -10,6 +10,9 @@ import json
 from .multispectral_report import CSV_FIELDS
 
 
+from .ui_navigation import with_navigation
+
+
 HTML = r"""<!doctype html>
 <html lang="de">
 <head>
@@ -106,14 +109,7 @@ th{color:var(--sub);font-weight:600}
 <body>
 <header>
 <div class="logo"><small>AERONEXUS ADVANCED</small>Multispektral (M3M)</div>
-<nav class="tabs" aria-label="Projektbereiche">
-<a href="/operations">Operations Center</a>
-<a href="/studio">Mission Studio</a>
-<a href="/status">Live-Status</a>
-<a href="/media">DJI Medien</a>
-<a href="/thermal">Thermal</a>
-<span class="active" aria-current="page">Multispektral</span>
-<a href="/results">Ergebnisraster</a></nav>
+__APP_NAVIGATION__
 <span class="header-state" id="state" role="status" aria-live="polite">Lade Aufnahmen…</span>
 </header>
 <div class="layout">
@@ -703,6 +699,9 @@ loadPackages().catch(e=>{$("ortho-state").textContent="Pakete nicht abrufbar: "+
 </body>
 </html>
 """
+
+
+HTML = with_navigation(HTML, "multispectral")
 
 
 def render_multispectral_page() -> str:

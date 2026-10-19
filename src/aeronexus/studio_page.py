@@ -9,6 +9,9 @@ from functools import lru_cache
 from .wpml_export import MODELS, MODEL_LABELS
 
 
+from .ui_navigation import with_navigation
+
+
 HTML = r"""<!doctype html>
 <html lang="de">
 <head>
@@ -191,23 +194,33 @@ dialog::backdrop{background:#000b}dialog img,dialog video{max-width:100%;max-hei
 footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 @media(max-width:1000px){.layout{grid-template-columns:320px minmax(0,1fr)}header{gap:9px}.auth{min-width:250px}}
 @media(max-width:700px){.auth-message{text-align:left}.layout{display:block;height:auto}.side{max-height:none}.content{height:65vh;min-height:440px}.pane-inner{padding:16px}#map{min-height:440px}.auth{min-width:100%;justify-content:stretch}header{padding:11px}}
+
+/* Global navigation, Studio tools and map have separate layout ownership. */
+@media(min-width:701px){body{height:100dvh;display:flex;flex-direction:column;overflow:hidden}.layout{height:auto;min-height:0;flex:1}.layout .content{min-height:0}header{flex-shrink:0}}
+header .studio-tabs{flex-basis:100%;order:4;padding-top:8px;border-top:1px solid var(--line)}
+header .studio-tabs button{font-size:13px;padding:8px 10px}
+.auth{min-width:180px}.auth-message{max-width:240px;font-size:11px}
+.studio-disclosure{border:1px solid var(--line);border-radius:9px;padding:11px;margin:14px 0;background:var(--bg)}
+.studio-disclosure>summary,.studio-help>summary{cursor:pointer;font-weight:650;color:#c9dff4;line-height:1.5}
+.studio-disclosure>summary:focus-visible,.studio-help>summary:focus-visible{outline:2px solid #7ccaff;outline-offset:3px}
+.studio-disclosure[open]>summary{margin-bottom:12px}
+.studio-help{margin:9px 0;color:var(--muted);font-size:12px}.studio-help>summary{font-weight:400}
+#mission-manager-state{font-size:12px;padding:9px;overflow-wrap:anywhere}
+#mission-panel h2{margin-top:18px}.route-analysis .analysis-grid{margin-top:12px}
 </style>
 </head>
 <body>
 <header>
 <div class="brand"><small>AERONEXUS ADVANCED</small>Mission Studio</div>
-<nav aria-label="Arbeitsbereiche">
-<button class="active" data-tab="map-pane">Karte & Missionen</button>
-<button data-tab="geo-pane">Geo &amp; Gelände</button>
-<button data-tab="terrain-pane">3D Gelände</button>
-<button data-tab="media-pane">Medienbibliothek</button>
+__APP_NAVIGATION__
+<nav class="studio-tabs" aria-label="Studio-Werkzeuge">
+<button class="active" data-tab="map-pane">Mission planen</button>
+<button data-tab="geo-pane">Flächen planen</button>
+<button data-tab="terrain-pane">Gelände in 3D</button>
+<button data-tab="media-pane">Lokale Medien</button>
 <button data-tab="waylines-pane" aria-controls="waylines-pane">Cloud-Routen</button>
-<button data-tab="fleet-pane">Flottenstatus</button>
-<a href="/operations" style="color:#9edaff;padding:9px;text-decoration:none">Operations Center ↗</a>
-<a href="/status" style="color:#9edaff;padding:9px;text-decoration:none">Live-Dashboard ↗</a>
-<a href="/thermal" style="color:#9edaff;padding:9px;text-decoration:none">Thermal ↗</a>
-<a href="/multispectral" style="color:#9edaff;padding:9px;text-decoration:none">Multispektral ↗</a>
-<a href="/results" style="color:#9edaff;padding:9px;text-decoration:none">Ergebnisraster ↗</a></nav>
+<button data-tab="fleet-pane">Geräte</button>
+</nav>
 <div class="auth"><span class="dot on" aria-hidden="true"></span>
 <span id="auth-message" class="auth-message" role="status" aria-live="polite">Direkter LAN-Zugriff · Daten werden geladen…</span>
 </div>
@@ -216,35 +229,39 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <aside class="side" id="mission-panel">
 <div class="flex between"><div><h1>Mission Manager</h1><div class="note">Lokale Entwürfe und Cloud-Routen · keine Flugausführung</div></div><span class="badge">WPML</span></div>
 <div class="status" id="notice" role="status">Missionen werden automatisch vom Raspberry Pi geladen…</div>
-<label for="mission-list">Alle Routen<select id="mission-list"><option value="">Neuer Entwurf</option></select></label>
-<div class="button-row"><button id="load-manager-route">Route laden</button><button id="refresh-manager-routes">Routen aktualisieren</button></div>
-<div id="mission-manager-state" class="status" role="status" aria-live="polite">Lokale Entwürfe und Cloud-Routen werden geladen…</div>
+<label for="mission-list">Route auswählen<select id="mission-list"><option value="">Neuer Entwurf</option></select></label>
+<div class="button-row"><button id="load-manager-route" class="primary">Route laden</button><button id="refresh-manager-routes">Aktualisieren</button></div>
+<details class="studio-help" id="manager-source-details"><summary id="mission-manager-summary">Quellenstatus · Routen werden geladen…</summary>
+<div id="mission-manager-state" class="status" role="status" aria-live="polite">Lokale Entwürfe und Cloud-Routen werden geladen…</div></details>
 <div class="button-row"><button id="new-mission">Neu</button><button id="save-mission" class="primary">Speichern</button><button id="delete-mission" class="danger" disabled>Löschen</button></div>
-<div class="editor-tools"><button id="undo-edit" disabled title="Strg+Z (außer in Eingabefeldern)">↶ Rückgängig</button><button id="redo-edit" disabled title="Strg+Umschalt+Z / Strg+Y">↷ Wiederherstellen</button></div>
+<div class="editor-tools"><button id="undo-edit" disabled title="Strg+Z (außer in Eingabefeldern)">↶ Rückgängig</button><button id="redo-edit" disabled title="Wiederherstellen · Strg+Umschalt+Z / Strg+Y">↷ Wiederholen</button></div>
 <div id="editor-dirty" class="editor-dirty" role="status" aria-live="polite">Keine ungespeicherten Änderungen</div>
 <fieldset id="mission-fields">
 <label>Missionsname<input id="mission-name" maxlength="100" value="Neue Wegpunktmission"></label>
-<label>Beschreibung<textarea id="mission-description" rows="2" maxlength="1000" placeholder="Aufgabe, Einsatzgebiet, Hinweise"></textarea></label>
 <div class="field-row">
 <label>Fluggerät<select id="mission-model">__MISSION_MODEL_OPTIONS__</select></label>
 <label>Flughöhe über Start (m)<input id="mission-altitude" type="number" min="2" max="500" step="1" value="50"></label>
 <label>Geschwindigkeit (m/s)<input id="mission-speed" type="number" min="0.1" max="15" step="0.5" value="5"></label>
+</div>
+<details class="studio-disclosure" id="mission-settings"><summary>Start, Rückkehr &amp; weitere Einstellungen</summary>
+<label>Beschreibung<textarea id="mission-description" rows="2" maxlength="1000" placeholder="Aufgabe, Einsatzgebiet, Hinweise"></textarea></label>
+<div class="field-row">
 <label>Sichere Starthöhe (m)<input id="mission-takeoff" type="number" min="1.2" max="1500" step="1" value="20"></label>
 <label>RTH-Höhe (m)<input id="mission-rth" type="number" min="2" max="500" step="1" value="60"></label>
 <label>Mission beenden<select id="mission-finish"><option value="goHome">Return-to-Home</option><option value="noAction">Keine Aktion</option></select></label>
 </div>
+</details>
 </fieldset>
 <h2>Wegpunkte <span id="point-count" class="badge">0</span></h2>
 <div class="button-row"><button id="add-mode">+ Auf Karte setzen</button><button id="fit-mission">Route einpassen</button></div>
 <div class="note">„Auf Karte setzen“ aktivieren, dann klicken. Punkte lassen sich ziehen, bearbeiten, sortieren und löschen.</div>
 <label class="route-option" for="close-route">
 <input id="close-route" type="checkbox">
-<span>Route schließen (letzten Wegpunkt mit erstem verbinden)</span>
+<span>Zum ersten Wegpunkt zurückkehren</span>
 </label>
-<p class="route-explain">Eine geschlossene Route fliegt wirklich zurück zum ersten Wegpunkt. Im DJI-WPML-Export wird dafür ein zusätzlicher Wegpunkt angelegt, nicht nur eine Linie gezeichnet. Die Return-to-Home-Einstellung bleibt unabhängig davon.</p>
+<details class="studio-help"><summary>Was bedeutet eine geschlossene Route?</summary><p class="route-explain">Eine geschlossene Route fliegt wirklich zurück zum ersten Wegpunkt. Im DJI-WPML-Export wird dafür ein zusätzlicher Wegpunkt angelegt, nicht nur eine Linie gezeichnet. Die Return-to-Home-Einstellung bleibt unabhängig davon.</p></details>
 <div id="route-status" class="route-status" role="status" aria-live="polite">Offene Route. Noch keine Wegpunkte.</div>
-<section class="route-analysis" aria-labelledby="route-analysis-title">
-<h3 id="route-analysis-title">Routenanalyse · theoretische Werte</h3>
+<details class="route-analysis studio-disclosure"><summary id="route-analysis-title">Strecke &amp; geschätzte Flugzeit</summary>
 <div class="analysis-grid">
 <div><small>Wegstrecke (geradlinig)</small><strong id="route-distance">–</strong></div>
 <div><small>Flugzeit bei Sollgeschwindigkeit</small><strong id="route-duration">–</strong></div>
@@ -253,7 +270,7 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 </div>
 <p id="route-analysis-warning" class="analysis-warning" role="status" aria-live="polite"></p>
 <p class="note">WGS84-Großkreisentfernungen zwischen Wegpunkten. Nur ideale horizontale Reisezeit; kein Start/Steigflug, Bremsen, Schweben, Wind, Hindernisse, Gelände, RTH, Landung oder Akkuverbrauch. Keine Freigabe zum Fliegen.</p>
-</section>
+</details>
 <div id="point-list"></div>
 <div id="point-editor" hidden>
 <h3>Wegpunkt <span id="edit-index">1</span> bearbeiten</h3>
@@ -284,13 +301,14 @@ footer{font-size:11px;color:#a3b6cc;margin:20px 0}
 <div class="button-row"><button id="apply-point">Übernehmen</button><button id="remove-point" class="danger">Entfernen</button></div>
 <div class="button-row"><button id="insert-midpoint">Zwischenpunkt danach</button><button id="copy-point">WGS84 kopieren</button></div>
 </div>
-<hr>
+<details class="studio-disclosure" id="mission-import"><summary>Route aus Datei importieren</summary>
 <button id="open-csv" style="width:100%">Wegpunkte aus CSV importieren</button>
 <p class="note">CSV zuerst prüfen, dann Wegpunkte im aktuellen Entwurf ersetzen. Speichern bleibt ein eigener Schritt.</p>
 <label>Eigene AeroNexus-KMZ wieder öffnen<input type="file" id="import-kmz" accept=".kmz,application/vnd.google-earth.kmz"></label>
 <div class="button-row"><button id="import-mission">KMZ importieren & bearbeiten</button></div>
+</details>
 <div class="button-row"><button class="primary" id="export-mission">KMZ / DJI WPML exportieren</button></div>
-<p class="note">Exportiert eine Datei mit <code>wpmz/template.kml</code> und <code>wpmz/waylines.wpml</code>. Flugmissionen müssen vor einem Einsatz in DJI Pilot 2 auf Kompatibilität, Höhen, Luftraum, RTH und Sicherheit geprüft werden. Kein automatischer Import zur Drohne.</p>
+<details class="studio-help"><summary>Hinweise zum DJI-Export</summary><p class="note">Exportiert eine Datei mit <code>wpmz/template.kml</code> und <code>wpmz/waylines.wpml</code>. Flugmissionen müssen vor einem Einsatz in DJI Pilot 2 auf Kompatibilität, Höhen, Luftraum, RTH und Sicherheit geprüft werden. Kein automatischer Import zur Drohne.</p></details>
 </aside>
 <aside class="side" id="geo-panel" hidden>
 <h1>Geo-Objekte &amp; Flächenplanung</h1><p class="note">Eigenständige lokale Planungsdaten. Keine DJI-Missionsausführung oder Änderung am WPML-Export.</p>
@@ -1144,6 +1162,15 @@ async function loadMissions(){
 }
 function missionManagerState(message,isError=false){
   const state=$("mission-manager-state");state.textContent=message;state.className="status"+(isError?" error":"");
+  const source=waylineData?.local_pilot;
+  const problem=isError||/nicht erreichbar/i.test(message)||
+    !!(source&&source.state!=="not_configured"&&
+      (source.state!=="connected"||source.pagination_complete!==true))||
+    (waylineData?.projects||[]).some(p=>p.waylines_readable===false||p.waylines_at_limit);
+  $("mission-manager-summary").textContent=problem?"Quellenproblem · Details unten":
+    knownMissions.length+" lokale Entwürfe · "+(waylineData?.waylines||[]).length+" Cloud-Routen · Details";
+  const details=state.closest?.("details");
+  if(details&&problem)details.open=true;
 }
 async function refreshMissionManager(){
   const serial=++managerRefreshSerial,button=$("refresh-manager-routes");button.disabled=true;
@@ -3136,6 +3163,9 @@ loadWorkspace();
 </script>
 </body>
 </html>"""
+
+
+HTML = with_navigation(HTML, "studio")
 
 
 @lru_cache(maxsize=1)

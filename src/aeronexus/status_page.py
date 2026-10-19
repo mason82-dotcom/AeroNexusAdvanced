@@ -10,6 +10,9 @@ from functools import lru_cache
 from .status_cockpit import COCKPIT_CSS, COCKPIT_HTML, COCKPIT_JS
 
 
+from .ui_navigation import with_navigation
+
+
 HTML = r"""<!doctype html>
 <html lang="de">
 <head>
@@ -92,16 +95,18 @@ footer{margin:22px 0;color:#9fb3ca;font-size:12px}
 #poll-health{margin-top:12px}
 @media(max-width:650px){body{padding:12px}.panel{padding:14px;margin:14px 0}.grid{gap:8px}.metric{padding:12px}.metric b{font-size:22px}.controls input{width:100%}}
 __COCKPIT_STYLE__
+header>nav.app-nav{flex-basis:100%}
 </style>
 </head>
 <body>
 <main>
 <header>
 <div><div class="eyebrow">DJI Monitoring · Nur Lesen</div><h1>AeroNexusAdvanced</h1>
-<div class="subtle">Live-Telemetrie-Cockpit · Flugbefehle deaktiviert · <a href="/studio" style="color:#9cd2ff">Mission Studio für Chrome ↗</a> · <a href="/operations" style="color:#9cd2ff">Operations Center ↗</a> · <a href="/thermal" style="color:#9cd2ff">Thermal ↗</a> · <a href="/multispectral" style="color:#9cd2ff">Multispektral ↗</a> · <a href="/results" style="color:#9cd2ff">Ergebnisraster ↗</a></div></div>
+<div class="subtle">Live-Telemetrie · Flugbefehle deaktiviert</div></div>
 <div class="meta">Zusammenfassung: __INTERVAL_SECONDS__ s · Cockpit: bis 5 s<br>
 <span id="timestamp">Noch keine Daten</span><br>
 <span id="feed">Live-Feed: –</span></div>
+__APP_NAVIGATION__
 </header>
 <div class="meta" id="poll-health" role="status">Lokale Cloud-Verbindung wird geprüft.</div>
 <section class="grid" aria-label="Flottenkennzahlen">
@@ -534,6 +539,9 @@ if(typeof document.addEventListener==="function"){
 </script>
 </body>
 </html>"""
+
+
+HTML = with_navigation(HTML, "status")
 
 
 @lru_cache(maxsize=4)
