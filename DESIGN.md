@@ -1,13 +1,13 @@
 ---
 version: alpha
-name: AeroNexusAdvanced Multispektral
-description: Technischer Auswerteplatz für DJI-Multispektralaufnahmen
+name: AeroNexusAdvanced Cockpit
+description: Gemeinsamer Arbeitsbereich für DJI-Missionen und Auswertungen
 colors:
-  background: "#0b1323"
-  surface: "#122139"
-  border: "#334e69"
-  foreground: "#eaf4ff"
-  muted: "#a9bfd8"
+  background: "#10151c"
+  surface: "#171e28"
+  border: "#344151"
+  foreground: "#eaf3ff"
+  muted: "#a6b4c5"
   primary: "#75e3bd"
   warning: "#e4bd78"
   danger: "#ff9ba8"
@@ -17,8 +17,8 @@ typography:
   mono:
     fontFamily: 'ui-monospace, Consolas, monospace'
 rounded:
-  control: "8px"
-  panel: "13px"
+  control: "4px"
+  panel: "4px"
 spacing:
   panel: "14px"
   gap: "12px"
@@ -31,13 +31,13 @@ spacing:
 Produktoberfläche für Drohnenaufnahmen am Rechner und am Smartphone, deutschsprachig.
 Dichte Messwertdarstellung wie ein technischer Auswerteplatz: die Indexkarte trägt
 Farbe und Information; Bedienelemente bleiben zurückhaltend. Keine Marketingelemente
-oder Neugestaltung anderer Projektbereiche. Quellen: `docs/multispectral.md`,
+in den Fachbereichen. Quellen: `docs/multispectral.md`,
 `src/aeronexus/multispectral_page.py`; Verhalten in `UX-CONTRACT.md`.
 
 ## Colors
 
-Die bestehenden CSS-Variablen in `multispectral_page.py` sind die kanonische
-Laufzeitquelle (keine generierten Tokens). Die Frontmatter spiegelt sie:
+`ui_theme.py` besitzt die gemeinsamen Oberflächen-Tokens;
+`multispectral_page.py` besitzt die Analysefarben. Die Frontmatter spiegelt sie:
 background → `--bg`, surface → `--pane`, border → `--line`, foreground → `--ink`,
 muted → `--sub`, primary → `--mint`, warning → `--amber`, danger → `--red`.
 Neue Berichtselemente verwenden diese Variablen. Mint markiert Histogrammbalken,
@@ -63,7 +63,7 @@ Flache Flächen mit feinen Rahmen; keine neuen Schatten oder Animationen.
 
 ## Shapes
 
-Bestehende 8px-Steuerelemente und 13px-Panels wiederverwenden.
+Gemeinsame 4px-Steuerelemente und Panels wiederverwenden.
 
 ## Components
 
@@ -94,18 +94,18 @@ compact system typography, mint selection and explicit operational states.
 
 ```css
 :root {
-  --bg: #0b1323;
-  --pane: #122139;
-  --line: #334e69;
-  --ink: #eaf4ff;
-  --sub: #a9bfd8;
+  --bg: #10151c;
+  --pane: #171e28;
+  --line: #344151;
+  --ink: #eaf3ff;
+  --sub: #a6b4c5;
   --mint: #75e3bd;
   --red: #ff9ba8;
 }
 ```
 
 Use 14px / 1.45 system-ui body text; 17px panel titles, 12px supporting text.
-Panels have 13px corners and 14px padding. The catalog occupies 300px beside a
+Panels have 4px corners and 14px padding. The catalog occupies 300px beside a
 flexible map; below 800px panels stack and the list remains scrollable. Controls
 retain native keyboard behavior and a visible mint focus outline. Selection,
 loading, empty, failed, unavailable and stale data states use explicit text.
@@ -118,24 +118,23 @@ transparent. Filenames and metadata are inserted as text, never HTML.
 
 ## Tokens
 
-Mission Studio keeps its own palette (canonical in the `:root` CSS of
-`src/aeronexus/studio_page.py`); the multispectral front matter above does not
-apply here.
+The shared cockpit palette is canonical in `src/aeronexus/ui_theme.py`.
+Studio retains its blue interaction accent and its existing semantic states.
 
 ```css
 :root {
   --accent: #48a8f5;
-  --bg: #0a111f;
-  --pane: #111e31;
-  --surface: #172740;
+  --bg: #10151c;
+  --pane: #171e28;
+  --surface: #202b39;
   --ink: #eaf3ff;
-  --muted: #97aec7;
-  --line: #2c425c;
+  --muted: #a6b4c5;
+  --line: #344151;
 }
 ```
 
 Font stack `Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif` (no new
-font dependency); controls 9px, dialogs 15px corner radius. Spacing follows the
+font dependency); controls 4px, dialogs 15px corner radius. Spacing follows the
 existing screen-specific layout rules.
 
 ## Overview
@@ -148,8 +147,8 @@ Market-specific regulatory behavior is outside the CSV import scope.
 
 ## Colors
 
-The canonical runtime owner is the `:root` CSS in
-`src/aeronexus/studio_page.py`. This file mirrors it: primary → `--accent`,
+The canonical runtime owner of shared surfaces is `COCKPIT_CSS` in
+`src/aeronexus/ui_theme.py`, applied after each module stylesheet. This file mirrors it: primary → `--accent`,
 background → `--bg`, pane → `--pane`, surface → `--surface`, ink → `--ink`,
 muted → `--muted`, line → `--line`. New CSV containers consume these variables.
 Status panels reuse `.status`, `.status.error` and `.status.good`; status
@@ -162,7 +161,8 @@ use tabular numerals and seven decimal places. No external font download.
 
 ## Layout
 
-Preserve the editor/sidebar and map layout. The CSV dialog alone owns a bounded
+Use route inventory / map / inspector on desktop; split the left column
+on tablets and stack naturally on phones. The CSV dialog alone owns a bounded
 scroll body and a table with internal scrolling; actions stay visible. At
 narrow widths it fits within 95vw and 90vh. Other panels retain their existing
 scroll ownership. CSV tables reveal 50 rows at a time, at most 500 in total.
@@ -174,7 +174,7 @@ use borders and tonal surfaces instead of new ornamental shadows.
 
 ## Shapes
 
-Preserve the existing 9px controls and 15px dialog corners.
+Use the shared 4px controls and 15px dialog corners.
 
 ## Components
 
@@ -196,7 +196,7 @@ history remain the behavior owners. See `UX-CONTRACT.md` for the CSV workflow.
 
 Der lesende Bibliotheksbereich verwendet dieselben Studio-Tokens und das
 bestehende Tab-/Sidebar-/Pane-Muster. Native beschriftete Such- und Quellenfelder,
-9px-Karten mit `--pane` und `--line`, 12px Abstand und 14px Innenabstand folgen
+4px-Karten mit `--pane` und `--line`, 12px Abstand und 14px Innenabstand folgen
 der vorhandenen technischen Dichte. Karten sind ausdrücklich keine klickbaren
 Editoren. Lange Namen/Workspace-IDs umbrechen, statt Nachbarspalten zu verbreitern.
 Unter schmalen Breiten bleibt eine Kartenspalte; höchstens zwölf Karten je Seite.
@@ -214,9 +214,9 @@ die Details automatisch. Schreibgeschützte Cloud-Vorschauen bleiben benannt. Es
 ## Gemeinsame Navigation und vereinfachte Arbeitsabläufe
 
 `src/aeronexus/ui_navigation.py` ist der kanonische Eigentümer der Navigation
-aller sieben Fachmodule. Die bestehenden Studio-Farben sind die Laufzeitquelle:
-Text `#eaf3ff`, Hintergrund `#111e31`, Rahmen `#2c425c`, Fokus `#7ccaff` und
-Auswahl `#23496b`. Systemschrift, 13px Navigation und 8px-Radien entsprechen
+aller sieben Fachmodule. `ui_theme.py` besitzt die gemeinsame Laufzeitpalette:
+Text `#eaf3ff`, Hintergrund `#171e28`, Rahmen `#344151`, Fokus `#7ccaff` und
+Auswahl `#1d344b`. Systemschrift, 13px Navigation und 3px-Navigationsradien folgen
 den bisherigen Arbeitsbereichen. Die fachlichen Viewer behalten ihre Tokens.
 
 Vier direkte Ziele (Live-Status, Missionen, Medien, Übersicht) und eine native
@@ -232,3 +232,22 @@ Dateiimport, theoretische Routenanalyse und Erläuterungen sind über native
 Fehler, Speicherzustand und schreibgeschützte Cloud-Vorschauen bleiben sichtbar.
 Die Portalseite verwendet dieselbe aufgabenbezogene Sprache, vier tägliche
 Einstiege und drei Analyseziele. Technische Einrichtung liegt in einer Disclosure.
+
+## Cockpit nach OpenDroneKit als visueller Referenz
+
+Nutzerauftrag: das Bedienkonzept von OpenDroneKit auf AeroNexus übertragen.
+Geprüfte Referenz: `00PrabalK00/OpenDroneKit`, Commit
+`1ef6351ba387aaace7e6907d10babc6feb2351d3`, insbesondere `docs/UI_GUIDE.md`.
+Eigenständige Implementierung; kein Quellcode, Logo, Demo-Datensatz oder
+Desktop-Bridge der Vorlage wird eingebunden. Die Referenz enthält im geprüften
+Stand keine projektweite Lizenzdatei.
+
+Die konkrete Anordnung ist nun Routenbestand links, Karte mittig, kontextueller
+Inspektor rechts. Ab 1001px scrollen beide Seiten unabhängig. Auf 701–1000px
+teilen sich Bestand und Inspektor die linke Spalte; der Canvas bleibt daneben.
+Unter 701px entsteht ein natürlicher Dokumentfluss ohne verdeckte Formfelder.
+Eine schmale Statusleiste unter der Arbeitsfläche zeigt den tatsächlichen
+Missionsspeicherstatus. Andere Studio-Werkzeuge blenden den Missionsinspektor
+aus und nutzen den Platz.
+Eine Cloud-Vorschau zeigt ihren schreibgeschützten Kontext statt fremder lokaler
+Formularwerte. Rückkehr zum lokalen Entwurf erhält alle Eingaben.

@@ -1,5 +1,7 @@
 """Shared, script-free navigation for the seven application workspaces."""
 
+from .ui_theme import COCKPIT_CSS
+
 LINKS = (
     ("status", "Live-Status"),
     ("studio", "Missionen"),
@@ -45,5 +47,5 @@ def navigation(current: str) -> str:
 def with_navigation(html: str, current: str) -> str:
     """Apply the same navigation and tokens without adding another script."""
     return html.replace("__APP_NAVIGATION__", navigation(current)).replace(
-        "</style>", CSS + "</style>", 1
+        "</style>", CSS + COCKPIT_CSS + "</style>", 1
     )

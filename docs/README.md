@@ -27,6 +27,8 @@
 
 ## Studio, Missionsplanung und Geodaten
 
+- [Cockpit mit Kartenfläche und Missionsinspektor](cockpit-ui.md) – Bedienkonzept nach OpenDroneKit als visueller Referenz
+
 - [Mission Studio](phase-13-desktop-mission-studio.md), [Mission-/Wayline-Abgleich und Grenzen](mission-wayline-reconciliation.md)
 - [CSV-Wegpunktimport](mission-csv-import.md), [WPML Kamera/Gimbal](dji-wpml-camera-gimbal-export.md)
 - [Pilot-2-Wayline-Parameter](pilot2-wayline-parameter-audit.md), [Geometrievergleich](pilot2-wayline-geometry-compare.md)
