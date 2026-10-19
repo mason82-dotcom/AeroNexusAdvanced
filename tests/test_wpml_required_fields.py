@@ -169,17 +169,18 @@ def test_global_required_fields_in_both_documents(model, curve, smooth):
         # which are deliberately not supported by our exported mission model.
 
 
-def test_known_heading_path_discrepancy_is_identified_not_certified():
+def test_heading_path_is_written_in_all_default_blocks_without_flight_certification():
     template, route, blob = documents(mission())
-    assert template.find(
+    assert template.findtext(
         ".//" + W + "globalWaypointHeadingParam/" + W + "waypointHeadingPathMode"
-    ) is None
-    assert route.find(
-        ".//" + W + "waypointHeadingParam/" + W + "waypointHeadingPathMode"
-    ) is None
+    ) == "followBadArc"
+    assert all(
+        element.text == "followBadArc"
+        for element in route.findall(".//" + W + "waypointHeadingPathMode")
+    )
     report = audit_kmz(blob)
     assert report["full_dji_wpml_conformance_verified"] is False
-    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" in {
+    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" not in {
         item["code"] for item in report["findings"]
     }
 

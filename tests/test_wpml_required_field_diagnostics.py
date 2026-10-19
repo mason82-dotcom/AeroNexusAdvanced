@@ -157,11 +157,11 @@ def test_non_waypoint_template_families_are_not_misclassified():
     assert required_waypoint_findings(t, r) == []
 
 
-def test_heading_path_dji_interoperability_remains_an_advisory():
+def test_current_heading_path_has_no_missing_field_advisory():
     t, r = roots(sample())
     assert required_waypoint_findings(t, r) == []
     report = audit_kmz(rebuilt(t, r))
-    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" in {
+    assert "HEADING_PATH_MODE_INTEROP_UNVERIFIED" not in {
         item["code"] for item in report["findings"]
     }
     assert report["full_dji_wpml_conformance_verified"] is False
