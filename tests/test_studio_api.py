@@ -89,6 +89,26 @@ def test_create_update_export_and_delete_waypoint_mission(api):
     assert root.is_dir()
 
 
+def test_export_fails_closed_if_generated_kmz_fails_offline_audit(api, monkeypatch):
+    """No download when exported bytes fail the canonical offline inspection."""
+    import importlib
+
+    client, _ = api
+    added = client.post("/api/v1/studio/missions",
+                        json=WAYPOINT_MISSION, headers=HEADERS)
+    assert added.status_code == 201
+    # Simulate a broken exporter; the guard must reject rather than stream it.
+    module = importlib.import_module("aeronexus.app")
+    monkeypatch.setattr(module, "export_kmz", lambda *args, **kwargs: b"not-a-kmz")
+    result = client.get(
+        "/api/v1/studio/missions/" + added.json()["id"] + "/export.kmz",
+        headers=HEADERS,
+    )
+    assert result.status_code == 422
+    assert result.json()["detail"] == "Offline WPML export validation failed"
+    assert result.content[:2] != b"PK"
+
+
 def test_incomplete_waypoint_mission_not_exported(api):
     client, _ = api
     mission = {**WAYPOINT_MISSION, "waypoints": [WAYPOINT_MISSION["waypoints"][0]]}
