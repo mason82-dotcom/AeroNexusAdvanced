@@ -62,3 +62,5 @@ Die nachstehenden Dokumente sind für Regressionen und forensische Nachvollziehb
 ## Pflege der Dokumentation
 
 Neue Funktionen bekommen **eine** primäre fachliche Anleitung; veraltete Checkpoints werden unter `archive/` mit Datumsvermerk abgelegt. `PROJECT_STATUS.md` enthält nur den aktuellen **Repository-Stand**, offene Risiken und den letzten getrennt belegten **Pi-Stand**. Veraltete Versionszahlen und PR-Status nicht als aktuellen Fakt wiederholen. Die lokale `.env`, Zertifikate, Tokens und Gerätekennungen dürfen niemals Bestandteil öffentlicher Dokumente oder Logs sein.
+
+- [FlightHub-orientierter Premium-Arbeitsbereich auf Port 8085](flighthub2-premium-workspace.md) – Schnittstellen, UI-Vertrag und sichere Rückkehr zum Original-DJI-Webcontainer.

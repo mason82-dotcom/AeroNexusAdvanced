@@ -251,3 +251,27 @@ Missionsspeicherstatus. Andere Studio-Werkzeuge blenden den Missionsinspektor
 aus und nutzen den Platz.
 Eine Cloud-Vorschau zeigt ihren schreibgeschützten Kontext statt fremder lokaler
 Formularwerte. Rückkehr zum lokalen Entwurf erhält alle Eingaben.
+
+
+## FlightHub-orientierter Control-Arbeitsbereich
+
+Der zusätzliche Einstieg unter /aeronexus/ ist ein **Produkt-Arbeitsbereich**, keine
+Marketing-Landingpage und keine Nachbildung eines vermeintlich lizenzierten
+FlightHub-On-Premises-Servers. Visuelle Signatur: eine eindeutig als schematisch
+gekennzeichnete Datenflussdarstellung von Pilot 2, lokaler Cloud API und separatem
+FlightHub 2. Keine simulierten Kartenmarker oder Flugwerte.
+
+Die Frontmatter-Tokens bleiben maßgeblich. Das schreibgeschützt bereitgestellte
+HTML in deploy/cloud-server/control-portal/index.html verwendet
+--bg #10151c, --surface #171e28, --line #344151, --ink #eaf3ff,
+--muted #a6b4c5 und --mint #75e3bd. Zusätzliches Hellblau kennzeichnet Links,
+Warmgelb nicht bestätigte Erreichbarkeit und Rot Fehler; Farbe ist niemals die
+einzige Zustandsinformation. Systemschrift und Monospace-Metadaten behalten
+die technische Dichte; Controls und Panels haben 4px Radien.
+
+Auf Desktop besitzt die Ansicht eine Navigationsleiste, Systemübersicht und
+bestehende Moduleinstiege. Auf Smartphones wird die Navigation horizontal
+sichtbar und der Inhalt fließt in einer Spalte. Native DJI-Komponenten öffnen
+nur über die bestehende HTTPS-Seite /fh2-components, nie im öffentlichen
+HTTP-Portal. Die geschützten Fachseiten behalten ui_navigation.py als eigenen
+kanonischen Navigations-Eigentümer.
